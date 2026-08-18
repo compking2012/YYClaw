@@ -10,6 +10,8 @@ const require = createRequire(import.meta.url);
 type AfterPackTestHooks = {
   cleanupNativePlatformPackages: (nodeModulesDir: string, platform: string, arch: string) => number;
   cleanupNodeModulesRuntimeJunk: (nodeModulesDir: string, platform: string, arch: string) => number;
+  verifyPackagedNpmPluginMirrors: (pluginsDestRoot: string) => void;
+  BUNDLED_NPM_PLUGINS: Array<{ npmName: string; pluginId: string }>;
 };
 
 const afterPack = require('../../scripts/after-pack.cjs') as { __test?: AfterPackTestHooks };
@@ -61,5 +63,49 @@ describe('after-pack cleanup helpers', () => {
     expect(existsSync(join(prebuilds, 'darwin-arm64'))).toBe(true);
     expect(existsSync(join(prebuilds, 'darwin-x64'))).toBe(true);
     expect(existsSync(join(prebuilds, 'linux-x64'))).toBe(false);
+  });
+});
+
+// bundlePlugin() only warns when a mirrored package is absent from node_modules,
+// so a build without this assertion exits 0 and ships an app that can never
+// populate ~/.openclaw/extensions/ for that plugin. For tokenjuice that also
+// puts `npm view @openclaw/tokenjuice` back on the Gateway startup path.
+describe('after-pack npm plugin mirror verification', () => {
+  const tempRoots: string[] = [];
+
+  afterEach(() => {
+    for (const root of tempRoots.splice(0)) {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  function makeMirrorRoot(pluginIds: string[]): string {
+    const root = mkdtempSync(join(tmpdir(), 'clawx-plugin-mirrors-'));
+    tempRoots.push(root);
+    for (const pluginId of pluginIds) {
+      mkdirSync(join(root, pluginId), { recursive: true });
+      writeFileSync(join(root, pluginId, 'openclaw.plugin.json'), `{"id":"${pluginId}"}\n`, 'utf8');
+    }
+    return root;
+  }
+
+  it('mirrors tokenjuice so the Gateway never needs npm', () => {
+    expect(afterPack.__test!.BUNDLED_NPM_PLUGINS).toEqual(
+      expect.arrayContaining([{ npmName: '@openclaw/tokenjuice', pluginId: 'tokenjuice' }]),
+    );
+  });
+
+  it('accepts a package containing every declared mirror', () => {
+    const root = makeMirrorRoot(afterPack.__test!.BUNDLED_NPM_PLUGINS.map((entry) => entry.pluginId));
+
+    expect(() => afterPack.__test!.verifyPackagedNpmPluginMirrors(root)).not.toThrow();
+  });
+
+  it('fails the build when a declared mirror is missing from the package', () => {
+    const [dropped, ...kept] = afterPack.__test!.BUNDLED_NPM_PLUGINS;
+    const root = makeMirrorRoot(kept.map((entry) => entry.pluginId));
+
+    expect(() => afterPack.__test!.verifyPackagedNpmPluginMirrors(root))
+      .toThrow(new RegExp(`mirrors missing from the package.*${dropped.pluginId}`));
   });
 });

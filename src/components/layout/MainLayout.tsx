@@ -5,6 +5,7 @@
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TitleBar } from './TitleBar';
+import { SystemSettingsModal } from '@/components/settings/SystemSettingsModal';
 import { MAC_SIDEBAR_CHROME_HEIGHT } from '@shared/sidebar-layout';
 import { cn } from '@/lib/utils';
 import { WebBrowserHost } from '@/components/web-browser/WebBrowserHost';
@@ -47,6 +48,7 @@ export function MainLayout() {
         </main>
         <WebBrowserHost />
       </div>
+      <SystemSettingsModal />
     </div>
   );
 }

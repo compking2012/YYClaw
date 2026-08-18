@@ -2,6 +2,8 @@ export interface PendingGatewayRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timeout: NodeJS.Timeout;
+  /** OpenClaw RPC method for this request (omit for non-RPC waiters such as connect handshake). */
+  method?: string;
 }
 
 export function clearPendingGatewayRequests(
@@ -39,4 +41,21 @@ export function rejectPendingGatewayRequest(
   pendingRequests.delete(id);
   request.reject(error);
   return true;
+}
+
+/** Reject all pending RPCs whose `method` matches (e.g. cooperative cancel during admin apply-sync). */
+export function rejectPendingGatewayRequestsByMethod(
+  pendingRequests: Map<string, PendingGatewayRequest>,
+  method: string,
+  error: Error,
+): number {
+  let count = 0;
+  for (const [id, request] of [...pendingRequests.entries()]) {
+    if (request.method !== method) continue;
+    clearTimeout(request.timeout);
+    pendingRequests.delete(id);
+    request.reject(error);
+    count += 1;
+  }
+  return count;
 }

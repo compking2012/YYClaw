@@ -55,7 +55,11 @@ function removeFileEntry(entryPath: string): void {
   }
 }
 
-function removeDirectoryEntry(entryPath: string, deletionRootRealPath: string): void {
+function removeDirectoryEntry(
+  entryPath: string,
+  deletionRootRealPath: string,
+  visitedRealPaths: Set<string>,
+): void {
   let stat;
   try {
     stat = lstatSync(entryPath);
@@ -77,8 +81,21 @@ function removeDirectoryEntry(entryPath: string, deletionRootRealPath: string): 
       throw new Error(`Refusing to recursively delete directory outside root: ${entryPath} -> ${entryRealPath}`);
     }
 
+    // An inbound link cannot be caught by the containment check above: a junction
+    // pointing at an ancestor inside the tree resolves inside the root, so
+    // descending would recurse until ELOOP/ENAMETOOLONG. Windows `lstat` cannot
+    // be trusted to report junctions as links, and `openclaw doctor --fix`
+    // creates exactly this shape (`<pkg>/node_modules/<pkg>` -> `<pkg>`).
+    // Directories cannot be hard-linked, so a repeated realpath is always a link.
+    const comparableRealPath = normalizeComparablePath(entryRealPath);
+    if (visitedRealPaths.has(comparableRealPath)) {
+      removeLinkEntry(entryPath);
+      return;
+    }
+    visitedRealPaths.add(comparableRealPath);
+
     for (const child of readdirSync(entryPath)) {
-      removeDirectoryEntry(join(entryPath, child), deletionRootRealPath);
+      removeDirectoryEntry(join(entryPath, child), deletionRootRealPath, visitedRealPaths);
     }
     rmdirSync(entryPath);
     return;
@@ -120,8 +137,11 @@ export function safeRmSync(targetPath: string): void {
     throw new Error(`Refusing to recursively delete directory outside parent: ${targetPath} -> ${deletionRootRealPath}`);
   }
 
+  // Shared across the whole walk so an inbound link back to any already-visited
+  // directory is detected, not just one back to the root.
+  const visitedRealPaths = new Set([normalizeComparablePath(deletionRootRealPath)]);
   for (const child of readdirSync(targetPath)) {
-    removeDirectoryEntry(join(targetPath, child), deletionRootRealPath);
+    removeDirectoryEntry(join(targetPath, child), deletionRootRealPath, visitedRealPaths);
   }
 
   rmdirSync(targetPath);

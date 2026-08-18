@@ -1,4 +1,4 @@
-import { shell as electronShell } from 'electron';
+import { BrowserWindow, dialog, shell as electronShell } from 'electron';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import type { Stats } from 'node:fs';
@@ -20,6 +20,7 @@ import type {
   AttachmentFileRef,
   AttachmentOpenHandlersResult,
   AttachmentSourceRef,
+  FileSaveAsResult,
   OpenAttachmentResult,
   OpenAttachmentWithPayload,
   ReadAttachmentBinaryPayload,
@@ -27,6 +28,7 @@ import type {
   ReadAttachmentTextResult,
   ResolveAttachmentPayload,
   ResolveAttachmentResult,
+  SaveAttachmentAsPayload,
 } from '@shared/host-api/contract';
 import {
   FILE_PREVIEW_MAX_BINARY_BYTES,
@@ -49,6 +51,14 @@ const MAX_DISPLAY_NAME_LENGTH = 160;
 const MAX_OUTGOING_RECORD_BYTES = 64 * 1024;
 const SAFE_ATTACHMENT_ID = /^[A-Za-z0-9._-]+$/;
 const DIRECTORY_MIME_TYPE = 'application/x-directory';
+
+/**
+ * Subdir under the managed media root where the built-in `image_generate` tool
+ * writes generated images. When a session has a workspace, we relocate these
+ * into `<workspace>/generated-images/` so they live with the user's project.
+ */
+const GENERATED_IMAGE_MEDIA_SUBDIR = 'tool-image-generation';
+const WORKSPACE_GENERATED_IMAGE_SUBDIR = 'generated-images';
 
 const EXT_MIME_MAP: Record<string, string> = {
   '.bmp': 'image/bmp',
@@ -91,6 +101,7 @@ export type AttachmentAccess = {
   listAttachmentOpenHandlers: (ref: AttachmentFileRef) => Promise<AttachmentOpenHandlersResult>;
   openAttachmentWith: (payload: OpenAttachmentWithPayload) => Promise<OpenAttachmentResult>;
   revealAttachment: (ref: AttachmentFileRef) => Promise<OpenAttachmentResult>;
+  saveAttachmentAs: (payload: SaveAttachmentAsPayload) => Promise<FileSaveAsResult>;
 };
 
 type AttachmentAccessDependencies = {
@@ -101,6 +112,10 @@ type AttachmentAccessDependencies = {
   fs?: AttachmentFs;
   shell?: AttachmentShell;
   openWith: AttachmentOpenWithService;
+  /** Move a generated image into the workspace. Defaults to node:fs rename (EXDEV → copy+unlink). Injectable for tests. */
+  moveFile?: (src: string, dest: string) => Promise<void>;
+  /** Ensure a directory exists (recursive). Defaults to node:fs mkdir. Injectable for tests. */
+  ensureDir?: (dir: string) => Promise<void>;
 };
 
 type LocalScope = 'workspace' | 'openclaw-media' | 'staging';
@@ -551,6 +566,79 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
     };
   };
 
+  const moveFile = dependencies.moveFile ?? (async (src: string, dest: string): Promise<void> => {
+    const fsp = await import('node:fs/promises');
+    try {
+      await fsp.rename(src, dest);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === 'EXDEV') {
+        await fsp.copyFile(src, dest);
+        await fsp.unlink(src);
+        return;
+      }
+      throw error;
+    }
+  });
+
+  const ensureDir = dependencies.ensureDir ?? (async (dir: string): Promise<void> => {
+    const fsp = await import('node:fs/promises');
+    await fsp.mkdir(dir, { recursive: true });
+  });
+
+  const pathExists = async (fs: AttachmentFs, candidatePath: string): Promise<boolean> => {
+    try {
+      await fs.stat(candidatePath);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  /**
+   * When a candidate points at a freshly-generated image under the managed
+   * media `tool-image-generation` dir and the session has a workspace, move it
+   * into `<workspace>/generated-images/` and return the new path. Idempotent
+   * across re-resolves and session reloads: if the destination already exists
+   * (source moved earlier) it is returned without touching the filesystem.
+   * Best-effort — any failure returns null and leaves the original in place.
+   */
+  const maybeRelocateGeneratedImage = async (
+    candidate: string,
+    workspaceRootInput: string,
+    fs: AttachmentFs,
+  ): Promise<string | null> => {
+    // Cheap string pre-check so ordinary attachments skip the managed-root probe.
+    if (!candidate.split(sep).includes(GENERATED_IMAGE_MEDIA_SUBDIR)) return null;
+    if (!workspaceRootInput) return null;
+    const workspaceRoot = await frozenCanonicalDirectory(workspaceRootInput, fs);
+    if (!workspaceRoot) return null;
+    const destDir = join(workspaceRoot, WORKSPACE_GENERATED_IMAGE_SUBDIR);
+    const dest = join(destDir, basename(candidate));
+    // Reload / already-relocated: source has been moved but the workspace copy exists.
+    if (await pathExists(fs, dest)) return dest;
+    if (!(await pathExists(fs, candidate))) return null;
+    // Compare realpaths so a symlinked config dir (e.g. macOS /var → /private/var)
+    // still matches the managed media root.
+    let canonicalSource: string;
+    try {
+      canonicalSource = await fs.realpath(candidate);
+    } catch {
+      return null;
+    }
+    const { mediaRoots } = await verifyManagedAuthorities(fs);
+    const underGeneratedRoot = mediaRoots.some(
+      (root) => isInside(canonicalSource, join(root, GENERATED_IMAGE_MEDIA_SUBDIR)),
+    );
+    if (!underGeneratedRoot) return null;
+    try {
+      await ensureDir(destDir);
+      await moveFile(canonicalSource, dest);
+    } catch {
+      return null;
+    }
+    return dest;
+  };
+
   const resolveLocalCandidate = async (
     ref: AttachmentSourceRef,
     candidateInput: string,
@@ -593,8 +681,13 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
     }
 
     let canonicalCandidate: string;
+    let effectiveCandidate = candidate;
+    if (!mediaOnly) {
+      const relocated = await maybeRelocateGeneratedImage(candidate, context.workspaceRoot, fs);
+      if (relocated) effectiveCandidate = relocated;
+    }
     try {
-      canonicalCandidate = await fs.realpath(candidate);
+      canonicalCandidate = await fs.realpath(effectiveCandidate);
     } catch (error) {
       throw new AttachmentFailure(attachmentFailure(error));
     }
@@ -891,6 +984,26 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
     }
   };
 
+  const saveAttachmentAs = async (payload: SaveAttachmentAsPayload): Promise<FileSaveAsResult> => {
+    try {
+      const target = await requireCurrentLocalFileTarget(payload?.ref);
+      const defaultFileName = payload?.defaultFileName?.trim() || basename(target.canonicalPath);
+      const win = BrowserWindow.getFocusedWindow();
+      const picked = win
+        ? await dialog.showSaveDialog(win, { defaultPath: defaultFileName })
+        : await dialog.showSaveDialog({ defaultPath: defaultFileName });
+      if (picked.canceled || !picked.filePath) {
+        return { success: true, cancelled: true };
+      }
+      const revalidated = await requireCurrentLocalFileTarget(payload.ref);
+      const fsP = await import('node:fs/promises');
+      await fsP.copyFile(revalidated.canonicalPath, picked.filePath);
+      return { success: true, savedPath: picked.filePath };
+    } catch (error) {
+      return { success: false, error: attachmentFailure(error) };
+    }
+  };
+
   return {
     resolveAttachment,
     readAttachmentText,
@@ -899,5 +1012,6 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
     listAttachmentOpenHandlers,
     openAttachmentWith,
     revealAttachment,
+    saveAttachmentAs,
   };
 }

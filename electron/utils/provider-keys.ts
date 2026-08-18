@@ -1,3 +1,5 @@
+import { BUILTIN_PROVIDER_TYPES, type BuiltinProviderType } from '../shared/providers/types';
+
 const MULTI_INSTANCE_PROVIDER_TYPES = new Set(['custom', 'ollama']);
 
 export const OPENCLAW_PROVIDER_KEY_MINIMAX = 'minimax-portal';
@@ -8,6 +10,7 @@ export const OPENCLAW_PROVIDER_KEY_ZAI = 'zai';
 /** OpenClaw Codex OAuth runtime provider id (canonical `openai`, not legacy `openai-codex`). */
 export const OPENAI_CODEX_RUNTIME_PROVIDER_KEY = 'openai';
 export const CLAWX_OPENAI_IMAGE_PROVIDER_KEY = 'clawx-openai-image';
+export const CLAWX_GEMINI_IMAGE_PROVIDER_KEY = 'clawx-gemini-image';
 export const OAUTH_PROVIDER_TYPES = ['minimax-portal', 'minimax-portal-cn'] as const;
 export const OPENCLAW_OAUTH_PLUGIN_PROVIDER_KEYS = [
   OPENCLAW_PROVIDER_KEY_MINIMAX,
@@ -17,6 +20,7 @@ const OAUTH_PROVIDER_TYPE_SET = new Set<string>(OAUTH_PROVIDER_TYPES);
 const OPENCLAW_OAUTH_PLUGIN_PROVIDER_KEY_SET = new Set<string>(OPENCLAW_OAUTH_PLUGIN_PROVIDER_KEYS);
 const HIDDEN_PROVIDER_KEYS_FOR_UI = new Set<string>([
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
+  CLAWX_GEMINI_IMAGE_PROVIDER_KEY,
 ]);
 
 const PROVIDER_KEY_ALIASES: Record<string, string> = {
@@ -26,7 +30,15 @@ const PROVIDER_KEY_ALIASES: Record<string, string> = {
 };
 
 export function getOpenClawProviderKeyForType(type: string, providerId: string): string {
-  if (MULTI_INSTANCE_PROVIDER_TYPES.has(type)) {
+  const isMultiInstance = MULTI_INSTANCE_PROVIDER_TYPES.has(type);
+  const isBuiltin = BUILTIN_PROVIDER_TYPES.includes(type as BuiltinProviderType);
+
+  if (isMultiInstance || !isBuiltin) {
+    // Catalog / directory slug accounts use the same string for vendor type and `models.providers` key
+    // (e.g. minimaxm25). Do not synthesize `${type}-${hash}` or we duplicate buckets vs ClawX sync.
+    if (!isMultiInstance && type.trim().toLowerCase() === providerId.trim().toLowerCase()) {
+      return providerId;
+    }
     // If the providerId is already a runtime key (e.g. re-seeded from openclaw.json
     // as "custom-XXXXXXXX"), return it directly to avoid double-hashing.
     const prefix = `${type}-`;
@@ -56,6 +68,25 @@ export function resolveOpenClawProviderKey(account: {
     return OPENAI_CODEX_RUNTIME_PROVIDER_KEY;
   }
   return getOpenClawProviderKeyForType(account.vendorId, account.id);
+}
+
+/**
+ * All provider-key prefixes that may appear in a saved `providerKey/modelId` ref.
+ * Agent overrides may use the runtime key, account id, or bare vendor type; pruning
+ * stale refs must accept any of these or valid overrides get wiped on listAgentsSnapshot().
+ */
+export function buildConfiguredModelRefProviderKeys(
+  accounts: Array<{ vendorId: string; id: string; authMode?: string }>,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const account of accounts) {
+    const id = account.id.trim();
+    const vendorId = account.vendorId.trim();
+    if (id) keys.add(id);
+    if (vendorId) keys.add(vendorId);
+    keys.add(resolveOpenClawProviderKey(account));
+  }
+  return keys;
 }
 
 /**

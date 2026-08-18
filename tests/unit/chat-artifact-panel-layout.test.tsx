@@ -28,13 +28,44 @@ const chatState = {
   currentSessionKey: 'main:test',
   currentAgentId: 'main',
   sessionLabels: {},
+  loading: false,
+  loadingMoreHistory: false,
+  hasMoreHistory: false,
+  sending: false,
+  error: null,
+  runError: null,
+  streamingMessage: null,
+  streamingTools: [],
+  pendingFinal: false,
+  activeRunId: null,
+  workflowCardsBySession: {},
+  workflowRunBySession: {},
+  workspaceOverrideBySessionKey: {},
+  sessionModelOverrideBySessionKey: {},
+  sendMessage: vi.fn(),
+  abortRun: vi.fn(),
+  clearError: vi.fn(),
   loadSessions: vi.fn().mockResolvedValue(undefined),
   selectAcpSession: vi.fn(),
   acknowledgeAcpSessionCreated: vi.fn(),
+  routeAndMaybeStartWorkflow: vi.fn(),
+  ingestAcpObservedWorkflow: vi.fn(),
+  failObservedWorkflow: vi.fn(),
+  healStaleObservedWorkflows: vi.fn(),
+  loadMoreHistory: vi.fn(),
+  loadHistory: vi.fn(),
+  refresh: vi.fn(),
+  cleanupEmptySession: vi.fn(),
+  lastUserMessageAt: null,
 };
 
 vi.mock('@/stores/chat', () => ({
   useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
+}));
+
+vi.mock('@/stores/settings', () => ({
+  useSettingsStore: (selector: (state: { devModeUnlocked: boolean; promptOptimizationEnabled: boolean }) => unknown) =>
+    selector({ devModeUnlocked: true, promptOptimizationEnabled: false }),
 }));
 
 vi.mock('@/stores/agents', () => ({

@@ -152,7 +152,8 @@ test.describe('ClawX chat question directory', () => {
       const scrollColumnBeforeOpen = await scrollColumn.boundingBox();
 
       const toggle = page.getByTestId('chat-question-directory-toggle');
-      await expect(toggle).toBeEnabled();
+      await expect(toggle).toBeVisible();
+      await expect(toggle).toHaveAttribute('aria-label', 'Question directory');
       await toggle.click();
 
       const directory = page.getByTestId('chat-question-directory');
@@ -197,7 +198,49 @@ test.describe('ClawX chat question directory', () => {
     }
   });
 
-  test('opens the restored question directory with the latest ACP question in long history', async ({ launchElectronApp }) => {
+  test('the popover dismisses on Escape and outside click, and reopens from the toolbar button', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installQuestionDirectoryMocks(app, seededHistory);
+
+      const page = await getStableWindow(app);
+      await page.setViewportSize({ width: 1600, height: 900 });
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
+          throw error;
+        }
+      }
+
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+
+      const toggle = page.getByTestId('chat-question-directory-toggle');
+      const directory = page.getByTestId('chat-question-directory');
+
+      await toggle.click();
+      await expect(directory).toBeVisible({ timeout: 30_000 });
+
+      // Escape dismisses the popover without leaving any reserved layout space.
+      await page.keyboard.press('Escape');
+      await expect(directory).toBeHidden();
+
+      // Reopen, then click outside the anchored popover to dismiss it.
+      await toggle.click();
+      await expect(directory).toBeVisible();
+      await page.mouse.click(20, 20);
+      await expect(directory).toBeHidden();
+
+      // The toolbar button still reopens it afterward.
+      await toggle.click();
+      await expect(directory).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('scrolls the question directory to show the latest question', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {

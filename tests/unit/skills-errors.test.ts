@@ -10,8 +10,8 @@ vi.mock('@/lib/host-api', () => ({
     skills: {
       status: () => statusMock(),
       local: () => localMock(),
-      clawhubSearch: (input: unknown) => clawhubSearchMock(input),
-      clawhubInstall: (input: unknown) => clawhubInstallMock(input),
+      marketplaceSearch: (input: unknown) => clawhubSearchMock(input),
+      marketplaceInstall: (input: unknown) => clawhubInstallMock(input),
       clawhubUninstall: vi.fn(),
       updateConfigs: vi.fn(),
     },
@@ -49,6 +49,8 @@ describe('skills store error mapping', () => {
 
     const { useSkillsStore } = await import('@/stores/skills');
     await expect(useSkillsStore.getState().installSkill('demo-skill')).rejects.toThrow('installTimeoutError');
-    expect(clawhubInstallMock).toHaveBeenCalledWith({ slug: 'demo-skill', version: undefined });
+    expect(clawhubInstallMock).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: 'demo-skill', version: undefined }),
+    );
   });
 });

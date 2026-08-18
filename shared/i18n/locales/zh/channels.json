@@ -1,5 +1,5 @@
 {
-    "title": "消息频道",
+    "title": "频道",
     "subtitle": "统一管理消息频道、账号、账号与智能体的绑定关系，以及频道默认账号",
     "refresh": "刷新",
     "addChannel": "添加频道",
@@ -29,10 +29,10 @@
         "savedButRefreshFailed": "配置已保存，但刷新页面数据失败，请手动刷新查看最新状态",
         "restartManual": "请手动重启网关",
         "configFailed": "配置失败: {{error}}",
-        "bindingUpdated": "账号绑定已更新",
         "defaultUpdated": "默认账号已更新",
         "accountDeleted": "账号已删除",
-        "channelDeleted": "频道已删除"
+        "channelDeleted": "频道已删除",
+        "feishuAppDisabled": "已停用对应的飞书应用，请到飞书开发者后台手动删除。"
     },
     "account": {
         "add": "添加账号",
@@ -42,12 +42,10 @@
         "deleteConfirm": "确定要删除该账号吗？",
         "default": "当前默认",
         "setDefault": "设为频道默认账号",
-        "bindAgentLabel": "绑定 Agent",
-        "unassigned": "未绑定",
         "mainAccount": "主账号",
         "customIdLabel": "账号 ID",
         "customIdPlaceholder": "例如：feishu-sales-bot",
-        "customIdHint": "使用小写账号 ID（字母、数字、连字符、下划线）来区分同一频道下的多个账号。",
+        "customIdHint": "可自定义账号 ID，只能包含小写字母、数字、下划线(_)和连字符(-)，用于区分同一频道下的多个账号。",
         "invalidId": "账号 ID 不能为空",
         "invalidCanonicalId": "账号 ID 仅支持小写字母、数字、连字符和下划线；必须以字母或数字开头，且最长 64 个字符。",
         "idLabel": "ID: {{id}}",
@@ -62,9 +60,9 @@
         "connectionStatus": {
             "connected": "已连接",
             "connecting": "连接中",
-            "degraded": "状态波动",
+            "degraded": "异常降级",
             "disconnected": "未连接",
-            "error": "连接失败"
+            "error": "异常"
         },
         "accountIdPrompt": "请输入该频道的新账号 ID",
         "accountIdExists": "账号 ID {{accountId}} 已存在"
@@ -102,11 +100,11 @@
     },
     "health": {
         "state": {
-            "degraded": "状态波动",
+            "degraded": "网关状态异常",
             "unresponsive": "网关无响应"
         },
         "reasons": {
-            "gateway_degraded": "网关心跳近期不稳定。",
+            "gateway_degraded": "网关心跳近期出现异常。",
             "gateway_unresponsive": "网关控制面看起来已经无响应。",
             "channels_status_timeout": "频道运行时状态探测超时。",
             "rpc_timeout": "最近的网关 RPC 调用发生超时。",
@@ -189,7 +187,7 @@
             "description": "通过腾讯官方 OpenClaw 插件扫码连接个人微信",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GHYZwuPCriF0gWkXwkFcJ9zon3b",
             "instructions": [
-                "点击生成二维码，ClawX 会在 OpenClaw 中安装并启用官方微信插件",
+                "点击生成二维码，YYClaw 会在 OpenClaw 中安装并启用官方微信插件",
                 "使用微信扫描下方二维码，并在手机上确认连接",
                 "连接成功后，微信里会自动出现新的「微信 ClawBot」对话",
                 "之后可再次通过扫码流程添加更多微信账号，或重新连接已有账号"
@@ -273,6 +271,56 @@
                 "在下方填写凭证信息"
             ]
         }
+    },
+    "autoCreateFeishu": {
+        "title": "一键创建飞书应用配置",
+        "editTitle": "编辑飞书应用配置",
+        "appName": "应用名称 (必填)",
+        "creating": "正在创建并配置...",
+        "confirm": "确认创建并配置",
+        "button": "一键创建飞书应用",
+        "missingRequired": "请填写必填项（应用名称）",
+        "success": "飞书应用一键创建成功！",
+        "updateSuccess": "更新飞书应用成功",
+        "editButton": "编辑飞书应用",
+        "publishRemark": "创建{{productName}}应用",
+        "publishChangelog": "创建{{productName}}应用",
+        "iconLabel": "应用图标 (可选)",
+        "iconRequirement": "支持 JPEG/PNG/SVG/BMP 格式，2 MB 以内，大于 240*240 px，无圆角",
+        "botMenu": {
+          "title": "机器人快捷指令菜单",
+          "menuLabel": "快捷指令",
+          "description": "创建后将自动为机器人配置「快捷指令」菜单，点击菜单项即可向 OpenClaw 发送对应命令："
+        },
+        "iconTooLarge": "图标大小不能超过 2MB",
+        "selectExisting": "选取已有应用",
+        "fetchAppsFailed": "获取应用列表失败",
+        "selectExistingTitle": "选取已有飞书应用",
+        "loadingApps": "正在加载应用列表...",
+        "noAppsFound": "没有找到您创建的自建应用",
+        "appSelected": "已选择应用，请补充填写 App Secret",
+        "statusEnabled": "已启用",
+        "statusDisabled": "已停用",
+        "statusUnpublished": "未启用",
+        "candidateIcons": "候选图标",
+        "fetchingInfo": "正在获取应用信息...",
+        "confirmDelete": "确定要停用并删除应用「{{appName}}」吗？",
+        "deleteApp": "停用并删除应用",
+        "deleteSuccess": "应用已停用。请在打开的浏览器页面中手动删除该应用。",
+        "getSecret": "获取 Secret",
+        "copySecretPrompt": "请在打开的网页中复制 App Secret 并粘贴到此处，请注意保密。",
+        "autoSecretPasted": "已自动填入复制的 App Secret。",
+        "needsConfig": "请先编辑并保存应用",
+        "createFailed": "创建飞书应用失败",
+        "createFailedDisabled": "创建失败，应用已自动停用。请到飞书开发者后台手动删除。",
+        "updateFailed": "更新飞书应用失败",
+        "updateFailedRestored": "修改失败，已恢复到修改前的状态。",
+        "openConsole": "打开后台",
+        "larkCliPending": "应用已就绪。飞书 CLI 登录尚未完成，可随时重试。",
+        "larkCliRetry": "重试登录",
+        "larkCliRetrying": "正在登录飞书 CLI…",
+        "larkCliReady": "飞书 CLI 已登录",
+        "larkCliRetryFailed": "飞书 CLI 登录失败，请稍后重试"
     },
     "viewDocs": "查看文档"
 }

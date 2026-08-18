@@ -1,8 +1,14 @@
 import { access, lstat, readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { homedir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
-import { expandPath, getOpenClawResolvedDir, getOpenClawSkillsDir, getResourcesDir } from './paths';
+import { expandPath, getOpenClawConfigDir, getOpenClawResolvedDir, getOpenClawSkillsDir } from './paths';
+import {
+  isWorkflowSkillContent,
+  parseSkillTitle,
+  parseWorkflowSteps,
+  type ParsedWorkflowStep,
+} from '@shared/workflow/skill-workflow';
+import { ALLOWED_SKILL_SCAN_SOURCES, listExtensionSkillRoots } from '../services/skills/skill-scan-policy';
 
 export type QuickAccessSkillSource = 'workspace' | 'openclaw' | 'agents' | 'legacy';
 
@@ -13,6 +19,12 @@ export interface QuickAccessSkill {
   sourceLabel: string;
   manifestPath: string;
   baseDir: string;
+  /** True when this SKILL.md is workflow-shaped (frontmatter opt-in or body heuristic). */
+  workflow?: boolean;
+  /** Ordered step titles parsed from the SKILL.md body (only when `workflow`). */
+  workflowSteps?: ParsedWorkflowStep[];
+  /** Human-friendly card title (SKILL.md H1 / frontmatter name), when `workflow`. */
+  workflowTitle?: string;
 }
 
 type QuickAccessScanParams = {
@@ -112,13 +124,29 @@ function parseBodyDescription(content: string): string {
   return 'No description available.';
 }
 
-async function readSkillDescription(manifestPath: string): Promise<string> {
+interface SkillMeta {
+  description: string;
+  workflow: boolean;
+  workflowSteps?: ParsedWorkflowStep[];
+  workflowTitle?: string;
+}
+
+async function readSkillMeta(manifestPath: string): Promise<SkillMeta> {
   const fileStat = await stat(manifestPath);
   if (fileStat.size > MAX_SKILL_FILE_BYTES) {
-    return 'Description unavailable (SKILL.md exceeds size limit).';
+    return { description: 'Description unavailable (SKILL.md exceeds size limit).', workflow: false };
   }
   const content = await readFile(manifestPath, 'utf-8');
-  return parseFrontmatterDescription(content) || parseBodyDescription(content);
+  const description = parseFrontmatterDescription(content) || parseBodyDescription(content);
+  const workflow = isWorkflowSkillContent(content);
+  if (!workflow) return { description, workflow: false };
+  const workflowSteps = parseWorkflowSteps(content);
+  return {
+    description,
+    workflow: true,
+    workflowSteps: workflowSteps.length ? workflowSteps : undefined,
+    workflowTitle: parseSkillTitle(content) ?? undefined,
+  };
 }
 
 async function resolveSafeRoot(root: string): Promise<string | null> {
@@ -148,14 +176,17 @@ async function inspectSkillDir(params: {
     if (!isInsideRoot(params.rootRealPath, skillDirRealPath)) {
       return null;
     }
-    const description = await readSkillDescription(manifestPath);
+    const meta = await readSkillMeta(manifestPath);
     return {
       name: basename(skillDirRealPath),
-      description,
+      description: meta.description,
       source: params.source,
       sourceLabel: params.sourceLabel,
       manifestPath,
       baseDir: skillDirRealPath,
+      workflow: meta.workflow,
+      workflowSteps: meta.workflowSteps,
+      workflowTitle: meta.workflowTitle,
     };
   } catch {
     return null;
@@ -216,37 +247,13 @@ async function scanRoot(descriptor: Omit<SourceDescriptor, 'roots'> & { root: st
   return items.filter((item): item is QuickAccessSkill => item != null);
 }
 
-async function discoverExtensionSkillRoots(extensionRoots: string[]): Promise<string[]> {
-  const skillRoots: string[] = [];
-  for (const extensionRoot of extensionRoots) {
-    if (!(await pathExists(extensionRoot))) continue;
-    try {
-      const entries = await readdir(extensionRoot, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const skillsRoot = join(extensionRoot, entry.name, 'skills');
-        if (await pathExists(skillsRoot)) {
-          skillRoots.push(skillsRoot);
-        }
-      }
-    } catch {
-      // Ignore unreadable extension roots.
-    }
-  }
-  return dedupePaths(skillRoots);
-}
-
 async function resolveLegacyRoots(explicitRoots?: string[]): Promise<string[]> {
   if (explicitRoots) {
     return dedupePaths(explicitRoots);
   }
 
   const openClawDir = getOpenClawResolvedDir();
-  const extensionSkillRoots = await discoverExtensionSkillRoots([
-    join(homedir(), '.openclaw', 'extensions'),
-    join(openClawDir, 'extensions'),
-    join(openClawDir, 'dist', 'extensions'),
-  ]);
+  const extensionSkillRoots = await listExtensionSkillRoots({ openClawDir });
 
   return dedupePaths([
     join(openClawDir, 'skills'),
@@ -255,52 +262,34 @@ async function resolveLegacyRoots(explicitRoots?: string[]): Promise<string[]> {
 }
 
 async function buildDescriptors(params: QuickAccessScanParams): Promise<SourceDescriptor[]> {
-  const workspace = params.workspace ? expandPath(params.workspace) : '';
+  // Align with listLocalSkills policy: only managed + bundled/extensions + plugin-skills.
+  // Do not scan workspace skills or ~/.agents/skills (multi-version duplicates).
+  void ALLOWED_SKILL_SCAN_SOURCES;
   const openClawDir = params.openClawDir ? expandPath(params.openClawDir) : '';
-  const personalAgentsDir = join(homedir(), '.agents');
-  const resourcesDir = getResourcesDir();
-  const agentsRoots = params.agentsRoots
-    ? dedupePaths(params.agentsRoots)
-    : dedupePaths([
-      join(workspace, '.agents', 'skills'),
-      join(personalAgentsDir, 'skills'),
-      join(resourcesDir, '.agents', 'skills'),
-    ].filter(Boolean));
   const openClawRoots = params.openClawRoots
     ? dedupePaths(params.openClawRoots)
     : dedupePaths([
       getOpenClawSkillsDir(),
       openClawDir ? join(openClawDir, 'skills') : '',
+      join(getOpenClawConfigDir(), 'plugin-skills'),
     ].filter(Boolean));
-  const legacyRoots = await resolveLegacyRoots(params.legacyRoots);
+  const bundledAndExtensionRoots = params.legacyRoots
+    ? dedupePaths(params.legacyRoots)
+    : await resolveLegacyRoots(undefined);
 
   return [
     {
-      source: 'workspace',
-      sourceLabel: 'Workspace',
-      priority: 0,
-      roots: dedupePaths([
-        join(workspace, 'skill'),
-        join(workspace, 'skills'),
-      ].filter(Boolean)),
-    },
-    {
       source: 'openclaw',
       sourceLabel: 'OpenClaw',
-      priority: 1,
+      // Lower priority wins on name collision — managed/plugin roots listed first in openClawRoots.
+      priority: 0,
       roots: openClawRoots,
     },
     {
-      source: 'agents',
-      sourceLabel: '.agents',
-      priority: 2,
-      roots: agentsRoots,
-    },
-    {
       source: 'legacy',
-      sourceLabel: 'Legacy',
-      priority: 3,
-      roots: legacyRoots,
+      sourceLabel: 'Bundled',
+      priority: 1,
+      roots: bundledAndExtensionRoots,
     },
   ];
 }

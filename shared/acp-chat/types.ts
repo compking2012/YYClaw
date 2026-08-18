@@ -29,6 +29,13 @@ export type AcpChatPromptPayload = AcpSessionKeyPayload & {
   message?: string;
   media?: AcpPromptMediaItem[];
   messageId?: string;
+  /**
+   * Fire-and-forget internal turns (e.g. the `/model` directive behind the
+   * this-conversation-only model switch) that must never surface in the
+   * chat timeline — neither the optimistic user bubble nor the gateway's
+   * reply for this turn.
+   */
+  silent?: boolean;
 };
 
 export type AcpChatCancelPayload = AcpSessionKeyPayload;
@@ -53,6 +60,8 @@ export type AcpSessionUpdateEnvelope = {
   generation: number;
   /** True for ACP updates emitted while session/load is replaying history. */
   historical?: boolean;
+  /** True when this update belongs to a `silent` prompt turn — see `AcpChatPromptPayload.silent`. */
+  silent?: boolean;
   notification: SessionNotification;
 };
 

@@ -47,14 +47,17 @@ touchedAreas:
   - tests/unit/session-title.test.ts
   - tests/unit/host-services.test.ts
   - tests/unit/chat-store-session-label-fetch.test.ts
-  - tests/unit/chat-session-management.test.ts
+  -
   - tests/unit/sessions-api-workspace.test.ts
   - tests/unit/chat-acp-page.test.tsx
   - tests/unit/workspace-browser-body.test.tsx
   - tests/unit/session-buckets.test.ts
+  - tests/unit/acp-session-access-registry.test.ts
+  - tests/unit/acp-chat-service.test.ts
   - tests/e2e/chat-workspace-context.spec.ts
 expectedUserBehavior:
   - New chat sessions use the globally selected workspace until their first send.
+  - A fresh local session creates the app-managed default workspace when it does not exist yet.
   - Editable new chats list persisted recent and known session workspaces in the composer menu, alongside the default workspace and native folder picker.
   - First send initializes the OpenClaw ACP session with the selected cwd.
   - Existing sessions use OpenClaw ACP cwd as their read-only workspace context.
@@ -79,13 +82,14 @@ requiredRules:
 requiredTests:
   - pnpm harness validate --spec harness/specs/tasks/chat-workspace-context.md
   - pnpm run typecheck
-  - pnpm exec vitest run tests/unit/workspace-context.test.ts tests/unit/session-title.test.ts tests/unit/host-services.test.ts tests/unit/chat-store-session-label-fetch.test.ts tests/unit/chat-session-management.test.ts tests/unit/sidebar-session-buckets.test.ts tests/unit/sessions-api-workspace.test.ts tests/unit/session-buckets.test.ts tests/unit/chat-acp-page.test.tsx tests/unit/workspace-browser-body.test.tsx
+  - pnpm exec vitest run tests/unit/workspace-context.test.ts tests/unit/session-title.test.ts tests/unit/host-services.test.ts tests/unit/chat-store-session-label-fetch.test.ts tests/unit/sidebar-session-buckets.test.ts tests/unit/sessions-api-workspace.test.ts tests/unit/session-buckets.test.ts tests/unit/chat-acp-page.test.tsx tests/unit/workspace-browser-body.test.tsx tests/unit/acp-session-access-registry.test.ts tests/unit/acp-chat-service.test.ts tests/unit/chat-session-management.test.ts
   - pnpm run build:vite
   - pnpm exec playwright test tests/e2e/chat-workspace-context.spec.ts
   - pnpm run comms:replay
   - pnpm run comms:compare
 acceptance:
   - OpenClaw ACP cwd is the authoritative session workspace when available.
+  - Main may create only the app-managed default workspace for a fresh local session; missing custom workspaces remain errors.
   - ClawX only persists global workspace selection and recent workspaces.
   - The editable composer workspace menu shows deduplicated recent and known-session non-default workspaces with their custom display labels.
   - Bound session footer workspace is read-only.

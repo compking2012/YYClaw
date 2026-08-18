@@ -60,11 +60,21 @@ export function useStickToBottomInstant(resetKey?: string, active = false) {
 
       if (!element) return;
 
+      // Coalesce every layout change into a single pin per animation frame.
+      // The smooth streaming reveal grows the content each frame, which would
+      // otherwise fire this observer continuously; a synchronous read+write
+      // (scrollTop = scrollHeight) plus a second trailing pin per resize forced
+      // two layout thrashes per frame and stole time from the reveal loop. One
+      // rAF-scheduled pin runs after the library's own scroll settles, so our
+      // instant pin still wins the final position — at 1× the reflow cost.
+      let pinScheduled = false;
       const observer = new ResizeObserver(() => {
-        pinToBottom();
-        // A trailing frame lets the library's own scroll settle first so our
-        // instant pin wins the final position.
-        requestAnimationFrame(() => pinToBottom());
+        if (pinScheduled) return;
+        pinScheduled = true;
+        requestAnimationFrame(() => {
+          pinScheduled = false;
+          pinToBottom();
+        });
       });
       observer.observe(element);
       pinObserverRef.current = observer;

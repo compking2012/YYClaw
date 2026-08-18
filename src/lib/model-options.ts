@@ -1,4 +1,5 @@
-import type { ProviderAccount, ProviderVendorInfo, ProviderWithKeyInfo } from '@/lib/providers';
+import type { ModelKind, ProviderAccount, ProviderVendorInfo, ProviderWithKeyInfo } from '@/lib/providers';
+import { accountModelKinds } from '@/lib/providers';
 
 export interface ConfiguredModelOption {
   modelRef: string;
@@ -51,6 +52,14 @@ export function splitModelRef(modelRef: string | null | undefined): { providerKe
   };
 }
 
+export function parseModelIds(model: string | string[] | null | undefined): string[] {
+  const values = Array.isArray(model) ? model : [model ?? ''];
+  return values
+    .flatMap((value) => String(value).split(','))
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
 export function normalizeModelIdForRuntimeProvider(
   modelId: string | null | undefined,
   runtimeProviderKey: string,
@@ -69,25 +78,35 @@ export function formatProviderDisplayName(
   account: ProviderAccount,
   vendorMap: Map<string, ProviderVendorInfo>,
 ): string {
-  if (account.vendorId === 'custom' || account.vendorId === 'ollama') {
-    return account.label.trim() || account.vendorId;
-  }
-
   const vendor = vendorMap.get(account.vendorId);
-  return vendor?.name || account.label.trim() || account.vendorId;
+  return account.label.trim() || vendor?.name || account.vendorId;
 }
 
 export function formatConfiguredModelLabel(
   modelId: string,
   account: ProviderAccount,
   vendorMap: Map<string, ProviderVendorInfo>,
+  options?: { disambiguate?: boolean },
 ): string {
   const providerName = formatProviderDisplayName(account, vendorMap);
-  return `${modelId} (${providerName})`;
+  // The picker should read like the account's own name from Settings, not
+  // a raw model id (e.g. "GLM52") — those are meaningful to whoever set up
+  // the provider, not to someone just picking a model for this chat. Only
+  // fall back to the id when an account configures more than one model and
+  // needs disambiguating.
+  return options?.disambiguate ? `${providerName} · ${modelId}` : providerName;
 }
 
 export function toModelOptionTestId(label: string): string {
   return label.replace(/[^a-zA-Z0-9_-]+/g, '-');
+}
+
+function firstStringValue(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value.find((entry): entry is string => typeof entry === 'string');
+  }
+  return undefined;
 }
 
 export function hasConfiguredProviderCredentials(
@@ -125,17 +144,18 @@ export function buildRuntimeProviderOptions(
     if (!runtimeProviderKey || deduped.has(runtimeProviderKey)) continue;
     const vendor = vendorMap.get(account.vendorId);
     const label = `${account.label} (${vendor?.name || account.vendorId})`;
-    const configuredModelId = account.model
-      ? (account.model.startsWith(`${runtimeProviderKey}/`)
-        ? account.model.slice(runtimeProviderKey.length + 1)
-        : account.model)
+    const firstModelId = parseModelIds(account.model)[0];
+    const configuredModelId = firstModelId
+      ? (firstModelId.startsWith(`${runtimeProviderKey}/`)
+        ? firstModelId.slice(runtimeProviderKey.length + 1)
+        : firstModelId)
       : undefined;
 
     deduped.set(runtimeProviderKey, {
       runtimeProviderKey,
       accountId: account.id,
       label,
-      modelIdPlaceholder: vendor?.modelIdPlaceholder,
+      modelIdPlaceholder: firstStringValue(vendor?.modelIdPlaceholder),
       configuredModelId,
     });
   }
@@ -148,17 +168,27 @@ export function buildConfiguredModelOptions(
   providerStatuses: ProviderWithKeyInfo[],
   providerVendors: ProviderVendorInfo[],
   providerDefaultAccountId: string | null,
+  options?: { includeKinds?: ModelKind[] },
 ): ConfiguredModelOption[] {
   const safeAccounts = Array.isArray(providerAccounts) ? providerAccounts : [];
   const safeStatuses = Array.isArray(providerStatuses) ? providerStatuses : [];
   const safeVendors = Array.isArray(providerVendors) ? providerVendors : [];
   const vendorMap = new Map<string, ProviderVendorInfo>(safeVendors.map((vendor) => [vendor.id, vendor]));
   const statusById = new Map<string, ProviderWithKeyInfo>(safeStatuses.map((status) => [status.id, status]));
+  const includeKinds = options?.includeKinds;
   const entries = safeAccounts
     .filter((account) => {
-      const hasModel = Boolean(account.model?.trim())
+      const hasModel = parseModelIds(account.model).length > 0
         || Boolean(account.metadata?.customModels?.some((modelId) => modelId.trim()));
-      return account.enabled && hasModel && hasConfiguredProviderCredentials(account, statusById);
+      if (!account.enabled || !hasModel || !hasConfiguredProviderCredentials(account, statusById)) return false;
+      if (!includeKinds) return true;
+      // Keep an account when it supports ANY of the requested kinds — matching
+      // the Agents page's `kinds.includes('text')`. Requiring the account's
+      // whole kind set to be a subset of `includeKinds` would drop every
+      // vision-capable chat model (modelType ['text','image']) from a
+      // text-only picker.
+      const kinds = accountModelKinds(account, vendorMap.get(account.vendorId));
+      return kinds.some((kind) => includeKinds.includes(kind));
     })
     .sort((left, right) => {
       if (left.id === providerDefaultAccountId) return -1;
@@ -169,24 +199,43 @@ export function buildConfiguredModelOptions(
   const deduped = new Map<string, ConfiguredModelOption>();
   for (const account of entries) {
     const runtimeProviderKey = resolveRuntimeProviderKey(account);
-    const modelIds = (() => {
-      const selectedModelId = normalizeModelIdForRuntimeProvider(account.model, runtimeProviderKey);
-      const supportsMultipleModels = account.vendorId === 'custom' || account.vendorId === 'ollama';
-      if (!supportsMultipleModels && selectedModelId) {
-        return [selectedModelId];
-      }
+    const kinds = accountModelKinds(account, vendorMap.get(account.vendorId));
+    const accountModelIds = (() => {
+      // `account.model` is positional — one slot per declared kind, in the
+      // account's own `modelType` order — and each slot may itself be a
+      // comma-joined string, so always parse before indexing.
+      const positional = parseModelIds(account.model)
+        .map((modelId) => normalizeModelIdForRuntimeProvider(modelId, runtimeProviderKey))
+        .filter(Boolean);
       const configured = (account.metadata?.customModels ?? [])
         .map((modelId) => normalizeModelIdForRuntimeProvider(modelId, runtimeProviderKey))
         .filter(Boolean);
+      const supportsMultipleModels = account.vendorId === 'custom' || account.vendorId === 'ollama';
+      if (!supportsMultipleModels) {
+        // Take the slot for the requested kind, not blindly index 0 — asking
+        // for text on a voice-first account would otherwise surface its TTS id.
+        // `customModels` is a flat set with no kind information, so it is never
+        // fanned out here: a built-in account's positional `model` is the
+        // source of truth, and a multi-kind account (e.g. MiniMax: text +
+        // image/music/video) would leak non-text ids into a text-only picker.
+        const kindIndex = includeKinds ? kinds.findIndex((kind) => includeKinds.includes(kind)) : 0;
+        const selected = positional[kindIndex >= 0 ? kindIndex : 0];
+        if (selected) return [selected];
+      }
       if (configured.length > 0) return configured;
-      return selectedModelId ? [selectedModelId] : [];
+      return positional;
     })();
+    // A multi-kind account repeats the same id across kind slots (e.g.
+    // "cd-h-4-5,cd-h-4-5" for text + image), so dedupe before labelling —
+    // otherwise the count looks like >1 model and the label picks up an
+    // unnecessary " · <model id>" disambiguation suffix.
+    const modelIds = Array.from(new Set(accountModelIds));
     for (const modelId of modelIds) {
       const modelRef = `${runtimeProviderKey}/${modelId}`;
       if (deduped.has(modelRef)) continue;
       deduped.set(modelRef, {
         modelRef,
-        label: formatConfiguredModelLabel(modelId, account, vendorMap),
+        label: formatConfiguredModelLabel(modelId, account, vendorMap, { disambiguate: modelIds.length > 1 }),
         runtimeProviderKey,
         accountId: account.id,
       });

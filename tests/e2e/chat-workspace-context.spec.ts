@@ -173,6 +173,15 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
       }])]: { success: true },
       [stableStringify(['settings', 'setMany', {
         patch: {
+          chatWorkspacePath: DEFAULT_WORKSPACE,
+          recentWorkspacePaths: [
+            DEFAULT_WORKSPACE,
+            ...recentWorkspacePaths.filter((path) => path !== DEFAULT_WORKSPACE),
+          ].slice(0, 10),
+        },
+      }])]: { success: true },
+      [stableStringify(['settings', 'setMany', {
+        patch: {
           chatWorkspacePath: GLOBAL_WORKSPACE,
           recentWorkspacePaths: selectedGlobalRecentWorkspacePaths,
         },
@@ -300,7 +309,7 @@ test.describe('ClawX chat workspace context', () => {
     }
   });
 
-  test('new chat inherits the selected conversation workspace', async ({ launchElectronApp }) => {
+  test('new chat resets to the default agent workspace', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -344,12 +353,12 @@ test.describe('ClawX chat workspace context', () => {
         return invocations.some((entry) => (
           entry.module === 'settings'
           && entry.action === 'setMany'
-          && entry.payload?.patch?.chatWorkspacePath === SESSION_WORKSPACE
+          && entry.payload?.patch?.chatWorkspacePath === DEFAULT_WORKSPACE
         ));
       }).toBe(true);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
-      await expect(workspaceSelector).toHaveText(SESSION_WORKSPACE_LABEL);
-      await expect(workspaceSelector).toHaveAttribute('title', SESSION_WORKSPACE);
+      await expect(workspaceSelector).toHaveText('Default workspace');
+      await expect(workspaceSelector).toHaveAttribute('title', DEFAULT_WORKSPACE);
       await expect(workspaceSelector).not.toHaveAttribute('aria-disabled', 'true');
       await expect(composerInput).toBeEnabled();
       const showedGatewayDisconnected = await composerInput.evaluate(() => {
@@ -593,6 +602,38 @@ test.describe('ClawX chat workspace context', () => {
           && entry.payload?.cwd === SESSION_WORKSPACE
         )).length;
       }).toBe(0);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('missing default workspace does not warn since it is created on demand', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installWorkspaceMocks(app, {
+        unavailableWorkspacePath: DEFAULT_WORKSPACE,
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
+      }
+
+      const workspaceSelector = page.getByTestId('chat-workspace-selector');
+      await expect(workspaceSelector).toHaveText(SESSION_WORKSPACE_LABEL, { timeout: 30_000 });
+
+      // Start a new chat so the effective workspace resets to the default managed
+      // workspace, which the mock reports as missing on disk.
+      await page.getByTestId('sidebar-new-chat').click();
+      await expect(workspaceSelector).toHaveText('Default workspace', { timeout: 30_000 });
+
+      // The default workspace is provisioned lazily, so its absence must not raise
+      // the "moved/deleted" banner. The composer stays usable.
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      await expect(page.getByTestId('workspace-unavailable-banner')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }

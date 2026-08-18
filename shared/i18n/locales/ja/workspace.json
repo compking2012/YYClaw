@@ -1,0 +1,21 @@
+{
+    "title": "ワークスペース",
+    "subtitle": "エージェントワークスペース内のファイルを閲覧・プレビュー",
+    "refresh": "更新",
+    "revealInFinder": "Finder で表示",
+    "revealInExplorer": "エクスプローラーで表示",
+    "revealInFileManager": "ファイルマネージャーで開く",
+    "selectFileToPreview": "ファイルを選択してプレビュー",
+    "binaryNotSupported": "バイナリファイルはプレビューできません",
+    "emptyWorkspace": "ワークスペースは空です",
+    "noAgents": "エージェントがありません",
+    "noAgentsHint": "ワークスペースを表示するには、まずエージェントを作成してください",
+    "viewPersonaSettings": "ペルソナ設定",
+    "viewWorkspaceFiles": "ワークスペースファイル",
+    "rebuildPersona": "ペルソナテンプレートの再構築",
+    "showHidden": "隠しファイルを表示",
+    "hideHidden": "隠しファイルを非表示",
+    "showInFileManager": "ファイルマネージャーで表示",
+    "deleteFileConfirm": "{{path}} を削除してもよろしいですか？この操作は元に戻せません。",
+    "deleteTitle": "削除の確認"
+}

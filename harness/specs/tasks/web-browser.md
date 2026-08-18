@@ -15,6 +15,7 @@ expectedUserBehavior:
   - Every link is inert; users may only choose to preview the HTML file in ClawX or open that file in the system browser.
 requiredProfiles:
   - fast
+  - comms
 requiredRules:
   - renderer-main-boundary
   - web-browser-security-and-lifecycle

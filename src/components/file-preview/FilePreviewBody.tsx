@@ -15,7 +15,7 @@
  * here so callers only pass a `FilePreviewTarget` and a `readOnly` flag.
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { FolderOpen, Save, ShieldAlert, Undo2 } from 'lucide-react';
+import { Eye, FolderOpen, Pencil, Save, ShieldAlert, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -31,7 +31,10 @@ import {
 } from '@/lib/file-preview-client';
 import { getFilePreviewTargetIdentity, type FilePreviewTarget } from './types';
 import { previewDisplayPath } from './build-preview-target';
-import { isHtmlPreviewExt } from '@/lib/generated-files';
+import {
+  isHtmlPreviewExt,
+  supportsInlineDocumentPreview,
+} from '@/lib/generated-files';
 import {
   filePreviewKind,
   isFilePreviewWithinSizeLimit,
@@ -77,6 +80,20 @@ export interface FilePreviewBodyProps {
   mode?: FilePreviewBodyMode;
   /** When true, hide the file header (name / path / actions). */
   hideHeader?: boolean;
+  /**
+   * Enable an "Edit / Preview" toggle for Markdown / plain-text documents
+   * (which otherwise render preview-only). Ignored when the file is read-only
+   * or not a previewable text document. Code files are always editable via
+   * their source view regardless of this flag.
+   */
+  documentEditable?: boolean;
+  /**
+   * Inject externally-generated content into the editor as an unsaved draft.
+   * When `token` changes, the body replaces its draft with `content` and
+   * switches into edit mode so the user can review, then Save. Used by the
+   * persona natural-language generator.
+   */
+  pendingDraft?: { content: string; token: number };
   /** Whether this preview surface is visible and may own the PPTX parser. */
   active?: boolean;
   initialPptxSlideIndex?: number;
@@ -128,6 +145,8 @@ export function FilePreviewBody({
   headerLeftInset,
   mode = 'full',
   hideHeader = false,
+  documentEditable = false,
+  pendingDraft,
   active = true,
   initialPptxSlideIndex,
   onPptxSlideIndexChange,
@@ -142,6 +161,8 @@ export function FilePreviewBody({
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<Tab>('source');
   const [size, setSize] = useState<number | undefined>(file.size);
+  // Edit/preview toggle for Markdown-style documents (which have no source tab).
+  const [editing, setEditing] = useState(false);
 
   // Preview mode is for inspecting content, not editing it.
   const enforcedReadOnly = readOnly || !!file.attachmentFileRef || !!file.workspaceFileRef || mode === 'preview';
@@ -305,8 +326,44 @@ export function FilePreviewBody({
   const dirty =
     state.status === 'ready' && !state.readOnly && draft != null && draft !== state.content;
 
+  // Markdown / plain-text documents render preview-only, so opt them into an
+  // explicit edit toggle (HTML already exposes an editable source tab).
+  const isEditableDocument =
+    documentEditable &&
+    state.status === 'ready' &&
+    !effectiveReadOnly &&
+    file.contentType === 'document' &&
+    supportsInlineDocumentPreview(file.ext) &&
+    !isHtmlPreviewExt(file.ext);
+
+  // For the Markdown Edit-toggle flow (e.g. persona settings) the Save/Revert
+  // buttons stay visible and usable in BOTH preview and edit modes, even with
+  // no pending changes — the write is idempotent. Code / HTML source editors
+  // keep their dirty-gated behaviour.
+  const documentWriteEnabled = isEditableDocument;
+
+  // Reset the edit toggle when switching files (keyed on the stable path so a
+  // parent re-render that produces a new `file` object identity does not flip
+  // the user out of edit mode).
+  useEffect(() => {
+     
+    setEditing(false);
+  }, [file.filePath]);
+
+  // Inject generated content as an unsaved draft and drop into edit mode.
+  useEffect(() => {
+    if (!pendingDraft) return;
+     
+    setDraft(pendingDraft.content);
+    setEditing(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingDraft?.token]);
+
   const handleSave = useCallback(async () => {
-    if (!dirty || draft == null) return;
+    if (draft == null) return;
+    // Code / HTML editors only save on real changes; the document Edit-toggle
+    // flow allows an idempotent re-save even when nothing changed.
+    if (!dirty && !documentWriteEnabled) return;
     setSaving(true);
     try {
       const res = await writeTextFile(file.filePath, draft);
@@ -325,7 +382,7 @@ export function FilePreviewBody({
     } finally {
       setSaving(false);
     }
-  }, [file, loadIdentity, dirty, draft, size, t]);
+  }, [file, loadIdentity, dirty, documentWriteEnabled, draft, size, t]);
 
   const handleRevert = useCallback(() => {
     if (storedState.identity !== loadIdentity || storedState.status !== 'ready') return;
@@ -365,7 +422,7 @@ export function FilePreviewBody({
         {allowSystemActions && <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
           {directOpen
             ? t('filePreview.errors.largeBinaryOpenHint', {
-              defaultValue: 'This file is {{size}}. ClawX does not provide an inline preview for it. You can confirm to open it directly in your system default app.',
+              defaultValue: 'This file is {{size}}. YYClaw does not provide an inline preview for it. You can confirm to open it directly in your system default app.',
               size: formatFileSize(size ?? 0) || '> 2MB',
             })
             : t(
@@ -407,7 +464,7 @@ export function FilePreviewBody({
           <p>
             {directOpen
               ? t('filePreview.errors.largeBinaryOpenHint', {
-                defaultValue: 'This file is {{size}}. ClawX does not provide an inline preview for it. You can confirm to open it directly in your system default app.',
+                defaultValue: 'This file is {{size}}. YYClaw does not provide an inline preview for it. You can confirm to open it directly in your system default app.',
                 size: formatFileSize(state.size ?? size ?? 0) || '> 2MB',
               })
               : t('filePreview.errors.tooLarge', {
@@ -453,7 +510,7 @@ export function FilePreviewBody({
             {allowSystemActions && <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
               {t(
                 'filePreview.errors.outsideSandboxHint',
-                'ClawX cannot read this path. The file may have been moved, deleted, or may not be accessible to the current account. You can inspect it in your file manager.',
+                'YYClaw cannot read this path. The file may have been moved, deleted, or may not be accessible to the current account. You can inspect it in your file manager.',
               )}
             </p>}
           </div>
@@ -590,6 +647,21 @@ export function FilePreviewBody({
               ) : file.contentType === 'document' ? (
                 isHtmlPreviewExt(file.ext) ? (
                   <HtmlPreviewAnchor />
+                ) : isEditableDocument && editing ? (
+                  <Suspense
+                    fallback={
+                      <div className="flex h-full items-center justify-center">
+                        <LoadingSpinner />
+                      </div>
+                    }
+                  >
+                    <MonacoViewerLazy
+                      filePath={file.filePath}
+                      value={draft ?? ''}
+                      readOnly={false}
+                      onChange={(next) => setDraft(next)}
+                    />
+                  </Suspense>
                 ) : (
                   <MarkdownPreview source={draft ?? state.content} />
                 )
@@ -634,6 +706,25 @@ export function FilePreviewBody({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {isEditableDocument && (
+            <Button
+              variant={editing ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={() => setEditing((prev) => !prev)}
+            >
+              {editing ? (
+                <>
+                  <Eye className="mr-1 h-3.5 w-3.5" />
+                  {t('filePreview.actions.preview', 'Preview')}
+                </>
+              ) : (
+                <>
+                  <Pencil className="mr-1 h-3.5 w-3.5" />
+                  {t('filePreview.actions.edit', 'Edit')}
+                </>
+              )}
+            </Button>
+          )}
           {state.status === 'ready' && tabs.length > 1 && (
             <TabsList className="h-8 shrink-0" data-testid="file-preview-view-tabs">
               {tabs.map((id) => (
@@ -646,11 +737,11 @@ export function FilePreviewBody({
           )}
           {!effectiveReadOnly && state.status === 'ready' && (
             <>
-              <Button variant="ghost" size="sm" onClick={handleRevert} disabled={!dirty || saving}>
+              <Button variant="ghost" size="sm" onClick={handleRevert} disabled={saving || (!dirty && !documentWriteEnabled)}>
                 <Undo2 className="mr-1 h-3.5 w-3.5" />
                 {t('filePreview.actions.revert', 'Revert')}
               </Button>
-              <Button size="sm" onClick={handleSave} disabled={!dirty || saving}>
+              <Button size="sm" onClick={handleSave} disabled={saving || (!dirty && !documentWriteEnabled)}>
                 <Save className="mr-1 h-3.5 w-3.5" />
                 {saving ? t('filePreview.actions.saving', 'Saving...') : t('filePreview.actions.save', 'Save')}
               </Button>

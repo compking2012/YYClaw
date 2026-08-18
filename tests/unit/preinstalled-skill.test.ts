@@ -29,10 +29,15 @@ vi.mock('@electron/utils/paths', () => ({
   getOpenClawResolvedDir: () => '/runtime/openclaw',
   getResourcesDir: () => state.resourcesDir,
   resolveOpenClawConfigPath: () => join(state.homeDir, '.openclaw', 'openclaw.json'),
+  // Reached through the agent skill-allowlist maintenance in agent-config.
+  expandPath: (value: string) => value.replace(/^~/, state.homeDir),
+  getOpenClawConfigDir: () => join(state.homeDir, '.openclaw'),
+  getOpenClawSkillsDir: () => join(state.homeDir, '.openclaw', 'skills'),
 }));
 
 vi.mock('@electron/gateway/config-delivery', () => ({
   mutateOpenClawConfig: mutateOpenClawConfigMock,
+  readOpenClawConfigSnapshot: async () => ({ config: state.authoritativeConfig, exists: true }),
 }));
 
 describe('preinstalled skill config', () => {
@@ -52,6 +57,10 @@ describe('preinstalled skill config', () => {
       return true;
     });
 
+    // The skill enable path reaches provider-store, whose registry loads the
+    // bundled provider catalog from resources/config.
+    mkdirSync(join(state.resourcesDir, 'config'), { recursive: true });
+    writeFileSync(join(state.resourcesDir, 'config', 'providers.json'), JSON.stringify([]));
     mkdirSync(join(state.resourcesDir, 'skills'), { recursive: true });
     mkdirSync(join(state.resourcesDir, 'preinstalled-skills', 'example'), { recursive: true });
     writeFileSync(
@@ -69,9 +78,12 @@ describe('preinstalled skill config', () => {
     const { ensurePreinstalledSkillsInstalled } = await import('@electron/utils/skill-config');
     await ensurePreinstalledSkillsInstalled();
 
-    expect(state.authoritativeConfig).toEqual({
+    // Enabling a skill also maintains the per-agent allowlists (defaults and
+    // each agent entry), so assert the shape rather than an exact snapshot.
+    expect(state.authoritativeConfig).toMatchObject({
       gatewayOnly: true,
       skills: { entries: { example: { enabled: true } } },
+      agents: { defaults: { skills: ['example'] } },
     });
     expect(mutateOpenClawConfigMock).toHaveBeenCalledOnce();
     expect(existsSync(join(state.homeDir, '.openclaw', 'openclaw.json'))).toBe(false);

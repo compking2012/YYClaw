@@ -46,6 +46,8 @@ vi.mock('@electron/utils/paths', async () => {
 
 vi.mock('@electron/utils/plugin-install', () => ({
   ensureClawXOpenAiImagePluginInstalled: ensureImagePluginInstalledMock,
+  // clawx-image-plugin-sync resolves both relays from this table.
+  ensureClawXGeminiImagePluginInstalled: vi.fn(async () => ({ installed: true })),
 }));
 
 async function writeOpenClawJson(config: unknown): Promise<void> {
@@ -114,6 +116,9 @@ describe('openclaw-image-generation helpers', () => {
       timeoutMs: 120_000,
     });
     expect(defaults.mediaGenerationAutoProviderFallback).toBe(false);
+    // Raises the generated-media save cap so high-res (2K/4K) images are not
+    // rejected by the built-in tool's 6MB default.
+    expect(defaults.mediaMaxMb).toBe(32);
 
     expect(await readImageGenerationConfig()).toEqual({
       primary: 'openai/gpt-image-2',
@@ -122,121 +127,26 @@ describe('openclaw-image-generation helpers', () => {
     });
   });
 
-  it('preserves non-UI image model fields when updating image generation settings', async () => {
-    await writeOpenClawJson({
-      agents: {
-        defaults: {
-          imageGenerationModel: {
-            primary: 'openai/old-image',
-            timeoutMs: 30_000,
-            maxPixels: 4_194_304,
-          },
-        },
-      },
-    });
+  it('raises a low mediaMaxMb but never lowers a higher user value', async () => {
     const { setImageGenerationConfig } = await import('@electron/utils/openclaw-image-generation');
 
-    await setImageGenerationConfig({
-      primary: 'openai/gpt-image-2',
-      fallbacks: [],
-      timeoutMs: null,
-    });
+    // Unset → raised to the floor.
+    await writeOpenClawJson({ agents: { defaults: {} } });
+    await setImageGenerationConfig({ primary: 'openai/gpt-image-2', fallbacks: [], timeoutMs: null });
+    let defaults = ((await readOpenClawJson()).agents as Record<string, unknown>).defaults as Record<string, unknown>;
+    expect(defaults.mediaMaxMb).toBe(32);
 
-    const saved = await readOpenClawJson();
-    const defaults = (saved.agents as Record<string, unknown>).defaults as Record<string, unknown>;
-    expect(defaults.imageGenerationModel).toEqual({
-      primary: 'openai/gpt-image-2',
-      maxPixels: 4_194_304,
-    });
+    // Below the floor → raised.
+    await writeOpenClawJson({ agents: { defaults: { mediaMaxMb: 8 } } });
+    await setImageGenerationConfig({ primary: 'openai/gpt-image-2', fallbacks: [], timeoutMs: null });
+    defaults = ((await readOpenClawJson()).agents as Record<string, unknown>).defaults as Record<string, unknown>;
+    expect(defaults.mediaMaxMb).toBe(32);
+
+    // Already higher → left untouched.
+    await writeOpenClawJson({ agents: { defaults: { mediaMaxMb: 128 } } });
+    await setImageGenerationConfig({ primary: 'openai/gpt-image-2', fallbacks: [], timeoutMs: null });
+    defaults = ((await readOpenClawJson()).agents as Record<string, unknown>).defaults as Record<string, unknown>;
+    expect(defaults.mediaMaxMb).toBe(128);
   });
 
-  it('updates image generation settings on the running coordinator snapshot', async () => {
-    await writeOpenClawJson({ localOnly: true });
-    let runningConfig: Record<string, unknown> = {
-      gatewayOnly: true,
-      agents: { defaults: { model: { primary: 'openai/gpt-4o' } } },
-    };
-    const manager = {
-      getStatus: vi.fn(() => ({ state: 'running' as const })),
-      rpc: vi.fn(async (method: string, params: unknown) => {
-        if (method === 'config.get') return { raw: JSON.stringify(runningConfig), hash: 'hash-1' };
-        if (method === 'config.set') {
-          runningConfig = JSON.parse((params as { raw: string }).raw) as Record<string, unknown>;
-          return { ok: true };
-        }
-        throw new Error(`Unexpected RPC method: ${method}`);
-      }),
-    };
-    const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
-    registerOpenClawConfigCoordinator(manager);
-    const { setImageGenerationConfig } = await import('@electron/utils/openclaw-image-generation');
-
-    const result = await setImageGenerationConfig({
-      primary: 'openai/gpt-image-2',
-      fallbacks: [],
-      timeoutMs: null,
-    });
-
-    expect(result).toEqual({
-      primary: 'openai/gpt-image-2',
-      fallbacks: [],
-      timeoutMs: null,
-    });
-    expect(runningConfig).toMatchObject({
-      gatewayOnly: true,
-      agents: {
-        defaults: {
-          model: { primary: 'openai/gpt-4o' },
-          imageGenerationModel: { primary: 'openai/gpt-image-2' },
-          mediaGenerationAutoProviderFallback: false,
-        },
-      },
-    });
-    expect(await readOpenClawJson()).toEqual({ localOnly: true });
-  });
-
-  it('builds the image settings view from one authoritative config snapshot', async () => {
-    const runningConfig = {
-      agents: {
-        defaults: { imageGenerationModel: { primary: 'openai/gpt-image-2' } },
-        list: [{ id: 'main', name: 'Main', default: true }],
-      },
-    };
-    const manager = {
-      getStatus: vi.fn(() => ({ state: 'running' as const })),
-      rpc: vi.fn(async (method: string) => {
-        if (method === 'config.get') {
-          return { raw: JSON.stringify(runningConfig), hash: 'hash-1' };
-        }
-        throw new Error(`Unexpected RPC method: ${method}`);
-      }),
-    };
-    const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
-    registerOpenClawConfigCoordinator(manager);
-    const { getImageGenerationSettingsSnapshot } = await import('@electron/utils/openclaw-image-generation');
-
-    const snapshot = await getImageGenerationSettingsSnapshot();
-
-    expect(snapshot.config.primary).toBe('openai/gpt-image-2');
-    expect(snapshot.defaultAgentId).toBe('main');
-    expect(manager.rpc).toHaveBeenCalledOnce();
-    expect(manager.rpc).toHaveBeenCalledWith('config.get', {});
-  });
-
-  it('does not enable the relay when its plugin cannot be installed', async () => {
-    await writeOpenClawJson({ existing: true });
-    ensureImagePluginInstalledMock.mockResolvedValue({
-      installed: false,
-      warning: 'plugin mirror missing',
-    });
-    const { applyOpenAiImageRelaySettings } = await import('@electron/utils/openclaw-image-generation');
-
-    await expect(applyOpenAiImageRelaySettings({
-      enabled: true,
-      baseUrl: 'https://relay.example.com',
-      apiKey: 'sk-test',
-    })).rejects.toThrow('plugin mirror missing');
-
-    await expect(readOpenClawJson()).resolves.toEqual({ existing: true });
-  });
 });

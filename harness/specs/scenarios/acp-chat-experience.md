@@ -18,8 +18,11 @@ ownedPaths:
   - src/lib/file-preview-client.ts
   - src/lib/file-preview-capabilities.ts
   - src/lib/generated-files.ts
+  - src/lib/workflow-api.ts
+  - src/lib/workflow-route.ts
   - src/components/file-preview/**
   - src/stores/acp-chat-session.ts
+  - src/stores/workflow.ts
   - src/pages/Chat/**
   - tests/unit/acp-*.test.ts
   - tests/unit/acp-*.test.tsx
@@ -28,6 +31,8 @@ ownedPaths:
   - tests/e2e/chat-acp-inline-timeline.spec.ts
   - tests/e2e/chat-acp-attachments.spec.ts
   - tests/e2e/chat-run-state-events.spec.ts
+  - tests/e2e/chat-model-picker-kinds.spec.ts
+  - tests/e2e/chat-model-auto-select.spec.ts
   - tests/e2e/chat-streamdown-rendering.spec.ts
   - tests/e2e/chat-code-block-wrap.spec.ts
   - tests/e2e/chat-latex-rendering.spec.ts
@@ -53,6 +58,7 @@ requiredRules:
   - tool-derived-file-safety
   - office-preview-safety
   - ui-i18n-design-tokens
+  - workflow-lane-independence
   - markdown-rendering-safety-and-performance
   - electron-rendering-performance
   - comms-regression
@@ -62,5 +68,9 @@ requiredRules:
 ACP Chat covers session load, prompt, cancel, permission, replay, timeline reduction, assistant-turn presentation and whole-turn duration, standard ACP attachments, bounded generated-media and OpenClaw MEDIA compatibility, and Chat-specific diagnostics. The user-visible attachment flow includes attachment-scoped preview, system open, selected-application open, reveal actions, and a first-position built-in Preview action for eligible local HTML, with platform discovery limited to macOS and Windows. Authorized local DOCX/PPTX attachments within the Office limit use scoped Preview; remote, legacy, and over-limit Office attachments retain scoped system/external-open behavior. User-selected directories remain system-open-only targets: Main may open the directory after session-scoped revalidation, but directory contents are not read, enumerated, previewed, or exposed to Open With.
 
 Main owns ACP transport, routing, transcript retrieval and timing extraction, workspace grants, and session/generation-scoped attachment authorization. Renderer owns the in-memory timeline, bounded compatibility and timing alignment, attachment presentation, and display grouping, including user-image thumbnails and user-selected source-path labels. ACP replay remains authoritative for historical turns and content; transcript-derived timing may only annotate an unambiguously matched ACP turn. Standard ACP content remains preferred over compatibility projections, and incidental tool paths never enter the attachment pipeline.
+
+The composer's model picker is the only place Chat shows the model in use — the footer deliberately carries no model name. It lists every enabled provider account whose declared kinds *include* `text`, so vision-capable chat models (`modelType: ['text', 'image']`) stay listed and only non-text accounts (image-generation, voice) are filtered out; for a multi-kind account the model id is read from the slot matching the requested kind. Picking a concrete model is per-conversation only, applied by a silent `/model` directive on the session and never written to `openclaw.json`; the "temporary" marker is shown only when that override actually differs from the agent's default. The picker's auto-select row instead delegates model choice to the agent's own router by persisting `autoSelectModel.model` through `agents.updateAutoSelect` — the same route the Agents page uses. Auto-select and a pinned session model are mutually exclusive: turning auto on clears the override, and picking a concrete model turns auto off.
+
+Chat also hosts an independent, non-ACP workflow lane rendered beside the timeline: engine-orchestrated dynamic workflows and observed workflow-shaped skill runs, shown as compact cards sourced from the fork's persisted store and the `workflow:progress` stream. Send-path routing (`routeAndMaybeStartWorkflow`, gated by `autoWorkflowEnabled`) may start a server-orchestrated workflow in place of the ACP prompt, and a read-only ACP timeline projection (`observed-workflow-projection.ts`) detects observed workflows from tool calls. The lane never enters ACP timeline state and the legacy Gateway execution graph is intentionally not rendered here — see `workflow-lane-independence`.
 
 The durable architecture, exceptions, access boundary, file-activity separation, Office preview behavior, Markdown rendering, Electron rendering performance policy, and validation anchors are documented in `harness/reference/acp-chat.md`, `harness/reference/acp-generated-media-and-diagnostics.md`, `harness/reference/acp-attachment-access-control.md`, `harness/reference/openclaw-file-activity.md`, `harness/reference/office-document-preview.md`, `harness/reference/markdown-rendering.md`, and `harness/reference/electron-rendering-performance.md`.

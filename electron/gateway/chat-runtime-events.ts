@@ -53,13 +53,29 @@ export function normalizeGatewayChatRuntimeEvent(payload: unknown): ChatRuntimeE
         : null;
     }
 
-    if (phase === 'completed' || phase === 'done' || phase === 'finished') {
+    if (phase === 'completed' || phase === 'done' || phase === 'finished' || phase === 'end') {
       const base = withBase('run.ended', raw);
       return base
         ? {
             ...base,
             status: 'completed',
             endedAt: readNumber(data.endedAt),
+            lifecyclePhase: phase,
+            livenessState: readString(data.livenessState),
+            replayInvalid: typeof data.replayInvalid === 'boolean' ? data.replayInvalid : undefined,
+            stopReason: readString(data.stopReason),
+          }
+        : null;
+    }
+
+    if (phase === 'ended') {
+      const base = withBase('run.ended', raw);
+      return base
+        ? {
+            ...base,
+            status: 'completed',
+            endedAt: readNumber(data.endedAt),
+            lifecyclePhase: phase,
             livenessState: readString(data.livenessState),
             replayInvalid: typeof data.replayInvalid === 'boolean' ? data.replayInvalid : undefined,
             stopReason: readString(data.stopReason),
@@ -75,6 +91,7 @@ export function normalizeGatewayChatRuntimeEvent(payload: unknown): ChatRuntimeE
             status: 'error',
             endedAt: readNumber(data.endedAt),
             error: readString(data.error),
+            lifecyclePhase: phase,
             livenessState: readString(data.livenessState),
             replayInvalid: typeof data.replayInvalid === 'boolean' ? data.replayInvalid : undefined,
             stopReason: readString(data.stopReason),
@@ -90,6 +107,7 @@ export function normalizeGatewayChatRuntimeEvent(payload: unknown): ChatRuntimeE
             status: 'aborted',
             endedAt: readNumber(data.endedAt),
             error: readString(data.error),
+            lifecyclePhase: phase,
             stopReason: readString(data.stopReason),
           }
         : null;

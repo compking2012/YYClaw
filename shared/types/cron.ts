@@ -7,6 +7,24 @@ import type { ChannelType } from './channel';
 
 export type CronJobDeliveryMode = 'none' | 'announce';
 
+/**
+ * Client-side validity window for a cron job.
+ *
+ * The bundled OpenClaw Gateway has no notion of a start/end validity window, so
+ * this is enforced entirely app-side: the window is persisted locally (see
+ * `electron/services/cron-window-store.ts`) and a background reconciler
+ * (`cron-window-manager.ts`) enables/disables the Gateway job when the current
+ * local date crosses `start` / `end`. `desiredEnabled` records the user's
+ * intended enabled state so it can be restored when the window becomes active.
+ *
+ * `start` / `end` are inclusive local calendar dates in `YYYY-MM-DD` form.
+ */
+export interface CronJobWindow {
+  start?: string;
+  end?: string;
+  desiredEnabled?: boolean;
+}
+
 export interface CronJobDelivery {
   mode: CronJobDeliveryMode;
   channel?: ChannelType | string;
@@ -59,6 +77,8 @@ export interface CronJob {
   lastRun?: CronJobLastRun;
   nextRun?: string;
   agentId: string;
+  /** Client-side validity window (app-enforced; not part of the Gateway job). */
+  window?: CronJobWindow;
 }
 
 /**
@@ -75,6 +95,8 @@ export interface CronJobCreateInput {
   delivery?: CronJobDelivery;
   enabled?: boolean;
   agentId?: string;
+  /** Client-side validity window (app-enforced; stripped before the Gateway call). */
+  window?: CronJobWindow;
 }
 
 /**
@@ -87,6 +109,8 @@ export interface CronJobUpdateInput {
   delivery?: CronJobDelivery;
   enabled?: boolean;
   agentId?: string;
+  /** Client-side validity window (app-enforced; stripped before the Gateway call). */
+  window?: CronJobWindow;
 }
 
 /**

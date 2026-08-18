@@ -1,6 +1,7 @@
 import type { BrowserWindow } from 'electron';
 import { fork, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { sep } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import {
   ClientSideConnection,
@@ -30,7 +31,7 @@ import {
 import { logger } from '../utils/logger';
 import { recordAcpTrace } from './acp-trace';
 import { AcpSessionAccessRegistry, type AcpSessionAccessContext } from './acp-session-access-registry';
-import { expandPath } from '../utils/paths';
+import { expandPath, getOpenClawConfigDir } from '../utils/paths';
 import { getSetting } from '../utils/store';
 import {
   ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS,
@@ -59,12 +60,33 @@ type AcpLivePromptContext = {
   acpSessionId: string;
   generation: number;
   accessGrant: AcpSessionAccessContext;
+  /** See `AcpChatPromptPayload.silent` — propagated to updates emitted for this turn. */
+  silent?: boolean;
 };
 type AcpChildProcess = ChildProcess & {
   stdin: NonNullable<ChildProcess['stdin']>;
   stdout: NonNullable<ChildProcess['stdout']>;
   stderr: NonNullable<ChildProcess['stderr']>;
 };
+
+const ACP_GATEWAY_WAIT_TIMEOUT_MS = 30_000;
+const ACP_CONNECT_ATTEMPTS = 3;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function diagnosticsIndicateUnsupportedNode(diagnostics: string): boolean {
+  return /Node\.js[\s\S]{0,120}is required|openclaw:\s*Node\.js/i.test(diagnostics);
+}
+
+function isRetryableAcpLaunchError(message: string, diagnostics: string): boolean {
+  if (diagnosticsIndicateUnsupportedNode(diagnostics)) return false;
+  // Bare process exits (engines, crash) are not fixed by reconnect retries.
+  // Only retry transport-level Gateway-not-ready failures.
+  if (/ECONNREFUSED/i.test(message) || /ECONNREFUSED/i.test(diagnostics)) return true;
+  return /connection closed/i.test(message) && /ECONNREFUSED|not ready|ECONNRESET/i.test(diagnostics);
+}
 
 function ok(generation?: number, sessionUpdates?: AcpSessionUpdateEnvelope[]): AcpChatOperationResult {
   return {
@@ -150,6 +172,7 @@ export class AcpChatService {
   private readonly livePrompts = new Map<string, AcpLivePromptContext>();
   private permissionSeq = 0;
   private readonly permissionWaiters = new Map<string, PermissionWaiter>();
+  private lastChildDiagnostics = '';
   readonly client: Client;
 
   constructor(
@@ -275,12 +298,26 @@ export class AcpChatService {
       previousGeneration = this.generation;
       nextGeneration = this.generationSeq + 1;
       previousAccessGrant = this.accessRegistry.snapshot();
+      // Auto-create the workspace directory when it is a client-managed OpenClaw
+      // workspace (under ~/.openclaw/), whether creating a new session or loading
+      // an existing one. Agent workspaces (~/.openclaw/workspace[-<id>]) are
+      // provisioned at agent creation, but the implicit main agent's default
+      // workspace (~/.openclaw/workspace) may never have been created — loading a
+      // session there would otherwise fail with ENOENT on realpath. User-picked
+      // external workspaces are NOT auto-created and must exist.
+      const managedOpenClawDir = getOpenClawConfigDir();
+      const expandedWorkspaceRoot = expandPath(payload.workspaceRoot);
+      const isManagedWorkspace = expandedWorkspaceRoot === managedOpenClawDir
+        || expandedWorkspaceRoot.startsWith(`${managedOpenClawDir}${sep}`);
+      const createWorkspaceRoot = Boolean(
+        isManagedWorkspace && payload.workspaceRoot === payload.cwd,
+      );
       const preparedAccessGrant = await this.accessRegistry.prepareGrant({
         sessionKey: payload.sessionKey,
         generation: nextGeneration,
         workspaceRoot: payload.workspaceRoot,
         executionCwd: payload.cwd,
-      });
+      }, { createWorkspaceRoot });
 
       this.generation = nextGeneration;
       this.activeSessionKey = payload.sessionKey;
@@ -375,6 +412,7 @@ export class AcpChatService {
       acpSessionId,
       generation,
       accessGrant,
+      silent: payload.silent === true,
     };
     this.livePrompts.set(payload.sessionKey, promptContext);
     try {
@@ -438,9 +476,17 @@ export class AcpChatService {
     try {
       this.trace('session/cancel:start', { sessionKey: payload.sessionKey });
       const connection = await this.ensureConnection();
-      await connection.cancel({ sessionId: this.loadedAcpSessionId });
+      // Stop both the ACP prompt and any Gateway-tracked run/tools in parallel.
+      // ACP cancel is authoritative for the bridge; chat.abort is best-effort so
+      // mid-flight tool/LLM work cannot keep running when the bridge alone stalls.
+      const acpCancel = connection.cancel({ sessionId: this.loadedAcpSessionId });
+      const gatewayAbort = this.abortGatewaySessionBestEffort(payload.sessionKey);
+      const [acpResult] = await Promise.allSettled([acpCancel, gatewayAbort]);
       this.permissionsEnabled = false;
       this.resolvePermissionWaitersForSession(payload.sessionKey, cancelledPermissionResponse());
+      if (acpResult.status === 'rejected') {
+        throw acpResult.reason;
+      }
       this.trace('session/cancel:success', { sessionKey: payload.sessionKey });
       return ok(this.generation);
     } catch (error) {
@@ -449,7 +495,29 @@ export class AcpChatService {
         sessionKey: payload.sessionKey,
         details: { error: error instanceof Error ? error.message : String(error) },
       });
+      // Still try Gateway abort — the user asked to stop work even if ACP cancel failed.
+      await this.abortGatewaySessionBestEffort(payload.sessionKey);
       return fail(error);
+    }
+  }
+
+  /** Best-effort Gateway `chat.abort` so LLM/tool runs stop alongside ACP cancel. */
+  private async abortGatewaySessionBestEffort(sessionKey: string): Promise<void> {
+    if (!this.gateway?.rpc) return;
+    try {
+      await this.gateway.rpc('chat.abort', { sessionKey }, 5_000);
+      this.trace('session/cancel:gateway-abort', {
+        sessionKey,
+        details: { ok: true },
+      });
+    } catch (error) {
+      this.trace('session/cancel:gateway-abort', {
+        sessionKey,
+        details: {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
     }
   }
 
@@ -478,24 +546,98 @@ export class AcpChatService {
     }
   }
 
+  private async waitForGatewayAcceptingConnections(): Promise<void> {
+    if (!this.gateway?.getStatus) return;
+
+    const deadline = Date.now() + ACP_GATEWAY_WAIT_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const status = this.gateway.getStatus();
+      const running = status?.state === 'running';
+      // gatewayReady stays false from "starting" until HTTP/RPC is accepting work.
+      const ready = status?.gatewayReady === true;
+      if (running && ready) return;
+      await delay(200);
+    }
+
+    const status = this.gateway.getStatus();
+    if (status?.state !== 'running') {
+      throw new Error('Gateway is not running; cannot start ACP chat bridge');
+    }
+    logger.warn(
+      `[acp-chat] Gateway still warming after ${ACP_GATEWAY_WAIT_TIMEOUT_MS}ms; continuing ACP connect attempt`,
+    );
+  }
+
+  private enrichAcpLaunchError(error: unknown): Error {
+    const fallback = error instanceof Error ? error.message : String(error);
+    const diagnostics = this.lastChildDiagnostics
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const engineLine = diagnostics.find((line) => diagnosticsIndicateUnsupportedNode(line));
+    if (engineLine) {
+      return new Error(
+        `${engineLine} YYClaw will prefer Electron's bundled Node when PATH Node is too old; restart the app after upgrading Node, or rely on the Electron fallback.`,
+      );
+    }
+    const refusedLine = diagnostics.find((line) => /ECONNREFUSED/i.test(line));
+    if (refusedLine || /ECONNREFUSED/i.test(fallback)) {
+      return new Error(
+        'ACP could not reach the local Gateway (connection refused). Wait until Gateway is ready and retry.',
+      );
+    }
+    if (diagnostics.length > 0 && /connection closed|exited with code/i.test(fallback)) {
+      return new Error(`${fallback}: ${diagnostics[0]}`);
+    }
+    return error instanceof Error ? error : new Error(fallback);
+  }
+
+  private resetFailedConnectionAttempt(): void {
+    const child = this.child;
+    // Keep `this.initializing` intact so concurrent ensureConnection callers
+    // continue awaiting this in-flight bootstrap instead of spawning a second ACP.
+    this.initialized = false;
+    this.connection = null;
+    this.child = null;
+    if (!child) return;
+    try {
+      child.kill();
+    } catch {
+      // Best-effort cleanup of a half-open ACP child.
+    }
+  }
+
   private async initializeConnection(): Promise<AcpConnection> {
+    this.lastChildDiagnostics = '';
+    await this.waitForGatewayAcceptingConnections();
     await this.approveLocalDeviceRequests();
 
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= ACP_CONNECT_ATTEMPTS; attempt++) {
       try {
         return await this.initializeConnectionOnce(attempt);
       } catch (error) {
-        if (attempt >= 2) throw error;
+        lastError = error;
+        // stderr 'data' can land slightly after 'exit'; give it a beat before classifying.
+        await delay(25);
+        const message = error instanceof Error ? error.message : String(error);
+        const shouldRetry =
+          isRetryableAcpLaunchError(message, this.lastChildDiagnostics)
+          && attempt < ACP_CONNECT_ATTEMPTS;
+        this.resetFailedConnectionAttempt();
+        if (!shouldRetry) {
+          throw this.enrichAcpLaunchError(error);
+        }
         logger.info(
-          `[acp-chat] ACP connect failed on attempt ${attempt}; auto-approving local device requests and retrying: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `[acp-chat] ACP connect failed on attempt ${attempt}; auto-approving local device requests and retrying: ${message}`,
         );
+        await this.waitForGatewayAcceptingConnections();
         await this.approveLocalDeviceRequests();
+        await delay(250 * attempt);
       }
     }
 
-    throw new Error('ACP connection failed');
+    throw this.enrichAcpLaunchError(lastError ?? new Error('ACP connection failed'));
   }
 
   private async initializeConnectionOnce(attempt: number): Promise<AcpConnection> {
@@ -577,7 +719,9 @@ export class AcpChatService {
 
     child.stderr.on('data', (chunk) => {
       const message = String(chunk).trimEnd();
-      if (message) logger.info(`[acp-chat] ${message}`);
+      if (!message) return;
+      this.lastChildDiagnostics = `${this.lastChildDiagnostics}\n${message}`.slice(-4_000);
+      logger.info(`[acp-chat] ${message}`);
     });
     child.on('error', (error) => {
       logger.error(`[acp-chat] ACP process error: ${String(error)}`);
@@ -588,8 +732,10 @@ export class AcpChatService {
       this.dropConnectionForChild(child);
     });
 
-    const input = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>;
-    const output = filterAcpStdoutDiagnostics(Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>);
+    const input = Writable.toWeb(child.stdin) as unknown as WritableStream<Uint8Array>;
+    const output = filterAcpStdoutDiagnostics(
+      Readable.toWeb(child.stdout) as unknown as ReadableStream<Uint8Array>,
+    );
     const stream = ndJsonStream(input, output);
     return new ClientSideConnection(() => this.client, stream);
   }
@@ -599,7 +745,9 @@ export class AcpChatService {
     this.trace('connection/dropped', { details: { pendingPermissionCount: this.permissionWaiters.size } });
     this.resolveAllPermissionWaiters(cancelledPermissionResponse());
     this.initialized = false;
-    this.initializing = null;
+    // Do not clear `this.initializing` here. Concurrent ensureConnection callers
+    // must keep awaiting the in-flight bootstrap promise; ensureConnection's
+    // finally block clears it when bootstrap settles.
     this.connection = null;
     this.child = null;
     this.loadedSessionKey = null;
@@ -644,6 +792,7 @@ export class AcpChatService {
       ...(!livePrompt && this.historicalSessionKey === sessionKey && this.historicalGeneration === generation
         ? { historical: true }
         : {}),
+      ...(livePrompt?.silent ? { silent: true } : {}),
       notification: { ...notification, sessionId: sessionKey },
     };
     const loadBatch = this.activeLoadBatch;

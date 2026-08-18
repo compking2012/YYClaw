@@ -27,12 +27,24 @@ import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
 import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
 import { createEmptyAcpTimeline } from '@/lib/acp/reducer';
 import { projectOpenClawFileActivities, type AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
+import { projectAcpObservedWorkflow } from '@/lib/acp/observed-workflow-projection';
+import { useSkillWorkflowStore } from '@/stores/skill-workflow';
 import { hostApi } from '@/lib/host-api';
 import { getSessionDisplayTitle } from '@shared/chat/session-title';
 import { ChatInput, type ChatWorkspaceOption, type FileAttachment } from './ChatInput';
 import { ChatToolbar } from './ChatToolbar';
-import { AcpTimeline } from './AcpTimeline';
+import { AcpTimelineGroup, streamingMessageSegmentIds } from './AcpTimeline';
 import { AcpErrorBanner } from './AcpErrorBanner';
+// Workflow lane: an INDEPENDENT, non-ACP feature. Cards come from the fork's
+// persisted store + `workflow:progress` stream, never from
+// `acpTimeline.itemsById`/`itemOrder`. They are interleaved into the conversation
+// at RENDER time by `buildConversationBlocks` (no ACP-store mutation) so an
+// engine workflow turn lands at its trigger position
+// (see harness/specs/rules/workflow-lane-independence.md).
+import { WorkflowTurnBlock } from './WorkflowTurnBlock';
+import { buildConversationBlocks } from './workflow-timeline-merge';
+import { groupAcpTimelineItems } from '@/lib/acp/timeline-groups';
+import { WorkflowFloatingPanel } from './WorkflowFloatingPanel';
 
 const ArtifactPanelLazy = lazy(() =>
   import('@/components/file-preview/ArtifactPanel').then((m) => ({ default: m.ArtifactPanel })),
@@ -47,14 +59,6 @@ const EMPTY_FILE_ACTIVITY: AcpFileActivityProjection = {
   fileGroups: [],
   uniqueFileCount: 0,
 };
-
-type QuestionDirectoryItem = {
-  itemId: string;
-  anchorId: string;
-  title: string;
-};
-
-const QUESTION_DIRECTORY_RENDER_LIMIT = 300;
 
 type WorkspaceContextCheck = {
   key: string;
@@ -76,52 +80,6 @@ function buildQuestionDirectoryTitle(item: MessageSegmentItem, fallback: string)
 
 function isRecoverableInitialAcpLoadError(message: string | null): boolean {
   return !!message && message.includes("reply was never sent");
-}
-
-function QuestionDirectory({ items }: { items: QuestionDirectoryItem[] }) {
-  const { t } = useTranslation('chat');
-  const navRef = useRef<HTMLElement | null>(null);
-  const visibleItems = items.slice(-QUESTION_DIRECTORY_RENDER_LIMIT);
-  const hiddenCount = items.length - visibleItems.length;
-
-  useEffect(() => {
-    const nav = navRef.current;
-    if (nav) nav.scrollTop = nav.scrollHeight;
-  }, [items.length]);
-
-  return (
-    <aside
-      id="chat-question-directory"
-      data-testid="chat-question-directory"
-      aria-label={t('questionDirectory.title')}
-      className="absolute right-0 top-0 z-30 flex max-h-[min(32rem,calc(100%-1rem))] w-[min(18rem,calc(100%-1rem))] flex-col overflow-hidden rounded-2xl border border-black/10 bg-surface-modal/95 p-3 shadow-xl shadow-black/10 backdrop-blur-xl dark:border-white/10 dark:shadow-black/30"
-    >
-      <h2 className="px-1 pb-2 text-sm font-medium text-foreground">{t('questionDirectory.title')}</h2>
-      <nav
-        ref={navRef}
-        className="min-h-0 flex-1 space-y-1 overflow-y-auto"
-        aria-label={t('questionDirectory.title')}
-      >
-        {visibleItems.map((item) => (
-          <button
-            key={item.itemId}
-            type="button"
-            data-testid={`chat-question-directory-item-${item.itemId}`}
-            title={item.title}
-            onClick={() => document.getElementById(item.anchorId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-foreground/80 transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10"
-          >
-            <span className="block truncate">{item.title}</span>
-          </button>
-        ))}
-      </nav>
-      {hiddenCount > 0 && (
-        <p className="px-1 pt-2 text-xs text-muted-foreground">
-          {t('questionDirectory.moreHint', { count: hiddenCount })}
-        </p>
-      )}
-    </aside>
-  );
 }
 
 function AcpEmptyState() {
@@ -185,6 +143,16 @@ export function Chat() {
   const loadSessions = useChatStore((s) => s.loadSessions);
   const selectAcpSession = useChatStore((s) => s.selectAcpSession);
   const acknowledgeAcpSessionCreated = useChatStore((s) => s.acknowledgeAcpSessionCreated);
+  const setSessionWorkspaceOverride = useChatStore((s) => s.setSessionWorkspaceOverride);
+  const setSessionModelOverride = useChatStore((s) => s.setSessionModelOverride);
+  const routeAndMaybeStartWorkflow = useChatStore((s) => s.routeAndMaybeStartWorkflow);
+  const workflowRoutingSessionKey = useChatStore((s) => s.workflowRoutingSessionKey);
+  const ingestAcpObservedWorkflow = useChatStore((s) => s.ingestAcpObservedWorkflow);
+  const failObservedWorkflow = useChatStore((s) => s.failObservedWorkflow);
+  const healStaleObservedWorkflows = useChatStore((s) => s.healStaleObservedWorkflows);
+  const workflowCards = useChatStore((s) => s.workflowCardsBySession[currentSessionKey]);
+  const getWorkflowSkillByReadPath = useSkillWorkflowStore((s) => s.getWorkflowSkillByReadPath);
+  const workflowSkillsByName = useSkillWorkflowStore((s) => s.byName);
   const setVisibleSession = useSessionAttentionStore((s) => s.setVisibleSession);
   const chatWorkspacePath = useSettingsStore((s) => s.chatWorkspacePath);
   const recentWorkspacePaths = useSettingsStore((s) => s.recentWorkspacePaths ?? []);
@@ -209,11 +177,6 @@ export function Chat() {
   const currentSessionTitle = currentSession
     ? getSessionDisplayTitle(currentSession, sessionLabels)
     : currentSessionKey;
-  const effectiveWorkspace = useMemo(
-    () => resolveEffectiveWorkspace({ session: currentSession, globalWorkspace: chatWorkspacePath }),
-    [chatWorkspacePath, currentSession],
-  );
-  const cwd = effectiveWorkspace.cwd;
   const allWorkspacePaths = useMemo(() => {
     const seen = new Set<string>();
     const paths: string[] = [];
@@ -233,12 +196,6 @@ export function Chat() {
     }
     return paths;
   }, [chatWorkspacePath, recentWorkspacePaths, sessions]);
-  const workspaceLabel = getWorkspaceDisplayLabel(
-    cwd,
-    t('workspace.defaultLabel'),
-    workspaceLabels,
-    allWorkspacePaths,
-  );
   const workspaceOptions = useMemo<ChatWorkspaceOption[]>(() => {
     return allWorkspacePaths.map((normalized) => ({
       path: normalized,
@@ -253,6 +210,24 @@ export function Chat() {
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
     [agents, currentAgentId],
+  );
+  const workspaceOverride = useChatStore((s) => s.workspaceOverrideBySessionKey[currentSessionKey]);
+  const sessionModelOverride = useChatStore((s) => s.sessionModelOverrideBySessionKey[currentSessionKey] ?? null);
+  const effectiveWorkspace = useMemo(
+    () => resolveEffectiveWorkspace({
+      session: currentSession,
+      agentWorkspace: currentAgent?.workspace,
+      globalWorkspace: chatWorkspacePath,
+      explicitWorkspace: workspaceOverride,
+    }),
+    [chatWorkspacePath, currentSession, currentAgent, workspaceOverride],
+  );
+  const cwd = effectiveWorkspace.cwd;
+  const workspaceLabel = getWorkspaceDisplayLabel(
+    cwd,
+    t('workspace.defaultLabel'),
+    workspaceLabels,
+    allWorkspacePaths,
   );
 
   const acpTimeline = useAcpChatSessionStore((s) => s.timeline);
@@ -300,7 +275,7 @@ export function Chat() {
   }, [currentSessionKey, setVisibleSession]);
 
   useEffect(() => {
-    void fetchAgents().catch(() => undefined);
+    void fetchAgents({ reconcile: false }).catch(() => undefined);
   }, [fetchAgents]);
 
   useEffect(() => {
@@ -323,7 +298,11 @@ export function Chat() {
       if (stale) return;
       if (!result.ok || !result.workspaceRoot || !result.executionCwd) {
         setResolvedWorkspaceContext(null);
-        setWorkspaceContextCheck({ key: workspaceContextKey, available: false });
+        // The default managed workspace (~/.openclaw/workspace) is created lazily
+        // — seeded by the gateway once ready, or provisioned by the ACP service on
+        // session load. Its transient absence is not a "moved/deleted" error, so
+        // treat it as available (mirrors use-workspace-availability's exclusion).
+        setWorkspaceContextCheck({ key: workspaceContextKey, available: isDefaultWorkspacePath(cwd) });
         return;
       }
       setResolvedWorkspaceContext({
@@ -336,7 +315,7 @@ export function Chat() {
     }).catch(() => {
       if (stale) return;
       setResolvedWorkspaceContext(null);
-      setWorkspaceContextCheck({ key: workspaceContextKey, available: false });
+      setWorkspaceContextCheck({ key: workspaceContextKey, available: isDefaultWorkspacePath(cwd) });
     });
     return () => {
       stale = true;
@@ -401,7 +380,7 @@ export function Chat() {
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
   const isWindows = platform === 'win32';
-  const composerBusy = acpSending || acpCancelling;
+  const composerBusy = acpSending || acpCancelling || workflowRoutingSessionKey === currentSessionKey;
   const showScrollToLatest = visibleAcpTimeline.itemOrder.length > 0 && !isAtBottom;
   const hasAttemptedAcpPromptForCurrentSession = lastPromptAttemptSessionKey === currentSessionKey;
   const visibleAcpError = !workspaceUnavailable && acpError
@@ -416,9 +395,55 @@ export function Chat() {
         properties: ['openDirectory', 'createDirectory'],
       });
       const selected = result.filePaths[0]?.trim();
-      if (!result.canceled && selected) setChatWorkspacePath(selected);
+      if (!result.canceled && selected) {
+        setSessionWorkspaceOverride(currentSessionKey, selected);
+        setChatWorkspacePath(selected);
+      }
     } catch {
       toast.error(t('composer.workspacePickerFailed'));
+    }
+  };
+  const handleSelectModel = async (modelRef: string | null) => {
+    if (!currentSessionKey || !cwd) return;
+    const sessionKey = currentSessionKey;
+    const previousOverride = sessionModelOverride;
+    // Optimistic — reflected in the picker immediately; this is the only
+    // "source of truth" the UI keeps (in-memory, never persisted). The actual
+    // authority is the `/model` directive landing on the gateway's own
+    // session-store entry for this sessionKey, below.
+    setSessionModelOverride(sessionKey, modelRef);
+    try {
+      const existingSession = sessions.find((session) => session.key === sessionKey);
+      const createIfMissing = !existingSession || !!existingSession.createdLocally;
+      if (
+        createIfMissing
+        || acpActiveSessionKey !== sessionKey
+        || acpWorkspaceRoot !== cwd
+        || acpCwd !== cwd
+      ) {
+        const loaded = await loadAcpSession({
+          sessionKey,
+          workspaceRoot: cwd,
+          cwd,
+          ...(createIfMissing ? { createIfMissing: true } : {}),
+        });
+        if (loaded && createIfMissing) {
+          acknowledgeAcpSessionCreated(sessionKey, cwd);
+        }
+        if (!loaded) throw new Error(t('composer.workspacePickerFailed'));
+      }
+      // A directive-only message ("/model ...") is recognized and applied by
+      // the gateway to this session's own store entry — it is never routed
+      // through the workflow engine and never written to openclaw.json.
+      await sendAcpPrompt({
+        sessionKey,
+        cwd,
+        message: modelRef ? `/model ${modelRef}` : '/model default',
+        silent: true,
+      });
+    } catch (error) {
+      setSessionModelOverride(sessionKey, previousOverride);
+      throw error;
     }
   };
   const fileActivity = useMemo(() => {
@@ -434,7 +459,65 @@ export function Chat() {
       workspaceRoot: resolvedWorkspaceContext.workspaceRoot,
       executionCwd: resolvedWorkspaceContext.executionCwd,
     });
-  }, [acpActiveSessionKey, currentSessionKey, resolvedWorkspaceContext, visibleAcpTimeline, workspaceContextKey]);
+  }, [acpActiveSessionKey, visibleAcpTimeline, currentSessionKey, resolvedWorkspaceContext, workspaceContextKey]);
+
+  // ── Observed-workflow lane (independent, non-ACP) ─────────────────────────
+  // Derive observed-workflow signals from the ACP timeline WITHOUT mutating it,
+  // mirroring the file-activity projection. The signal is fired into the chat
+  // store's observed-workflow actions; a ref dedupes unchanged re-projections so
+  // the idempotent store actions are only invoked on real changes.
+  const observedWorkflowSignal = useMemo(() => {
+    if (acpActiveSessionKey !== currentSessionKey || visibleAcpTimeline.sessionId !== currentSessionKey) return null;
+    // `workflowSkillsByName` is only in deps so the memo recomputes when the
+    // skill cache finishes loading; the resolver reads it via the store method.
+    void workflowSkillsByName;
+    return projectAcpObservedWorkflow({
+      timeline: visibleAcpTimeline,
+      resolveWorkflowSkillByReadPath: (path) => {
+        const hit = getWorkflowSkillByReadPath(path);
+        if (!hit || !hit.workflow) return null;
+        return { name: hit.name, title: hit.title || hit.name };
+      },
+    }).signal;
+  }, [acpActiveSessionKey, visibleAcpTimeline, currentSessionKey, getWorkflowSkillByReadPath, workflowSkillsByName]);
+  const observedAppliedSigRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    if (!observedWorkflowSignal || !currentSessionKey) return;
+    const signature = [
+      observedWorkflowSignal.activationKey,
+      observedWorkflowSignal.skill?.name ?? '',
+      observedWorkflowSignal.hasPlan
+        ? observedWorkflowSignal.todos.map((todo) => `${todo.content}:${todo.status}`).join('|')
+        : '',
+      // Re-run when a live send starts so a prior historical no-op can arm.
+      acpSending ? '1' : '0',
+    ].join('\0');
+    if (observedAppliedSigRef.current[currentSessionKey] === signature) return;
+    observedAppliedSigRef.current[currentSessionKey] = signature;
+    // Historical session-load replay must not arm/create cards (`live: false`).
+    // Only an in-flight ACP send may implicitly arm from Read(SKILL.md).
+    ingestAcpObservedWorkflow(currentSessionKey, observedWorkflowSignal, { live: acpSending });
+  }, [observedWorkflowSignal, currentSessionKey, ingestAcpObservedWorkflow, acpSending]);
+
+  // Converge orphan `running` observed cards after historical load (no live send).
+  // Ingest itself refuses to hydrate them when `!live`; heal writes durable
+  // done/failed + step snapshots so reload shows the correct terminal UI.
+  useEffect(() => {
+    if (!currentSessionKey || acpSending || acpLoading) return;
+    if (acpActiveSessionKey !== currentSessionKey) return;
+    healStaleObservedWorkflows(currentSessionKey, {
+      live: false,
+      signal: observedWorkflowSignal,
+    });
+  }, [
+    currentSessionKey,
+    acpSending,
+    acpLoading,
+    acpActiveSessionKey,
+    observedWorkflowSignal,
+    healStaleObservedWorkflows,
+  ]);
+
   const questionDirectoryItems = useMemo(() => {
     const userItems = visibleAcpTimeline.itemOrder
       .map((itemId) => visibleAcpTimeline.itemsById[itemId])
@@ -447,6 +530,40 @@ export function Chat() {
   }, [t, visibleAcpTimeline]);
   const questionDirectoryVisible = questionDirectoryOpenSessionKey === currentSessionKey
     && questionDirectoryItems.length > 1;
+  // Workflow lane cards for this session, oldest-first. Sourced entirely from the
+  // fork's persisted store (never from the ACP timeline), so rendering them beside
+  // the transcript keeps the lane independent of ACP history.
+  const sortedWorkflowCards = useMemo(
+    () => [...(workflowCards ?? [])].sort((a, b) => a.createdAt - b.createdAt),
+    [workflowCards],
+  );
+  // Interleave the workflow cards into the ACP display groups at render time
+  // (never mutating the ACP timeline store). An empty result means both the ACP
+  // timeline and the workflow lane are empty → show the welcome state.
+  const conversationBlocks = useMemo(
+    () => buildConversationBlocks(groupAcpTimelineItems(visibleAcpTimeline), sortedWorkflowCards),
+    [visibleAcpTimeline, sortedWorkflowCards],
+  );
+  const streamingSegmentIds = useMemo(
+    () => streamingMessageSegmentIds(visibleAcpTimeline, acpSending || acpCancelling),
+    [visibleAcpTimeline, acpSending, acpCancelling],
+  );
+  const timelineWorkspaceRoot = resolvedWorkspaceContext?.key === workspaceContextKey
+    ? resolvedWorkspaceContext.workspaceRoot
+    : undefined;
+
+  // The visible transcript is driven by the singleton ACP store, so during a
+  // session switch there is a window where `currentSessionKey` is already the
+  // new session but `acpTimeline` still belongs to the previous one (the load is
+  // deferred behind the async workspace-context resolution). Mirror the
+  // fileActivity / observedWorkflowSignal guards so we never paint the previous
+  // session's content under the new key: treat a mismatch as loading. The
+  // `acpActiveSessionKey !== null` precondition keeps cold-start / default empty
+  // sessions on the welcome screen instead of a spurious spinner.
+  const acpTimelineMatchesSession =
+    acpActiveSessionKey === currentSessionKey && acpTimeline.sessionId === currentSessionKey;
+  const acpTransitionPending = acpActiveSessionKey !== null && !acpTimelineMatchesSession;
+  const showAcpLoading = acpLoading || acpTransitionPending;
 
   return (
     <div
@@ -480,17 +597,18 @@ export function Chat() {
           <div data-testid="chat-toolbar-actions" className="no-drag relative z-10">
             <ChatToolbar
               questionDirectoryOpen={questionDirectoryVisible}
-              questionDirectoryCount={questionDirectoryItems.length}
+              questionDirectoryItems={questionDirectoryItems}
               onToggleQuestionDirectory={() => setQuestionDirectoryOpenSessionKey((openSessionKey) => (
                 openSessionKey === currentSessionKey ? null : currentSessionKey
               ))}
+              onCloseQuestionDirectory={() => setQuestionDirectoryOpenSessionKey(null)}
               workspaceAvailable={!!cwd}
             />
           </div>
         </div>
 
-        <div className="relative min-h-0 flex-1 overflow-hidden px-4 py-4">
-          <div className="relative mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col">
+        <div className="relative min-h-0 flex-1 overflow-hidden py-4">
+          <div className="mx-auto flex h-full min-h-0 w-full flex-col gap-4 lg:flex-row lg:items-stretch">
             <div data-testid="chat-scroll-column" className="relative min-h-0 min-w-0 flex-1">
               <div ref={scrollRef} className="h-full min-h-0 min-w-0 overflow-y-auto" data-testid="chat-scroll-container">
                 <div ref={contentRef} className="mx-auto max-w-4xl space-y-4">
@@ -502,25 +620,32 @@ export function Chat() {
                     />
                   )}
                   {visibleAcpError && <AcpErrorBanner message={visibleAcpError} onDismiss={clearAcpError} />}
-                  {acpLoading ? (
+                  {showAcpLoading ? (
                     <div className="flex min-h-[40vh] items-center justify-center" data-testid="acp-chat-loading">
                       <LoadingSpinner size="md" />
                     </div>
-                  ) : visibleAcpTimeline.itemOrder.length === 0 ? (
+                  ) : conversationBlocks.length === 0 ? (
                     <AcpEmptyState />
                   ) : (
-                    <AcpTimeline
-                      snapshot={visibleAcpTimeline}
-                      isStreaming={acpSending || acpCancelling}
-                      turnTimingsByUserMessageId={acpTurnTimings}
-                      fileActivity={fileActivity}
-                      workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
-                        ? resolvedWorkspaceContext.workspaceRoot
-                        : undefined}
-                      onPermissionSelect={(requestId, optionId) => {
-                        void respondAcpPermission(requestId, optionId);
-                      }}
-                    />
+                    <div data-testid="acp-chat-timeline" className="flex flex-col gap-4">
+                      {conversationBlocks.map((block) =>
+                        block.kind === 'acp-group' ? (
+                          <AcpTimelineGroup
+                            key={block.key}
+                            group={block.group}
+                            streamingSegmentIds={streamingSegmentIds}
+                            fileActivity={fileActivity}
+                            workspaceRoot={timelineWorkspaceRoot}
+                            timing={block.group.kind !== 'user' && block.group.userMessageId ? acpTurnTimings?.[block.group.userMessageId] : undefined}
+                            onPermissionSelect={(requestId, optionId) => {
+                              void respondAcpPermission(requestId, optionId);
+                            }}
+                          />
+                        ) : (
+                          <WorkflowTurnBlock key={block.key} card={block.card} />
+                        ),
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -539,8 +664,6 @@ export function Chat() {
                 </button>
               )}
             </div>
-
-            {questionDirectoryVisible && <QuestionDirectory items={questionDirectoryItems} />}
           </div>
         </div>
 
@@ -550,8 +673,13 @@ export function Chat() {
             const targetAgent = targetAgentId
               ? agents.find((agent) => agent.id === targetAgentId) ?? null
               : null;
+            // Switching to another agent via @mention always starts a FRESH
+            // conversation for that agent. Reusing the agent's persistent main
+            // session (`agent:<id>:main`) would jump into its prior transcript
+            // and bleed unrelated context ("上下文串用"). A new `session-<ts>`
+            // key is created-on-demand downstream (createIfMissing below).
             const sessionKey = targetAgent
-              ? targetAgent.mainSessionKey || `agent:${targetAgent.id}:main`
+              ? `agent:${targetAgent.id}:session-${Date.now()}`
               : currentSessionKey;
             const existingSession = sessions.find((session) => session.key === sessionKey);
             setLastPromptAttemptSessionKey(sessionKey);
@@ -568,6 +696,19 @@ export function Chat() {
               selectAcpSession(sessionKey, promptCwd);
             }
             void (async () => {
+              // Workflow lane routing (independent, non-ACP): engine workflows are
+              // server-orchestrated, so a routed turn must NOT also send an ACP
+              // prompt. Guarded by `autoWorkflowEnabled` inside the action.
+              // Attachments never auto-route (they go straight to the agent).
+              if (!(attachments && attachments.length)) {
+                const routed = await routeAndMaybeStartWorkflow(text, sessionKey, targetAgentId ?? null);
+                if (routed) {
+                  requestAnimationFrame(() => {
+                    void scrollToBottom({ animation: 'instant', ignoreEscapes: true });
+                  });
+                  return;
+                }
+              }
               if (promptCwd !== cwd) {
                 const promptWorkspace = await hostApi.files.resolveWorkspaceContext({
                   workspaceRoot: promptCwd,
@@ -615,7 +756,13 @@ export function Chat() {
               await sendPromise;
             })();
           }}
-          onStop={() => void cancelAcp()}
+          onStop={() => {
+            // Finalize the independent workflow lane immediately (ACP cancel does
+            // not receive Gateway run.ended). cancelAcp also settles plan/tools
+            // and Main dual-aborts ACP + chat.abort.
+            failObservedWorkflow?.(currentSessionKey, 'aborted');
+            void cancelAcp();
+          }}
           disabled={acpLoading || acpCancelling || !cwd || !workspaceContextAvailable}
           sending={composerBusy}
           imageGenerating={imageGenerationPending}
@@ -623,7 +770,12 @@ export function Chat() {
           workspacePath={cwd}
           workspaceOptions={workspaceOptions}
           workspaceReadOnly={effectiveWorkspace.readOnly}
-          onSelectWorkspace={setChatWorkspacePath}
+          onSelectWorkspace={(path) => {
+            setSessionWorkspaceOverride(currentSessionKey, path);
+            setChatWorkspacePath(path);
+          }}
+          sessionModelOverride={sessionModelOverride}
+          onSelectModel={handleSelectModel}
         />
       </div>
 
@@ -659,6 +811,9 @@ export function Chat() {
           </aside>
         </>
       )}
+
+      {/* Independent workflow lane popup — mounted once, portals itself. */}
+      <WorkflowFloatingPanel />
     </div>
   );
 }

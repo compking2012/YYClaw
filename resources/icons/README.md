@@ -11,8 +11,8 @@ This directory contains the application icons for all supported platforms.
 | `icon.ico` | Windows | Windows ICO format |
 | `icon.png` | All | 512x512 PNG fallback |
 | `16x16.png` - `512x512.png` | Linux | PNG set for Linux |
-| `tray-icon-template.svg` | Source | macOS tray icon template source |
 | `tray-icon-Template.png` | macOS | 22x22 status bar icon (note: "Template" suffix required) |
+| `tray-icon-Template@2x.png` | macOS | 44x44 retina status bar icon |
 
 ## Generating Icons
 
@@ -64,16 +64,15 @@ If you prefer to generate icons manually:
 
 ### macOS Tray Icon
 - **Format**: Single-color (black) on transparent background
-- **Size**: 22x22 pixels (system automatically handles @2x retina)
+- **Size**: 22x22 pixels, with a 44x44 `@2x` retina variant
 - **Naming**: Must end with "Template.png" for automatic template mode
-- **Design**: Simplified monochrome version of main icon (ClawX logo)
-- **Source**: Use `tray-icon-template.svg` as the source
-- **Important**: Must be pure black (#000000) on transparent background - no gradients or colors
+- **Design**: Monochrome silhouette of the main app icon (ClawX lobster)
+- **Source**: Generated automatically from `icon.svg` (alpha channel flattened to pure black)
+- **Important**: macOS template images are tinted by the system (black in light menu bar, white in dark); only the alpha channel matters
 
 ## Updating the Icon
 
 1. Edit `icon.svg` with your vector editor (Figma, Illustrator, Inkscape)
-2. For macOS tray icon, edit `tray-icon-template.svg` (must be single-color black on transparent)
-3. Run `node scripts/generate-icons.mjs`
-4. Verify generated icons look correct
-5. Commit all generated files
+2. Run `node scripts/generate-icons.mjs` — this regenerates all platform icons, including the macOS tray template (`tray-icon-Template.png` / `@2x`) derived from `icon.svg`
+3. Verify generated icons look correct
+4. Commit all generated files

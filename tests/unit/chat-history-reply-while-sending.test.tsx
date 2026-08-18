@@ -47,6 +47,13 @@ const { acpState, agentsState, artifactPanelState, chatState, settingsState } = 
     loadSessions: vi.fn().mockResolvedValue(undefined),
     selectAcpSession: vi.fn(),
     acknowledgeAcpSessionCreated: vi.fn(),
+    routeAndMaybeStartWorkflow: vi.fn(),
+    ingestAcpObservedWorkflow: vi.fn(),
+    failObservedWorkflow: vi.fn(),
+    healStaleObservedWorkflows: vi.fn(),
+    workflowCardsBySession: {},
+    workspaceOverrideBySessionKey: {},
+    sessionModelOverrideBySessionKey: {},
   },
   settingsState: {
     chatWorkspacePath: '/workspace',
@@ -77,8 +84,15 @@ vi.mock('@/stores/settings', () => ({
   useSettingsStore: (selector: (state: typeof settingsState) => unknown) => selector(settingsState),
 }));
 
+vi.mock('@/i18n', () => ({
+  default: {
+    t: (key: string) => key,
+    use: () => ({ init: () => undefined }),
+  },
+}));
+
 vi.mock('react-i18next', () => ({
-  initReactI18next: { type: '3rdParty', init: vi.fn() },
+  initReactI18next: { type: '3rdParty', init: () => undefined },
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown> | string) => {
       if (typeof params === 'string') return params;
@@ -99,6 +113,15 @@ vi.mock('@/hooks/use-stick-to-bottom-instant', () => ({
 
 vi.mock('@/hooks/use-min-loading', () => ({
   useMinLoading: () => false,
+}));
+
+// While `sending` is true the assistant turn marks its trailing markdown as
+// streaming, which starts the typewriter at 0 chars. This test asserts that
+// already-buffered reply text remains visible — bypass the animation.
+vi.mock('@/hooks/use-smooth-stream-text', () => ({
+  useSmoothStreamText: (fullText: string) => fullText,
+  advanceRevealed: ({ revealed }: { revealed: number }) => revealed,
+  resolveRevealedOnTextChange: ({ nextText }: { nextText: string }) => nextText.length,
 }));
 
 vi.mock('@/pages/Chat/ChatToolbar', () => ({ ChatToolbar: () => null }));

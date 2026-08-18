@@ -9,6 +9,14 @@
   !include "nsProcess.nsh"
 !endif
 
+; electron-builder skips getProcessInfo.nsh when customCheckAppRunning is
+; defined, but its generated uninstaller can still expand _CHECK_APP_RUNNING.
+; Include it explicitly so ${GetProcessInfo} is always available.
+!ifndef GetProcessInfo
+  !include "getProcessInfo.nsh"
+  Var /GLOBAL pid
+!endif
+
 Var /GLOBAL clawxRollbackDir
 
 !macro customHeader
@@ -76,10 +84,17 @@ FunctionEnd
 
 
 !macro customCheckAppRunning
+  ; Pre-emptively remove old shortcuts to prevent the Windows "Missing Shortcut"
+  ; dialog during upgrades.  The built-in NSIS uninstaller deletes the exe
+  ; *before* removing shortcuts; Windows Shell link tracking can detect the
+  ; broken target in that brief window and pop a resolver dialog.
+  Delete "$DESKTOP\${PRODUCT_NAME}.lnk"
+  Delete "$SMPROGRAMS\${PRODUCT_NAME}.lnk"
+
   ; Make stage logs visible on assisted installers (defaults to hidden).
   SetDetailsPrint both
   DetailPrint "Preparing installation..."
-  DetailPrint "Extracting ClawX runtime files. This can take a few minutes on slower disks or while antivirus scanning is active."
+  DetailPrint "Extracting YYClaw runtime files. This can take a few minutes on slower disks or while antivirus scanning is active."
 
   ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
 
@@ -284,9 +299,27 @@ FunctionEnd
       Pop $1
   _openclaw_skills_clean:
 
-  ; Opposite-hive registry cleanup is intentionally done in customInstall after
-  ; successful extraction, so a failed update can still roll back to the old app
-  ; with its existing uninstall entries intact.
+  ; Pre-emptively remove the old uninstall registry entry so that
+  ; electron-builder's uninstallOldVersion skips the old uninstaller entirely.
+  ;
+  ; Why: uninstallOldVersion has a hardcoded 5-retry loop that runs the old
+  ; uninstaller repeatedly.  The old uninstaller's atomicRMDir fails on locked
+  ; files (antivirus, indexing) causing a blocking "ClawX 无法关闭" dialog.
+  ; Deleting UninstallString makes uninstallOldVersion return immediately.
+  ; The new installer will overwrite / extract all files on top of the old dir.
+  ; registryAddInstallInfo will write the correct new entries afterwards.
+  ; Clean both SHELL_CONTEXT and HKCU to cover cross-hive upgrades
+  ; (e.g. old install was per-user, new install is per-machine or vice versa).
+  DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString
+  DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString
+  DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY}" UninstallString
+  DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString
+  !ifdef UNINSTALL_REGISTRY_KEY_2
+    DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY_2}" UninstallString
+    DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY_2}" QuietUninstallString
+    DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY_2}" UninstallString
+    DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY_2}" QuietUninstallString
+  !endif
   !endif
 !macroend
 
@@ -388,7 +421,26 @@ FunctionEnd
   DetailPrint "Warning: PowerShell PATH update exited with code $0."
 
   _ci_done:
-  DetailPrint "Installation steps complete."
+  ; electron-builder's addDesktopLink/addStartMenuLink can skip creating shortcuts on
+  ; upgrade when KeepShortcuts is true but the .lnk files were removed earlier in
+  ; customCheckAppRunning. Always recreate here (same paths as setLinkVars) so upgrades
+  ; restore desktop and Start Menu entries when enabled in electron-builder.yml.
+  !ifndef DO_NOT_CREATE_START_MENU_SHORTCUT
+    !ifdef MENU_FILENAME
+      CreateDirectory "$SMPROGRAMS\${MENU_FILENAME}"
+    !endif
+    CreateShortCut "$newStartMenuLink" "$appExe" "" "$appExe" 0 "" "" "${APP_DESCRIPTION}"
+    ClearErrors
+    WinShell::SetLnkAUMI "$newStartMenuLink" "${APP_ID}"
+  !endif
+
+  !ifndef DO_NOT_CREATE_DESKTOP_SHORTCUT
+    CreateShortCut "$newDesktopLink" "$appExe" "" "$appExe" 0 "" "" "${APP_DESCRIPTION}"
+    ClearErrors
+    WinShell::SetLnkAUMI "$newDesktopLink" "${APP_ID}"
+    System::Call 'Shell32::SHChangeNotify(i 0x8000000, i 0, i 0, i 0)'
+  !endif
+
 !macroend
 
 !macro customUnInstall
@@ -430,7 +482,6 @@ FunctionEnd
     ${endIf}
     ${nsProcess::Unload}
 
-    ; Wait for processes to fully exit and release file handles
     Sleep 2000
 
     ; --- Always remove current user's AppData first ---
@@ -440,7 +491,6 @@ FunctionEnd
 
     ; --- Retry: if directories still exist (locked files), wait and try again ---
 
-    ; Check AppData\Local\clawx
     IfFileExists "$LOCALAPPDATA\clawx\*.*" 0 _cu_localDone
       Sleep 3000
       RMDir /r "$LOCALAPPDATA\clawx"
@@ -450,7 +500,6 @@ FunctionEnd
         Pop $1
     _cu_localDone:
 
-    ; Check AppData\Roaming\clawx
     IfFileExists "$APPDATA\clawx\*.*" 0 _cu_roamingDone
       Sleep 3000
       RMDir /r "$APPDATA\clawx"
@@ -460,7 +509,6 @@ FunctionEnd
         Pop $1
     _cu_roamingDone:
 
-    ; --- Final check: warn user if any directories could not be removed ---
     StrCpy $R3 ""
     IfFileExists "$LOCALAPPDATA\clawx\*.*" 0 +2
       StrCpy $R3 "$R3$\r$\n  • $LOCALAPPDATA\clawx"

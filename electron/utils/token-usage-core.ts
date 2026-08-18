@@ -14,8 +14,25 @@ export interface TokenUsageHistoryEntry {
   costUsd?: number;
 }
 
+/**
+ * Compaction-checkpoint snapshot transcripts: `<sessionId>.checkpoint.<uuid>.jsonl`.
+ * OpenClaw copies the entire pre-compaction transcript into one of these before
+ * every compaction (keeping up to 25 per session for rollback). They are NOT
+ * distinct sessions — counting them double-counts usage (a single busy session
+ * can leave hundreds of ~38MB copies) and, at GB scale, both freezes the main
+ * process on full reads and inflates the aggregated usage response past V8's
+ * ~512MB max string length, crashing JSON.stringify in the usage route.
+ * Mirrors OpenClaw's `isCompactionCheckpointTranscriptFileName`.
+ */
+const COMPACTION_CHECKPOINT_TRANSCRIPT_RE =
+  /\.checkpoint\.[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jsonl$/i;
+
 export function extractSessionIdFromTranscriptFileName(fileName: string): string | undefined {
   if (!fileName.endsWith('.jsonl') && !fileName.includes('.jsonl.reset.')) return undefined;
+  // Exclude snapshot/derived artifacts that are not usage-counted sessions,
+  // matching OpenClaw's `isUsageCountedSessionTranscriptFileName` semantics.
+  if (COMPACTION_CHECKPOINT_TRANSCRIPT_RE.test(fileName)) return undefined;
+  if (fileName.endsWith('.trajectory.jsonl')) return undefined;
   return fileName
     .replace(/\.reset\..+$/, '')
     .replace(/\.deleted\.jsonl$/, '')
@@ -177,6 +194,11 @@ function parseUsageFromShape(usage: unknown): ParsedUsageTokens | undefined {
     };
   }
 
+  // Invariant (verified against real OpenClaw transcripts): the runtime normalizes
+  // provider usage before writing the transcript so that `input` is the UNCACHED
+  // input and cacheRead/cacheWrite are counted separately. Therefore the fallback
+  // total is input + output + cacheRead + cacheWrite for every provider — cache
+  // tokens are never double-counted inside `input`. Locked by token-usage.test.ts.
   const totalTokens = explicitTotalTokens ?? (
     (inputTokens ?? 0)
       + (outputTokens ?? 0)

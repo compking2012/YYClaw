@@ -4,6 +4,7 @@
  */
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   Dialog,
   DialogContent,
@@ -21,6 +22,10 @@ interface ConfirmDialogProps {
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
   onError?: (error: unknown) => void;
+  /** Extra classes for the dialog content (e.g. to raise z-index above side sheets). */
+  className?: string;
+  /** Extra classes for the dialog overlay (e.g. to raise z-index above side sheets). */
+  overlayClassName?: string;
 }
 
 interface ConfirmDialogCopy {
@@ -49,6 +54,8 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   onError,
+  className,
+  overlayClassName,
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const [confirming, setConfirming] = useState(false);
@@ -98,7 +105,8 @@ export function ConfirmDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="w-[calc(100%-2rem)] max-w-md rounded-lg border bg-surface-modal p-6 shadow-lg"
+        className={cn('w-[calc(100%-2rem)] max-w-md rounded-lg border bg-background p-6 shadow-lg', className)}
+        overlayClassName={overlayClassName}
         onEscapeKeyDown={(event) => {
           if (confirming) {
             event.preventDefault();

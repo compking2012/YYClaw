@@ -22,4 +22,19 @@ describe('extractSessionIdFromTranscriptFileName', () => {
     expect(extractSessionIdFromTranscriptFileName('sessions.json')).toBeUndefined();
     expect(extractSessionIdFromTranscriptFileName('abc-123.log')).toBeUndefined();
   });
+
+  it('excludes compaction-checkpoint snapshot transcripts', () => {
+    // Full pre-compaction copies — counting them double-counts usage and bloats
+    // the aggregated response past JSON.stringify's limit at GB scale.
+    expect(
+      extractSessionIdFromTranscriptFileName(
+        '61415246-2385-4674-b8d4-63b73623a4e4.checkpoint.5eab740f-c758-4f23-addd-141521e3efd7.jsonl',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('excludes trajectory artifacts but keeps real sessions', () => {
+    expect(extractSessionIdFromTranscriptFileName('abc-123.trajectory.jsonl')).toBeUndefined();
+    expect(extractSessionIdFromTranscriptFileName('abc-123.jsonl')).toBe('abc-123');
+  });
 });

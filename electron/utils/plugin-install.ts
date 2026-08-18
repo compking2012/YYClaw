@@ -2,13 +2,16 @@
  * Shared OpenClaw Plugin Install Utilities
  *
  * Provides version-aware install/upgrade logic for bundled OpenClaw plugins
- * (DingTalk, WeCom, Feishu, WeChat, Discord, QQBot, WhatsApp).  Used both at app startup (to auto-upgrade
+ * (DingTalk, WeCom, Feishu, WeChat).  Used both at app startup (to auto-upgrade
  * stale plugins) and when a user configures a channel.
+ *
+ * Note: QQBot was moved to a built-in channel in OpenClaw 3.31 and is no longer
+ * managed as a plugin.
  */
 import { app } from 'electron';
 import path from 'node:path';
-import { existsSync, cpSync, copyFileSync, statSync, lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync } from 'node:fs';
-import { readdir, stat, copyFile, mkdir } from 'node:fs/promises';
+import { existsSync, cpSync, copyFileSync, lstatSync, mkdirSync, readFileSync, writeFileSync, readdirSync, readlinkSync, realpathSync, symlinkSync } from 'node:fs';
+import { readdir, lstat, copyFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { logger } from './logger';
@@ -44,6 +47,14 @@ function fsPath(filePath: string): string {
  * Node.js `cpSync` / `cp` crash on Windows when paths contain non-ASCII
  * characters such as Chinese (nodejs/node#54476).  On Windows we fall back
  * to a manual recursive walk using `copyFileSync` which is unaffected.
+ *
+ * The manual walkers deliberately skip symlinks and Windows junctions instead of
+ * dereferencing them: a plugin mirror can hold an `openclaw` peer junction that
+ * points at the whole bundled runtime (see `repairPluginOpenClawPeerLink`), and
+ * following it would clone thousands of files into ~/.openclaw/extensions.  The
+ * peer link is re-created after every copy anyway.  The POSIX fast path keeps
+ * `dereference: true` because dev-mode sources live in a pnpm store that is
+ * symlinks all the way down.
  */
 export function cpSyncSafe(src: string, dest: string): void {
   if (process.platform !== 'win32') {
@@ -60,9 +71,10 @@ function _copyDirSyncRecursive(src: string, dest: string): void {
   for (const entry of entries) {
     const srcChild = join(src, entry.name);
     const destChild = join(dest, entry.name);
-    // Dereference symlinks: use statSync (follows links) instead of lstatSync
-    const info = statSync(srcChild);
-    if (info.isDirectory()) {
+    const info = lstatSync(srcChild);
+    if (info.isSymbolicLink()) {
+      logger.debug(`[plugin] Skipping link while copying: ${srcChild}`);
+    } else if (info.isDirectory()) {
       _copyDirSyncRecursive(srcChild, destChild);
     } else {
       copyFileSync(srcChild, destChild);
@@ -89,8 +101,10 @@ async function _copyDirAsyncRecursive(src: string, dest: string): Promise<void> 
   for (const entry of entries) {
     const srcChild = join(src, entry.name);
     const destChild = join(dest, entry.name);
-    const info = await stat(srcChild);
-    if (info.isDirectory()) {
+    const info = await lstat(srcChild);
+    if (info.isSymbolicLink()) {
+      logger.debug(`[plugin] Skipping link while copying: ${srcChild}`);
+    } else if (info.isDirectory()) {
       await _copyDirAsyncRecursive(srcChild, destChild);
     } else {
       await copyFile(srcChild, destChild);
@@ -257,12 +271,10 @@ function patchPluginEntryIds(targetDir: string): void {
 const PLUGIN_NPM_NAMES: Record<string, string> = {
   dingtalk: '@soimy/dingtalk',
   wecom: '@wecom/wecom-openclaw-plugin',
-  'feishu-openclaw-plugin': '@larksuite/openclaw-lark',
-  discord: '@openclaw/discord',
-  qqbot: '@openclaw/qqbot',
-  whatsapp: '@openclaw/whatsapp',
+  'openclaw-lark': '@larksuite/openclaw-lark',
 
   'openclaw-weixin': '@tencent-weixin/openclaw-weixin',
+  tokenjuice: '@openclaw/tokenjuice',
 };
 
 /**
@@ -280,7 +292,7 @@ type TrustedOfficialExtensionPlugin = {
   legacyPluginIds?: string[];
 };
 
-const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensionPlugin> = {
+export const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensionPlugin> = {
   dingtalk: { npmName: '@soimy/dingtalk' },
   // WeCom intentionally runs under ClawX's legacy-compatible `wecom` id even
   // though the upstream package manifest still declares
@@ -294,10 +306,11 @@ const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensio
   // @larksuite/openclaw-lark 2026.7.9 declares ./dist/index.js as `main`, but
   // publishes its runtime entry as ./index.js. OpenClaw 2026.7.1 rejects old
   // managed npm records during its post-core smoke check. Make ClawX's complete
-  // mirror the canonical path-owned payload instead.
-  'feishu-openclaw-plugin': {
+  // mirror the canonical path-owned payload instead. The mirror dir and config
+  // id are both `openclaw-lark`; `feishu-openclaw-plugin` / `feishu` are legacy
+  // ids kept only so stale records/config from older installs get cleaned up.
+  'openclaw-lark': {
     npmName: '@larksuite/openclaw-lark',
-    pluginId: 'openclaw-lark',
     recordSource: 'path',
     legacyPluginIds: ['feishu-openclaw-plugin', 'feishu'],
   },
@@ -305,8 +318,31 @@ const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensio
   discord: { npmName: '@openclaw/discord' },
   qqbot: { npmName: '@openclaw/qqbot' },
   'openclaw-weixin': { npmName: '@tencent-weixin/openclaw-weixin' },
+  // Both ClawX image relays are ClawX-authored mirrors copied out of
+  // resources/openclaw-plugins/, never npm packages. They must stay path-owned
+  // so OpenClaw's startup migration does not try to replace them with a
+  // (nonexistent) npm payload. Every id in `CHANNEL_PLUGIN_MAP`
+  // (electron/gateway/config-sync.ts) needs an entry here — without one
+  // `buildTrustedOfficialPluginInstallRecord` returns null, so no SQLite
+  // install record is written and `repairPluginOpenClawPeerLink` never runs.
   'clawx-openai-image': {
     npmName: 'clawx-openai-image-plugin',
+    recordSource: 'path',
+  },
+  'clawx-gemini-image': {
+    npmName: 'clawx-gemini-image-plugin',
+    recordSource: 'path',
+  },
+  // tokenjuice is not a channel plugin: it is the exec/bash output compactor
+  // behind ClawX's "prompt optimization" toggle. openclaw 2026.7.1 dropped it
+  // from its own package (`"!dist/extensions/tokenjuice/**"`) and turned it into
+  // an external official plugin whose catalog entry prefers npm, so the kernel's
+  // startup migration tries `npm view @openclaw/tokenjuice` and then refuses to
+  // report the Gateway ready when npm is missing. ClawX ships a complete mirror
+  // instead, so keep it path-owned: an `npm` record would invite that same
+  // migration to "repair" the mirror through a package manager we do not ship.
+  tokenjuice: {
+    npmName: '@openclaw/tokenjuice',
     recordSource: 'path',
   },
 };
@@ -421,28 +457,80 @@ function resolveSymlinkTarget(linkPath: string, target: string): string {
   return path.isAbsolute(target) ? target : path.resolve(path.dirname(linkPath), target);
 }
 
-function openClawPeerLinkPointsTo(linkPath: string, openclawDir: string): boolean {
+/**
+ * Normalize a raw link target for comparison.  Windows junctions report their
+ * target through the NT namespace (`\??\C:\...`) and usually carry a trailing
+ * separator, neither of which survives a naive string compare.
+ */
+function normalizeLinkTarget(target: string): string {
+  const withoutPrefix = target
+    .replace(/^\\\?\?\\/, '')
+    .replace(/^\\\\\?\\UNC\\/i, '\\\\')
+    .replace(/^\\\\\?\\/i, '');
+  const trimmed = withoutPrefix.replace(/[\\/]+$/, '');
+  return process.platform === 'win32' ? trimmed.toLowerCase() : trimmed;
+}
+
+/**
+ * Whether `linkPath` already points at the OpenClaw runtime.
+ *
+ * `readlink` is authoritative and cheap; `realpath` is only a fallback because it
+ * fails on some Windows junctions (which used to make the post-create audit
+ * report a false negative on every single launch, so the link was torn down and
+ * rebuilt each time).
+ *
+ * The raw target is compared two ways because each covers a case the other
+ * misses: NT-namespace normalization handles Windows junctions, while resolving
+ * the target against the link's own directory handles relative symlinks.
+ */
+function peerLinkPointsAtRuntime(linkPath: string, openclawDir: string): boolean {
   try {
-    const stat = lstatSync(fsPath(linkPath));
-    if (stat.isSymbolicLink()) {
-      const target = readlinkSync(fsPath(linkPath));
-      const resolvedTarget = resolveSymlinkTarget(linkPath, target);
-      return canonicalComparablePath(resolvedTarget) === canonicalComparablePath(openclawDir);
+    const rawTarget = readlinkSync(fsPath(linkPath));
+    if (normalizeLinkTarget(rawTarget) === normalizeLinkTarget(openclawDir)) {
+      return true;
     }
-    if (stat.isDirectory()) {
-      try {
-        const packageJson = JSON.parse(readFileSync(fsPath(join(linkPath, 'package.json')), 'utf-8')) as { name?: unknown };
-        if (packageJson.name === 'openclaw') {
-          return canonicalComparablePath(linkPath) === canonicalComparablePath(openclawDir);
-        }
-      } catch {
-        return false;
-      }
+    const resolvedTarget = resolveSymlinkTarget(linkPath, rawTarget);
+    if (canonicalComparablePath(resolvedTarget) === canonicalComparablePath(openclawDir)) {
+      return true;
     }
   } catch {
-    return false;
+    // Not a link, or unreadable — fall back to the realpath comparison.
   }
-  return false;
+  return canonicalComparablePath(linkPath) === canonicalComparablePath(openclawDir);
+}
+
+/**
+ * Drop the `openclaw` peer link from a plugin mirror without following it.
+ *
+ * Call this before deleting a mirror directory: it keeps the destructive work
+ * away from the link even if the caller's removal helper is later changed.
+ */
+export function unlinkPluginOpenClawPeerLink(targetDir: string): void {
+  const linkPath = join(targetDir, 'node_modules', 'openclaw');
+  let stats;
+  try {
+    stats = lstatSync(fsPath(linkPath));
+  } catch {
+    return;
+  }
+  if (!stats.isSymbolicLink() && !peerLinkPointsAtRuntime(linkPath, getOpenClawResolvedDir())) {
+    // A real, self-contained `openclaw` directory — leave it to the tree walker.
+    return;
+  }
+  safeRmSync(fsPath(linkPath));
+}
+
+/**
+ * Delete a materialized plugin mirror under ~/.openclaw/extensions/.
+ *
+ * Always use this instead of `rmSync(dir, { recursive: true })`: the mirror can
+ * contain an `openclaw` peer junction pointing at the bundled runtime, and the
+ * plain recursive remove follows that junction on Windows and deletes the
+ * runtime itself.
+ */
+export function removePluginMirrorDir(targetDir: string): void {
+  unlinkPluginOpenClawPeerLink(targetDir);
+  safeRmSync(fsPath(targetDir));
 }
 
 /**
@@ -486,7 +574,7 @@ export function repairPluginOpenClawPeerLink(
       return false;
     }
 
-    if (openClawPeerLinkPointsTo(linkPath, openclawDir)) {
+    if (peerLinkPointsAtRuntime(linkPath, openclawDir)) {
       return true;
     }
 
@@ -498,7 +586,7 @@ export function repairPluginOpenClawPeerLink(
     }
     if (existing) {
       if (existing.isSymbolicLink()) {
-        unlinkSync(fsPath(linkPath));
+        safeRmSync(fsPath(linkPath));
       } else if (existing.isDirectory()) {
         let existingPackageName: unknown;
         try {
@@ -519,9 +607,11 @@ export function repairPluginOpenClawPeerLink(
       }
     }
 
+    // Windows junctions must be created from a fully-resolved absolute target;
+    // a relative one silently produces a link that resolves nowhere.
     const junctionTarget = path.resolve(openclawDir);
     symlinkSync(fsPath(junctionTarget), fsPath(linkPath), 'junction');
-    if (!openClawPeerLinkPointsTo(linkPath, openclawDir)) {
+    if (!peerLinkPointsAtRuntime(linkPath, openclawDir)) {
       logger.warn(`[plugin] OpenClaw peer link audit failed after creating ${linkPath}`);
       return false;
     }
@@ -686,7 +776,7 @@ export function copyPluginFromNodeModules(npmPkgPath: string, targetDir: string,
   }
 
   // 1. Copy plugin package itself
-  safeRmSync(fsPath(targetDir));
+  removePluginMirrorDir(targetDir);
   mkdirSync(fsPath(targetDir), { recursive: true });
   cpSyncSafe(realPath, targetDir);
 
@@ -795,7 +885,7 @@ export async function ensurePluginInstalled(
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         mkdirSync(fsPath(extensionsRoot), { recursive: true });
-        safeRmSync(fsPath(targetDir));
+        removePluginMirrorDir(targetDir);
         cpSyncSafe(sourceDir, targetDir);
         if (!existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
           return { installed: false, warning: `Failed to install ${pluginLabel} plugin mirror (manifest missing).` };
@@ -809,7 +899,7 @@ export async function ensurePluginInstalled(
         attempts.push({ attempt, ...diagnostic });
         if (attempt < maxAttempts) {
           try {
-            safeRmSync(fsPath(targetDir));
+            removePluginMirrorDir(targetDir);
           } catch {
             // Ignore cleanup failures before retry.
           }
@@ -912,8 +1002,8 @@ export function ensureWeComPluginInstalled(): Promise<PluginInstallResult> {
 
 export function ensureFeishuPluginInstalled(): Promise<PluginInstallResult> {
   return ensurePluginInstalled(
-    'feishu-openclaw-plugin',
-    buildCandidateSources('feishu-openclaw-plugin'),
+    'openclaw-lark',
+    buildCandidateSources('openclaw-lark'),
     'Feishu',
   );
 }
@@ -942,6 +1032,14 @@ export function ensureClawXOpenAiImagePluginInstalled(): Promise<PluginInstallRe
   );
 }
 
+export function ensureClawXGeminiImagePluginInstalled(): Promise<PluginInstallResult> {
+  return ensurePluginInstalled(
+    'clawx-gemini-image',
+    buildCandidateSources('clawx-gemini-image'),
+    'ClawX Gemini Image',
+  );
+}
+
 // ── Bulk startup installer ───────────────────────────────────────────────────
 
 /**
@@ -957,6 +1055,7 @@ const ALL_BUNDLED_PLUGINS = [
   { fn: ensureQQBotPluginInstalled, label: 'QQBot' },
   { fn: ensureWhatsAppPluginInstalled, label: 'WhatsApp' },
   { fn: ensureClawXOpenAiImagePluginInstalled, label: 'ClawX OpenAI Image' },
+  { fn: ensureClawXGeminiImagePluginInstalled, label: 'ClawX Gemini Image' },
 ] as const;
 
 /**

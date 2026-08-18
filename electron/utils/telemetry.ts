@@ -46,6 +46,10 @@ function isIgnorablePostHogShutdownError(error: unknown): boolean {
  */
 export async function initTelemetry(): Promise<void> {
     try {
+        // [修改] 强制跳过初始化过程，即使开关打开也暂时不上传数据
+        logger.info('Telemetry upload is temporarily disabled by developer.');
+        return;
+
         const telemetryEnabled = await getSetting('telemetryEnabled');
         if (!telemetryEnabled) {
             logger.info('Telemetry is disabled in settings');
@@ -68,7 +72,7 @@ export async function initTelemetry(): Promise<void> {
         // Check if this is a new installation
         const hasReportedInstall = await getSetting('hasReportedInstall');
         if (!hasReportedInstall) {
-            posthogClient.capture({
+            posthogClient?.capture({
                 distinctId,
                 event: 'app_installed',
                 properties,
@@ -78,7 +82,7 @@ export async function initTelemetry(): Promise<void> {
         }
 
         // Always report app opened
-        posthogClient.capture({
+        posthogClient?.capture({
             distinctId,
             event: 'app_opened',
             properties,
@@ -95,12 +99,15 @@ export function trackMetric(event: string, properties: Record<string, unknown> =
 }
 
 export function captureTelemetryEvent(event: string, properties: Record<string, unknown> = {}): void {
+    // [修改] 强制短路，不处理任何遥测网络上传
+    return;
+
     if (!posthogClient || !distinctId) {
         return;
     }
 
     try {
-        posthogClient.capture({
+        posthogClient?.capture({
             distinctId,
             event,
             properties: {

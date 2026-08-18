@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger';
+import { adminSyncLagLog } from '../services/admin-console/remote-sync/admin-sync-lag-log';
 import {
   getDeferredRestartAction,
   shouldDeferRestart,
@@ -95,6 +96,7 @@ export class GatewayRestartController {
     logger.debug(`Gateway restart debounced (will fire in ${delayMs}ms)`);
     this.restartDebounceTimer = setTimeout(() => {
       this.restartDebounceTimer = null;
+      adminSyncLagLog('gateway_restart_debounce_fire', { delayMs });
       executeRestart();
     }, delayMs);
   }

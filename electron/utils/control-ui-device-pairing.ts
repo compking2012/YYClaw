@@ -42,7 +42,11 @@ export type DevicePairingList = {
 
 export type GatewayPairingRpcClient = {
   isConnected: () => boolean;
-  getStatus?: () => { port?: number };
+  getStatus?: () => {
+    port?: number;
+    state?: string;
+    gatewayReady?: boolean;
+  };
   rpc: <T>(method: string, params?: unknown, timeoutMs?: number) => Promise<T>;
 };
 

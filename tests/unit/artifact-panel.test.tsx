@@ -36,6 +36,7 @@ vi.mock('react-i18next', () => ({
       return labels[key] ?? '';
     },
   }),
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
 }));
 
 const { filePreviewBodyProps, workspaceBrowserProps } = vi.hoisted(() => ({

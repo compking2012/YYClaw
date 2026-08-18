@@ -1,0 +1,3801 @@
+[
+  {
+    "id": "glm52s",
+    "name": "公司私有化部署GLM-5.2模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "GLM",
+    "modelType": [
+      "text"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "GLM52"
+    ],
+    "models": {
+      "GLM52": {
+        "pricing": {
+          "inputPerM": 0.6,
+          "outputPerM": 2.2,
+          "currency": "USD"
+        },
+        "contextWindow": 200000,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 70,
+          "ttftMs": 600
+        },
+        "strengths": {
+          "coding": 0.85,
+          "math": 0.8,
+          "reasoning": 0.88,
+          "longContext": 0.8,
+          "vision": 0.4,
+          "multilingual": 0.9,
+          "creative": 0.7,
+          "toolUse": 0.82,
+          "agentic": 0.85,
+          "instructionFollowing": 0.85
+        },
+        "toolUseReliability": 0.82,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 82
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "private"
+      }
+    },
+    "modelIdPlaceholder": [
+      "GLM52"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true
+  },
+  {
+    "id": "minimaxm25s",
+    "name": "公司私有化部署MiniMax-M2.5模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "MiniMax",
+    "modelType": [
+      "text"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "minimax-m2.5"
+    ],
+    "modelIdPlaceholder": [
+      "minimax-m2.5"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "minimax-m2.5": {
+        "pricing": {
+          "inputPerM": 0.2,
+          "outputPerM": 0.8,
+          "currency": "USD"
+        },
+        "contextWindow": 245760,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 130,
+          "ttftMs": 380
+        },
+        "strengths": {
+          "coding": 0.64,
+          "math": 0.64,
+          "reasoning": 0.7,
+          "longContext": 0.8,
+          "vision": 0.4,
+          "multilingual": 0.84,
+          "creative": 0.72,
+          "toolUse": 0.68,
+          "agentic": 0.68,
+          "instructionFollowing": 0.78
+        },
+        "toolUseReliability": 0.68,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 68
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "private"
+      }
+    }
+  },
+  {
+    "id": "qwen3coders",
+    "name": "公司私有化部署Qwen3-Coder模型",
+    "icon": "",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "Qwen3Coder",
+    "modelType": [
+      "text"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "Qwen3-Coder-Next-FP8"
+    ],
+    "models": {
+      "Qwen3-Coder-Next-FP8": {
+        "pricing": {
+          "inputPerM": 0.2,
+          "outputPerM": 0.8,
+          "currency": "USD"
+        },
+        "contextWindow": 262144,
+        "maxOutputTokens": 65536,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 120,
+          "ttftMs": 400
+        },
+        "strengths": {
+          "coding": 0.92,
+          "math": 0.72,
+          "reasoning": 0.7,
+          "longContext": 0.85,
+          "vision": 0.4,
+          "multilingual": 0.7,
+          "creative": 0.5,
+          "toolUse": 0.88,
+          "agentic": 0.86,
+          "instructionFollowing": 0.8
+        },
+        "toolUseReliability": 0.88,
+        "reasoningSupport": false,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 74
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "private"
+      }
+    },
+    "modelIdPlaceholder": [
+      "Qwen3-Coder-Next-FP8"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true
+  },
+  {
+    "id": "qwen3vls",
+    "name": "公司私有化部署Qwen3-VL模型",
+    "icon": "",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "Qwen3VL",
+    "modelType": [
+      "image"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "Qwen3-VL-30B-A3B-Thinking-FP8"
+    ],
+    "models": {
+      "Qwen3-VL-30B-A3B-Thinking-FP8": {
+        "pricing": {
+          "inputPerM": 0.35,
+          "outputPerM": 1.2,
+          "currency": "USD"
+        },
+        "contextWindow": 131072,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 60,
+          "ttftMs": 700
+        },
+        "strengths": {
+          "coding": 0.55,
+          "math": 0.62,
+          "reasoning": 0.72,
+          "longContext": 0.7,
+          "vision": 0.9,
+          "multilingual": 0.75,
+          "creative": 0.6,
+          "toolUse": 0.6,
+          "agentic": 0.58,
+          "instructionFollowing": 0.75
+        },
+        "toolUseReliability": 0.6,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 70
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "private"
+      }
+    },
+    "modelIdPlaceholder": [
+      "Qwen3-VL-30B-A3B-Thinking-FP8"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true
+  },
+  {
+    "id": "glm52",
+    "name": "国内GLM-5.2模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "GLM",
+    "modelType": [
+      "text"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "glm-5.2"
+    ],
+    "modelIdPlaceholder": [
+      "glm-5.2"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "glm-5.2": {
+        "pricing": {
+          "inputPerM": 0.6,
+          "outputPerM": 2.2,
+          "currency": "USD"
+        },
+        "contextWindow": 200000,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 70,
+          "ttftMs": 600
+        },
+        "strengths": {
+          "coding": 0.85,
+          "math": 0.8,
+          "reasoning": 0.88,
+          "longContext": 0.8,
+          "vision": 0.4,
+          "multilingual": 0.9,
+          "creative": 0.7,
+          "toolUse": 0.82,
+          "agentic": 0.85,
+          "instructionFollowing": 0.85
+        },
+        "toolUseReliability": 0.82,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 82
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "glm51",
+    "name": "国内GLM-5.1模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "GLM",
+    "modelType": [
+      "text"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "glm-5.1"
+    ],
+    "modelIdPlaceholder": [
+      "glm-5.1"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "glm-5.1": {
+        "pricing": {
+          "inputPerM": 0.4,
+          "outputPerM": 1.5,
+          "currency": "USD"
+        },
+        "contextWindow": 200000,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 80,
+          "ttftMs": 550
+        },
+        "strengths": {
+          "coding": 0.8,
+          "math": 0.75,
+          "reasoning": 0.82,
+          "longContext": 0.78,
+          "vision": 0.4,
+          "multilingual": 0.88,
+          "creative": 0.68,
+          "toolUse": 0.78,
+          "agentic": 0.8,
+          "instructionFollowing": 0.82
+        },
+        "toolUseReliability": 0.78,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 76
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "minimaxm3",
+    "name": "国内MiniMax-M3模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "MiniMax",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "minimax-m3",
+      "minimax-m3"
+    ],
+    "models": {
+      "minimax-m3": {
+        "pricing": {
+          "inputPerM": 0.15,
+          "outputPerM": 0.6,
+          "currency": "USD"
+        },
+        "contextWindow": 245760,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 140,
+          "ttftMs": 350
+        },
+        "strengths": {
+          "coding": 0.68,
+          "math": 0.66,
+          "reasoning": 0.72,
+          "longContext": 0.82,
+          "vision": 0.72,
+          "multilingual": 0.85,
+          "creative": 0.75,
+          "toolUse": 0.7,
+          "agentic": 0.7,
+          "instructionFollowing": 0.8
+        },
+        "toolUseReliability": 0.7,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 71
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    },
+    "modelIdPlaceholder": [
+      "minimax-m3",
+      "minimax-m3"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true
+  },
+  {
+    "id": "kimik27code",
+    "name": "国内Kimi-K2.7-Code模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "Kimi",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "kimi-k2.7-code",
+      "kimi-k2.7-code"
+    ],
+    "modelIdPlaceholder": [
+      "kimi-k2.7-code",
+      "kimi-k2.7-code"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "kimi-k2.7-code": {
+        "pricing": {
+          "inputPerM": 0.4,
+          "outputPerM": 1.6,
+          "currency": "USD"
+        },
+        "contextWindow": 262144,
+        "maxOutputTokens": 65536,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 70,
+          "ttftMs": 600
+        },
+        "strengths": {
+          "coding": 0.9,
+          "math": 0.78,
+          "reasoning": 0.8,
+          "longContext": 0.95,
+          "vision": 0.72,
+          "multilingual": 0.82,
+          "creative": 0.7,
+          "toolUse": 0.88,
+          "agentic": 0.86,
+          "instructionFollowing": 0.84
+        },
+        "toolUseReliability": 0.88,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 78
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "kimik26",
+    "name": "国内Kimi-K2.6模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "Kimi",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "kimi-k2.6",
+      "kimi-k2.6"
+    ],
+    "modelIdPlaceholder": [
+      "kimi-k2.6",
+      "kimi-k2.6"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "kimi-k2.6": {
+        "pricing": {
+          "inputPerM": 0.3,
+          "outputPerM": 1.2,
+          "currency": "USD"
+        },
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 75,
+          "ttftMs": 580
+        },
+        "strengths": {
+          "coding": 0.82,
+          "math": 0.74,
+          "reasoning": 0.78,
+          "longContext": 0.92,
+          "vision": 0.7,
+          "multilingual": 0.82,
+          "creative": 0.72,
+          "toolUse": 0.84,
+          "agentic": 0.8,
+          "instructionFollowing": 0.84
+        },
+        "toolUseReliability": 0.84,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 74
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "qwen37max",
+    "name": "国内Qwen-3.7-Max模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "Qwen",
+    "modelType": [
+      "text"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "qwen-3.7-max"
+    ],
+    "modelIdPlaceholder": [
+      "qwen-3.7-max"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "qwen-3.7-max": {
+        "pricing": {
+          "inputPerM": 0.8,
+          "outputPerM": 3.2,
+          "currency": "USD"
+        },
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 80,
+          "ttftMs": 550
+        },
+        "strengths": {
+          "coding": 0.86,
+          "math": 0.84,
+          "reasoning": 0.85,
+          "longContext": 0.85,
+          "vision": 0.4,
+          "multilingual": 0.88,
+          "creative": 0.76,
+          "toolUse": 0.85,
+          "agentic": 0.84,
+          "instructionFollowing": 0.86
+        },
+        "toolUseReliability": 0.85,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 82
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "qwen37plus",
+    "name": "国内Qwen-3.7-Plus模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "Qwen",
+    "modelType": [
+      "text"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "qwen-3.7-plus"
+    ],
+    "modelIdPlaceholder": [
+      "qwen-3.7-plus"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "qwen-3.7-plus": {
+        "pricing": {
+          "inputPerM": 0.3,
+          "outputPerM": 1.2,
+          "currency": "USD"
+        },
+        "contextWindow": 131072,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 120,
+          "ttftMs": 400
+        },
+        "strengths": {
+          "coding": 0.8,
+          "math": 0.78,
+          "reasoning": 0.78,
+          "longContext": 0.82,
+          "vision": 0.4,
+          "multilingual": 0.86,
+          "creative": 0.72,
+          "toolUse": 0.8,
+          "agentic": 0.78,
+          "instructionFollowing": 0.84
+        },
+        "toolUseReliability": 0.8,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 74
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "deepseekv4pro",
+    "name": "国内DeepSeek-V4-Pro模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "DeepSeek",
+    "modelType": [
+      "text"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "deepseek-v4-pro"
+    ],
+    "modelIdPlaceholder": [
+      "deepseek-v4-pro"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "deepseek-v4-pro": {
+        "pricing": {
+          "inputPerM": 0.5,
+          "outputPerM": 2,
+          "currency": "USD"
+        },
+        "contextWindow": 131072,
+        "maxOutputTokens": 65536,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 40,
+          "ttftMs": 900
+        },
+        "strengths": {
+          "coding": 0.88,
+          "math": 0.9,
+          "reasoning": 0.9,
+          "longContext": 0.82,
+          "vision": 0.4,
+          "multilingual": 0.8,
+          "creative": 0.74,
+          "toolUse": 0.84,
+          "agentic": 0.84,
+          "instructionFollowing": 0.85
+        },
+        "toolUseReliability": 0.84,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 84
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "deepseekv4flash",
+    "name": "国内DeepSeek-V4-Flash模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "DeepSeek",
+    "modelType": [
+      "text"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "deepseek-v4-pro"
+    ],
+    "modelIdPlaceholder": [
+      "deepseek-v4-pro"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "deepseek-v4-pro": {
+        "pricing": {
+          "inputPerM": 0.15,
+          "outputPerM": 0.6,
+          "currency": "USD"
+        },
+        "contextWindow": 131072,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 120,
+          "ttftMs": 400
+        },
+        "strengths": {
+          "coding": 0.78,
+          "math": 0.8,
+          "reasoning": 0.78,
+          "longContext": 0.8,
+          "vision": 0.4,
+          "multilingual": 0.76,
+          "creative": 0.68,
+          "toolUse": 0.78,
+          "agentic": 0.76,
+          "instructionFollowing": 0.82
+        },
+        "toolUseReliability": 0.78,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 72
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "cdo48",
+    "name": "海外cd-o-4-8模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "CD",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "cd-o-4-8",
+      "cd-o-4-8"
+    ],
+    "modelIdPlaceholder": [
+      "cd-o-4-8",
+      "cd-o-4-8"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "cd-o-4-8": {
+        "pricing": {
+          "inputPerM": 6,
+          "outputPerM": 30,
+          "currency": "USD"
+        },
+        "contextWindow": 200000,
+        "maxOutputTokens": 64000,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 60,
+          "ttftMs": 700
+        },
+        "strengths": {
+          "coding": 0.9,
+          "math": 0.88,
+          "reasoning": 0.95,
+          "longContext": 0.9,
+          "vision": 0.85,
+          "multilingual": 0.88,
+          "creative": 0.85,
+          "toolUse": 0.92,
+          "agentic": 0.93,
+          "instructionFollowing": 0.92
+        },
+        "toolUseReliability": 0.92,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 92
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "cdo47",
+    "name": "海外cd-o-4-7模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "CD",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "cd-o-4-7",
+      "cd-o-4-7"
+    ],
+    "modelIdPlaceholder": [
+      "cd-o-4-7",
+      "cd-o-4-7"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "cd-o-4-7": {
+        "pricing": {
+          "inputPerM": 5.5,
+          "outputPerM": 27,
+          "currency": "USD"
+        },
+        "contextWindow": 200000,
+        "maxOutputTokens": 64000,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 60,
+          "ttftMs": 700
+        },
+        "strengths": {
+          "coding": 0.9,
+          "math": 0.88,
+          "reasoning": 0.95,
+          "longContext": 0.9,
+          "vision": 0.85,
+          "multilingual": 0.88,
+          "creative": 0.85,
+          "toolUse": 0.92,
+          "agentic": 0.93,
+          "instructionFollowing": 0.92
+        },
+        "toolUseReliability": 0.92,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 90
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "cdo46",
+    "name": "海外cd-o-4-6模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "CD",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "cd-o-4-6",
+      "cd-o-4-6"
+    ],
+    "modelIdPlaceholder": [
+      "cd-o-4-6",
+      "cd-o-4-6"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "cd-o-4-6": {
+        "pricing": {
+          "inputPerM": 5,
+          "outputPerM": 25,
+          "currency": "USD"
+        },
+        "contextWindow": 200000,
+        "maxOutputTokens": 64000,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 62,
+          "ttftMs": 680
+        },
+        "strengths": {
+          "coding": 0.9,
+          "math": 0.88,
+          "reasoning": 0.95,
+          "longContext": 0.9,
+          "vision": 0.85,
+          "multilingual": 0.88,
+          "creative": 0.85,
+          "toolUse": 0.92,
+          "agentic": 0.93,
+          "instructionFollowing": 0.92
+        },
+        "toolUseReliability": 0.92,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 88
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "cds46",
+    "name": "海外cd-s-4-6模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "CD",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "cd-s-4-6",
+      "cd-s-4-6"
+    ],
+    "modelIdPlaceholder": [
+      "cd-s-4-6",
+      "cd-s-4-6"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "cd-s-4-6": {
+        "pricing": {
+          "inputPerM": 3,
+          "outputPerM": 15,
+          "currency": "USD"
+        },
+        "contextWindow": 200000,
+        "maxOutputTokens": 64000,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 90,
+          "ttftMs": 500
+        },
+        "strengths": {
+          "coding": 0.88,
+          "math": 0.8,
+          "reasoning": 0.85,
+          "longContext": 0.85,
+          "vision": 0.82,
+          "multilingual": 0.85,
+          "creative": 0.8,
+          "toolUse": 0.9,
+          "agentic": 0.88,
+          "instructionFollowing": 0.9
+        },
+        "toolUseReliability": 0.9,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 82
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "cdh45",
+    "name": "海外cd-h-4-5模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "CD",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "cd-h-4-5",
+      "cd-h-4-5"
+    ],
+    "modelIdPlaceholder": [
+      "cd-h-4-5",
+      "cd-h-4-5"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "cd-h-4-5": {
+        "pricing": {
+          "inputPerM": 0.8,
+          "outputPerM": 4,
+          "currency": "USD"
+        },
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 180,
+          "ttftMs": 300
+        },
+        "strengths": {
+          "coding": 0.72,
+          "math": 0.68,
+          "reasoning": 0.7,
+          "longContext": 0.75,
+          "vision": 0.7,
+          "multilingual": 0.78,
+          "creative": 0.68,
+          "toolUse": 0.8,
+          "agentic": 0.75,
+          "instructionFollowing": 0.82
+        },
+        "toolUseReliability": 0.8,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 68
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "gpt55",
+    "name": "海外GPT-5.5模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "GPT",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "gpt-5.5",
+      "gpt-5.5"
+    ],
+    "modelIdPlaceholder": [
+      "gpt-5.5",
+      "gpt-5.5"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "gpt-5.5": {
+        "pricing": {
+          "inputPerM": 4,
+          "outputPerM": 20,
+          "currency": "USD"
+        },
+        "contextWindow": 400000,
+        "maxOutputTokens": 128000,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 70,
+          "ttftMs": 600
+        },
+        "strengths": {
+          "coding": 0.9,
+          "math": 0.9,
+          "reasoning": 0.92,
+          "longContext": 0.88,
+          "vision": 0.86,
+          "multilingual": 0.9,
+          "creative": 0.88,
+          "toolUse": 0.93,
+          "agentic": 0.9,
+          "instructionFollowing": 0.93
+        },
+        "toolUseReliability": 0.93,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 90
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "gpt54",
+    "name": "海外GPT-5.4模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "GPT",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "gpt-5.4",
+      "gpt-5.4"
+    ],
+    "modelIdPlaceholder": [
+      "gpt-5.4",
+      "gpt-5.4"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "gpt-5.4": {
+        "pricing": {
+          "inputPerM": 2.5,
+          "outputPerM": 12,
+          "currency": "USD"
+        },
+        "contextWindow": 272000,
+        "maxOutputTokens": 128000,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 100,
+          "ttftMs": 450
+        },
+        "strengths": {
+          "coding": 0.85,
+          "math": 0.84,
+          "reasoning": 0.86,
+          "longContext": 0.82,
+          "vision": 0.82,
+          "multilingual": 0.87,
+          "creative": 0.84,
+          "toolUse": 0.88,
+          "agentic": 0.85,
+          "instructionFollowing": 0.9
+        },
+        "toolUseReliability": 0.88,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 82
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "gpt54mini",
+    "name": "海外GPT-5.4-Mini模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "GPT",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "gpt-5.4-mini",
+      "gpt-5.4-mini"
+    ],
+    "modelIdPlaceholder": [
+      "gpt-5.4-mini",
+      "gpt-5.4-mini"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "gpt-5.4-mini": {
+        "pricing": {
+          "inputPerM": 0.3,
+          "outputPerM": 1.2,
+          "currency": "USD"
+        },
+        "contextWindow": 272000,
+        "maxOutputTokens": 65536,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 160,
+          "ttftMs": 300
+        },
+        "strengths": {
+          "coding": 0.72,
+          "math": 0.72,
+          "reasoning": 0.72,
+          "longContext": 0.78,
+          "vision": 0.74,
+          "multilingual": 0.8,
+          "creative": 0.7,
+          "toolUse": 0.8,
+          "agentic": 0.74,
+          "instructionFollowing": 0.84
+        },
+        "toolUseReliability": 0.8,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 68
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "gptimage2",
+    "name": "海外GPT-Image-2模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "GPT",
+    "modelType": [
+      "image_generate"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "gpt-image-2"
+    ],
+    "modelIdPlaceholder": [
+      "gpt-image-2"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "gpt-image-2": {
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "image_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "openai-voice",
+    "name": "海外OpenAI语音模型",
+    "icon": "🎙️",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-proj-...",
+    "model": "OpenAISpeech",
+    "modelType": [
+      "tts",
+      "transcription",
+      "realtime"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "gpt-4o-mini-tts",
+      "gpt-4o-transcribe",
+      "gpt-realtime-2"
+    ],
+    "modelIdPlaceholder": [
+      [
+        "gpt-4o-mini-tts",
+        "tts-1"
+      ],
+      [
+        "gpt-4o-transcribe",
+        "gpt-4o-mini-transcribe",
+        "whisper-1"
+      ],
+      [
+        "gpt-realtime-2",
+        "gpt-4o-realtime-preview"
+      ]
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "voiceRuntimeProviderId": "openai",
+    "models": {
+      "gpt-4o-mini-tts": {
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "tts"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      },
+      "gpt-4o-transcribe": {
+        "inputModalities": [
+          "tts"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      },
+      "gpt-realtime-2": {
+        "inputModalities": [
+          "text",
+          "tts"
+        ],
+        "outputModalities": [
+          "text",
+          "tts"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "gemini35flash",
+    "name": "海外Gemini-3.5-Flash模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "Gemini",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "gemini-3.5-flash",
+      "gemini-3.5-flash"
+    ],
+    "modelIdPlaceholder": [
+      "gemini-3.5-flash",
+      "gemini-3.5-flash"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "gemini-3.5-flash": {
+        "pricing": {
+          "inputPerM": 0.15,
+          "outputPerM": 0.6,
+          "currency": "USD"
+        },
+        "contextWindow": 1000000,
+        "maxOutputTokens": 65536,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 200,
+          "ttftMs": 250
+        },
+        "strengths": {
+          "coding": 0.74,
+          "math": 0.76,
+          "reasoning": 0.76,
+          "longContext": 0.9,
+          "vision": 0.82,
+          "multilingual": 0.85,
+          "creative": 0.72,
+          "toolUse": 0.78,
+          "agentic": 0.74,
+          "instructionFollowing": 0.84
+        },
+        "toolUseReliability": 0.78,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 72
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "gemini31propreview",
+    "name": "海外Gemini-3.1-Pro-Preview模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "Gemini",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "gemini-3.1-pro-preview",
+      "gemini-3.1-pro-preview"
+    ],
+    "modelIdPlaceholder": [
+      "gemini-3.1-pro-preview",
+      "gemini-3.1-pro-preview"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "gemini-3.1-pro-preview": {
+        "pricing": {
+          "inputPerM": 2,
+          "outputPerM": 12,
+          "currency": "USD"
+        },
+        "contextWindow": 1000000,
+        "maxOutputTokens": 65536,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 90,
+          "ttftMs": 600
+        },
+        "strengths": {
+          "coding": 0.86,
+          "math": 0.88,
+          "reasoning": 0.9,
+          "longContext": 0.95,
+          "vision": 0.9,
+          "multilingual": 0.9,
+          "creative": 0.82,
+          "toolUse": 0.85,
+          "agentic": 0.84,
+          "instructionFollowing": 0.88
+        },
+        "toolUseReliability": 0.85,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 88
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "gemini31flashimage",
+    "name": "海外Gemini-3.1-Flash-Image模型",
+    "icon": "SR",
+    "iconBase64": "PHN2ZyB2aWV3Qm94PSIwIDAgMTIwIDEyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibG9ic3Rlci1ncmFkaWVudCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZmIzMDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjZjU3YzAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEJvZHkgLS0+CiAgPHBhdGggZD0iTTYwIDEwIEMzMCAxMCAxNSAzNSAxNSA1NSBDMTUgNzUgMzAgOTUgNDUgMTAwIEw0NSAxMTAgTDU1IDExMCBMNTUgMTAwIEM1NSAxMDAgNjAgMTAyIDY1IDEwMCBMNjUgMTEwIEw3NSAxMTAgTDc1IDEwMCBDOTAgOTUgMTA1IDc1IDEwNSA1NSBDMTA1IDM1IDkwIDEwIDYwIDEwWiIgZmlsbD0idXJsKCNsb2JzdGVyLWdyYWRpZW50KSIvPgogIDwhLS0gTGVmdCBDbGF3IC0tPgogIDxwYXRoIGQ9Ik0yMCA0NSBDNSA0MCAwIDUwIDUgNjAgQzEwIDcwIDIwIDY1IDI1IDU1IEMyOCA0OCAyNSA0NSAyMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIFJpZ2h0IENsYXcgLS0+CiAgPHBhdGggZD0iTTEwMCA0NSBDMTE1IDQwIDEyMCA1MCAxMTUgNjAgQzExMCA3MCAxMDAgNjUgOTUgNTUgQzkyIDQ4IDk1IDQ1IDEwMCA0NVoiIGZpbGw9InVybCgjbG9ic3Rlci1ncmFkaWVudCkiLz4KICA8IS0tIEFudGVubmEgLS0+CiAgPHBhdGggZD0iTTQ1IDE1IFEzNSA1IDMwIDgiIHN0cm9rZT0iI2ZmYjMwMCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzUgMTUgUTg1IDUgOTAgOCIgc3Ryb2tlPSIjZmZiMzAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gRXllcyAtLT4KICA8Y2lyY2xlIGN4PSI0NSIgY3k9IjM1IiByPSI2IiBmaWxsPSIjMDUwODEwIi8+CiAgPGNpcmNsZSBjeD0iNzUiIGN5PSIzNSIgcj0iNiIgZmlsbD0iIzA1MDgxMCIvPgogIDxjaXJjbGUgY3g9IjQ2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgogIDxjaXJjbGUgY3g9Ijc2IiBjeT0iMzQiIHI9IjIuNSIgZmlsbD0iIzAwZTVjYyIvPgo8L3N2Zz4K",
+    "placeholder": "sk-xxx...",
+    "model": "Gemini",
+    "modelType": [
+      "image_generate"
+    ],
+    "category": "custom",
+    "defaultBaseUrl": "https://claw-x.com/v1",
+    "defaultModelId": [
+      "gemini-3.1-flash-image"
+    ],
+    "modelIdPlaceholder": [
+      "gemini-3.1-flash-image"
+    ],
+    "requiresApiKey": true,
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "requestAllowPrivateNetwork": true,
+    "models": {
+      "gemini-3.1-flash-image": {
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "image_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "anthropic",
+    "name": "Anthropic",
+    "icon": "🤖",
+    "placeholder": "sk-ant-api03-...",
+    "model": "Claude",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "requiresApiKey": true,
+    "docsUrl": "https://platform.claude.com/docs/en/api/overview",
+    "category": "official",
+    "envVar": "ANTHROPIC_API_KEY",
+    "showModelId": true,
+    "defaultModelId": [
+      "claude-opus-4-8",
+      "claude-opus-4-8"
+    ],
+    "modelIdPlaceholder": [
+      [
+        "claude-opus-4-8",
+        "claude-opus-4-6",
+        "claude-sonnet-4-7",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-7",
+        "claude-haiku-4-6"
+      ],
+      [
+        "claude-opus-4-8",
+        "claude-opus-4-6",
+        "claude-sonnet-4-7",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-7",
+        "claude-haiku-4-6"
+      ]
+    ],
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "models": {
+      "claude-opus-4-8": {
+        "pricing": {
+          "inputPerM": 5.5,
+          "outputPerM": 27,
+          "currency": "USD"
+        },
+        "contextWindow": 200000,
+        "maxOutputTokens": 64000,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 60,
+          "ttftMs": 700
+        },
+        "strengths": {
+          "coding": 0.9,
+          "math": 0.88,
+          "reasoning": 0.95,
+          "longContext": 0.9,
+          "vision": 0.85,
+          "multilingual": 0.88,
+          "creative": 0.85,
+          "toolUse": 0.92,
+          "agentic": 0.93,
+          "instructionFollowing": 0.92
+        },
+        "toolUseReliability": 0.92,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 90
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "openai",
+    "name": "OpenAI",
+    "icon": "💚",
+    "placeholder": "sk-proj-...",
+    "model": "GPT",
+    "modelType": [
+      "text",
+      "image",
+      "image_generate",
+      "tts",
+      "transcription",
+      "realtime"
+    ],
+    "requiresApiKey": true,
+    "category": "official",
+    "envVar": "OPENAI_API_KEY",
+    "defaultModelId": [
+      "gpt-5.6-sol",
+      "gpt-5.6-sol",
+      "gpt-image-2",
+      "gpt-4o-mini-tts",
+      "gpt-4o-transcribe",
+      "gpt-realtime-2"
+    ],
+    "modelIdPlaceholder": [
+      [
+        "gpt-5.6-sol",
+        "gpt-5.5",
+        "gpt-5.5-pro",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.4-nano"
+      ],
+      [
+        "gpt-5.6-sol",
+        "gpt-5.5",
+        "gpt-5.5-pro",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.4-nano"
+      ],
+      [
+        "gpt-image-2"
+      ],
+      [
+        "gpt-4o-mini-tts",
+        "tts-1"
+      ],
+      [
+        "gpt-4o-transcribe",
+        "gpt-4o-mini-transcribe",
+        "whisper-1"
+      ],
+      [
+        "gpt-realtime-2",
+        "gpt-4o-realtime-preview"
+      ]
+    ],
+    "showModelId": true,
+    "apiKeyUrl": "https://platform.openai.com/api-keys",
+    "supportedAuthModes": [
+      "api_key",
+      "oauth_browser"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "defaultBaseUrl": "https://api.openai.com/v1",
+    "apiProtocol": "openai-responses",
+    "voiceRuntimeProviderId": "openai",
+    "models": {
+      "gpt-5.6-sol": {
+        "pricing": {
+          "inputPerM": 4,
+          "outputPerM": 20,
+          "currency": "USD"
+        },
+        "contextWindow": 400000,
+        "maxOutputTokens": 128000,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 70,
+          "ttftMs": 600
+        },
+        "strengths": {
+          "coding": 0.91,
+          "math": 0.91,
+          "reasoning": 0.93,
+          "longContext": 0.89,
+          "vision": 0.87,
+          "multilingual": 0.9,
+          "creative": 0.88,
+          "toolUse": 0.94,
+          "agentic": 0.91,
+          "instructionFollowing": 0.94
+        },
+        "toolUseReliability": 0.94,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 91
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-31",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      },
+      "gpt-5.5": {
+        "pricing": {
+          "inputPerM": 4,
+          "outputPerM": 20,
+          "currency": "USD"
+        },
+        "contextWindow": 400000,
+        "maxOutputTokens": 128000,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 70,
+          "ttftMs": 600
+        },
+        "strengths": {
+          "coding": 0.9,
+          "math": 0.9,
+          "reasoning": 0.92,
+          "longContext": 0.88,
+          "vision": 0.86,
+          "multilingual": 0.9,
+          "creative": 0.88,
+          "toolUse": 0.93,
+          "agentic": 0.9,
+          "instructionFollowing": 0.93
+        },
+        "toolUseReliability": 0.93,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 90
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      },
+      "gpt-image-2": {
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "image_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      },
+      "gpt-4o-mini-tts": {
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "tts"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      },
+      "gpt-4o-transcribe": {
+        "inputModalities": [
+          "tts"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      },
+      "gpt-realtime-2": {
+        "inputModalities": [
+          "text",
+          "tts"
+        ],
+        "outputModalities": [
+          "text",
+          "tts"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "google",
+    "name": "Google",
+    "icon": "🔷",
+    "placeholder": "AIza...",
+    "model": "Gemini",
+    "modelType": [
+      "text",
+      "image",
+      "image_generate",
+      "music_generate",
+      "video_generate"
+    ],
+    "requiresApiKey": true,
+    "category": "official",
+    "envVar": "GEMINI_API_KEY",
+    "defaultModelId": [
+      "gemini-3.1-pro-preview",
+      "gemini-3.1-pro-preview",
+      "gemini-3.1-flash-image-preview",
+      "lyria-3-pro-preview",
+      "veo-3.1-generate-preview"
+    ],
+    "modelIdPlaceholder": [
+      [
+        "gemini-3.1-pro-preview",
+        "gemini-3.1-flash-lite",
+        "gemini-3-flash-preview"
+      ],
+      [
+        "gemini-3.1-pro-preview",
+        "gemini-3.1-flash-lite",
+        "gemini-3-flash-preview"
+      ],
+      [
+        "gemini-3.1-flash-image-preview",
+        "gemini-3-pro-image-preview"
+      ],
+      [
+        "lyria-3-clip-preview",
+        "lyria-3-pro-preview"
+      ],
+      [
+        "veo-3.1-generate-preview",
+        "veo-3.1-fast-generate-preview",
+        "veo-3.1-lite-generate-preview"
+      ]
+    ],
+    "showModelId": true,
+    "apiKeyUrl": "https://aistudio.google.com/app/apikey",
+    "supportedAuthModes": [
+      "api_key",
+      "oauth_browser"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "models": {
+      "gemini-3.1-pro-preview": {
+        "pricing": {
+          "inputPerM": 2,
+          "outputPerM": 12,
+          "currency": "USD"
+        },
+        "contextWindow": 1000000,
+        "maxOutputTokens": 65536,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 90,
+          "ttftMs": 600
+        },
+        "strengths": {
+          "coding": 0.86,
+          "math": 0.88,
+          "reasoning": 0.9,
+          "longContext": 0.95,
+          "vision": 0.9,
+          "multilingual": 0.9,
+          "creative": 0.82,
+          "toolUse": 0.85,
+          "agentic": 0.84,
+          "instructionFollowing": 0.88
+        },
+        "toolUseReliability": 0.85,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 88
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      },
+      "gemini-3.1-flash-image-preview": {
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "image_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      },
+      "lyria-3-pro-preview": {
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "music_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      },
+      "veo-3.1-generate-preview": {
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "video_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "openrouter",
+    "name": "OpenRouter",
+    "icon": "🌐",
+    "placeholder": "sk-or-v1-...",
+    "model": "Multi-Model",
+    "modelType": [
+      "text",
+      "image",
+      "image_generate",
+      "music_generate",
+      "video_generate"
+    ],
+    "requiresApiKey": true,
+    "showModelId": true,
+    "defaultModelId": [
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "modelIdPlaceholder": [
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "docsUrl": "https://openrouter.ai/models",
+    "category": "compatible",
+    "envVar": "OPENROUTER_API_KEY",
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "headers": {
+      "HTTP-Referer": "https://claw-x.com",
+      "X-Title": "ClawX"
+    }
+  },
+  {
+    "id": "ark",
+    "name": "ByteDance Ark",
+    "icon": "A",
+    "placeholder": "your-ark-api-key",
+    "model": "Doubao",
+    "modelType": [
+      "text",
+      "image",
+      "image_generate",
+      "video_generate"
+    ],
+    "requiresApiKey": true,
+    "docsUrl": "https://www.volcengine.com/",
+    "defaultBaseUrl": "https://ark.cn-beijing.volces.com/api/v3",
+    "showBaseUrl": true,
+    "showModelId": true,
+    "defaultModelId": [
+      "doubao-seed-2-0-lite-260428",
+      "doubao-seed-2-0-lite-260428",
+      "doubao-seedream-5-0-260128",
+      "doubao-seedance-2-0-260128"
+    ],
+    "modelIdPlaceholder": [
+      [
+        "doubao-seed-2-0-lite-260428",
+        "doubao-seed-2-0-mini-260428",
+        "doubao-seed-2-0-pro-260215"
+      ],
+      [
+        "doubao-seed-2-0-lite-260428",
+        "doubao-seed-2-0-mini-260428",
+        "doubao-seed-2-0-pro-260215"
+      ],
+      [
+        "doubao-seedream-5-0-260128",
+        "doubao-seedream-5-0-lite-260128"
+      ],
+      [
+        "doubao-seedance-2-0-260128",
+        "doubao-seedance-2-0-fast-260128"
+      ]
+    ],
+    "category": "official",
+    "envVar": "ARK_API_KEY",
+    "codePlanPresetBaseUrl": "https://ark.cn-beijing.volces.com/api/coding/v3",
+    "codePlanPresetModelId": "ark-code-latest",
+    "codePlanDocsUrl": "https://www.volcengine.com/docs/82379/1928261?lang=zh",
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "models": {
+      "doubao-seed-2-0-lite-260428": {
+        "pricing": {
+          "inputPerM": 0.1,
+          "outputPerM": 0.4,
+          "currency": "USD"
+        },
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 130,
+          "ttftMs": 350
+        },
+        "strengths": {
+          "coding": 0.74,
+          "math": 0.74,
+          "reasoning": 0.76,
+          "longContext": 0.8,
+          "vision": 0.78,
+          "multilingual": 0.84,
+          "creative": 0.72,
+          "toolUse": 0.78,
+          "agentic": 0.76,
+          "instructionFollowing": 0.82
+        },
+        "toolUseReliability": 0.78,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 70
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      },
+      "doubao-seedream-5-0-260128": {
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "image_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      },
+      "doubao-seedance-2-0-260128": {
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "video_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "moonshot",
+    "name": "Moonshot (CN)",
+    "icon": "🌙",
+    "placeholder": "sk-...",
+    "model": "Kimi",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "requiresApiKey": true,
+    "docsUrl": "https://platform.moonshot.cn/",
+    "defaultBaseUrl": "https://api.moonshot.cn/v1",
+    "showModelId": true,
+    "defaultModelId": [
+      "kimi-k2.6",
+      "kimi-k2.6"
+    ],
+    "modelIdPlaceholder": [
+      [
+        "kimi-k2.6",
+        "kimi-k2.5"
+      ],
+      [
+        "kimi-k2.6",
+        "kimi-k2.5"
+      ]
+    ],
+    "category": "official",
+    "envVar": "MOONSHOT_API_KEY",
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "backendModels": [
+      {
+        "id": "kimi-k2.6",
+        "name": "Kimi K2.6",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "modelType": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 256000,
+        "maxTokens": 8192
+      }
+    ],
+    "models": {
+      "kimi-k2.6": {
+        "pricing": {
+          "inputPerM": 0.3,
+          "outputPerM": 1.2,
+          "currency": "USD"
+        },
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 75,
+          "ttftMs": 580
+        },
+        "strengths": {
+          "coding": 0.82,
+          "math": 0.74,
+          "reasoning": 0.78,
+          "longContext": 0.92,
+          "vision": 0.7,
+          "multilingual": 0.82,
+          "creative": 0.72,
+          "toolUse": 0.84,
+          "agentic": 0.8,
+          "instructionFollowing": 0.84
+        },
+        "toolUseReliability": 0.84,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 74
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "moonshot-global",
+    "name": "Moonshot (Global)",
+    "icon": "🌙",
+    "placeholder": "sk-...",
+    "model": "Kimi",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "requiresApiKey": true,
+    "docsUrl": "https://platform.moonshot.ai/",
+    "showModelId": true,
+    "defaultBaseUrl": "https://api.moonshot.ai/v1",
+    "defaultModelId": [
+      "kimi-k2.6",
+      "kimi-k2.6"
+    ],
+    "modelIdPlaceholder": [
+      [
+        "kimi-k2.6",
+        "kimi-k2.5"
+      ],
+      [
+        "kimi-k2.6",
+        "kimi-k2.5"
+      ]
+    ],
+    "category": "official",
+    "envVar": "MOONSHOT_GLOBAL_API_KEY",
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "backendModels": [
+      {
+        "id": "kimi-k2.6",
+        "name": "Kimi K2.6",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "modelType": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 256000,
+        "maxTokens": 8192
+      }
+    ],
+    "models": {
+      "kimi-k2.6": {
+        "pricing": {
+          "inputPerM": 0.3,
+          "outputPerM": 1.2,
+          "currency": "USD"
+        },
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 75,
+          "ttftMs": 580
+        },
+        "strengths": {
+          "coding": 0.82,
+          "math": 0.74,
+          "reasoning": 0.78,
+          "longContext": 0.92,
+          "vision": 0.7,
+          "multilingual": 0.82,
+          "creative": 0.72,
+          "toolUse": 0.84,
+          "agentic": 0.8,
+          "instructionFollowing": 0.84
+        },
+        "toolUseReliability": 0.84,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 74
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "siliconflow",
+    "name": "SiliconFlow (CN)",
+    "icon": "🌊",
+    "placeholder": "sk-...",
+    "model": "Multi-Model",
+    "modelType": [
+      "text",
+      "image",
+      "image_generate",
+      "video_generate"
+    ],
+    "requiresApiKey": true,
+    "docsUrl": "https://docs.siliconflow.cn/cn/userguide/introduction",
+    "defaultBaseUrl": "https://api.siliconflow.cn/v1",
+    "showModelId": true,
+    "defaultModelId": [
+      "deepseek-ai/DeepSeek-V4-Flash",
+      "Qwen/Qwen3.6-35B-A3B",
+      "Qwen/Qwen-Image",
+      "Wan-AI/Wan2.2-I2V-A14B"
+    ],
+    "modelIdPlaceholder": [
+      [
+        "deepseek-ai/DeepSeek-V4-Flash",
+        "Qwen/Qwen3.6-35B-A3B",
+        "Pro/moonshotai/Kimi-K2.6",
+        "Pro/zai-org/GLM-5.1",
+        "MiniMaxAI/MiniMax-M2.5"
+      ],
+      [
+        "Qwen/Qwen3.6-35B-A3B",
+        "Pro/moonshotai/Kimi-K2.6"
+      ],
+      [
+        "Tongyi-MAI/Z-Image-Turbo",
+        "Qwen/Qwen-Image",
+        "baidu/ERNIE-Image-Turbo",
+        "Kwai-Kolors/Kolors"
+      ],
+      [
+        "Wan-AI/Wan2.2-I2V-A14B",
+        "Wan-AI/Wan2.2-T2V-A14B"
+      ]
+    ],
+    "category": "compatible",
+    "envVar": "SILICONFLOW_API_KEY",
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "models": {
+      "deepseek-ai/DeepSeek-V4-Flash": {
+        "pricing": {
+          "inputPerM": 0.15,
+          "outputPerM": 0.6,
+          "currency": "USD"
+        },
+        "contextWindow": 131072,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 120,
+          "ttftMs": 400
+        },
+        "strengths": {
+          "coding": 0.78,
+          "math": 0.8,
+          "reasoning": 0.78,
+          "longContext": 0.8,
+          "vision": 0.4,
+          "multilingual": 0.76,
+          "creative": 0.68,
+          "toolUse": 0.78,
+          "agentic": 0.76,
+          "instructionFollowing": 0.82
+        },
+        "toolUseReliability": 0.78,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 72
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      },
+      "Qwen/Qwen3.6-35B-A3B": {
+        "pricing": {
+          "inputPerM": 0.2,
+          "outputPerM": 0.8,
+          "currency": "USD"
+        },
+        "contextWindow": 131072,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 110,
+          "ttftMs": 420
+        },
+        "strengths": {
+          "coding": 0.78,
+          "math": 0.78,
+          "reasoning": 0.78,
+          "longContext": 0.8,
+          "vision": 0.4,
+          "multilingual": 0.85,
+          "creative": 0.72,
+          "toolUse": 0.8,
+          "agentic": 0.76,
+          "instructionFollowing": 0.82
+        },
+        "toolUseReliability": 0.8,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 70
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      },
+      "Qwen/Qwen-Image": {
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "image_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      },
+      "Wan-AI/Wan2.2-I2V-A14B": {
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "video_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "icon": "🐋",
+    "placeholder": "sk-...",
+    "model": "DeepSeek",
+    "modelType": [
+      "text"
+    ],
+    "requiresApiKey": true,
+    "defaultBaseUrl": "https://api.deepseek.com/v1",
+    "showModelId": true,
+    "defaultModelId": [
+      "deepseek-v4-pro"
+    ],
+    "modelIdPlaceholder": [
+      [
+        "deepseek-v4-pro",
+        "deepseek-v4-flash"
+      ]
+    ],
+    "apiKeyUrl": "https://platform.deepseek.com/api_keys",
+    "docsUrl": "https://api-docs.deepseek.com/",
+    "docsUrlZh": "https://api-docs.deepseek.com/zh-cn/",
+    "category": "official",
+    "envVar": "DEEPSEEK_API_KEY",
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "models": {
+      "deepseek-v4-pro": {
+        "pricing": {
+          "inputPerM": 0.5,
+          "outputPerM": 2,
+          "currency": "USD"
+        },
+        "contextWindow": 131072,
+        "maxOutputTokens": 65536,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 40,
+          "ttftMs": 900
+        },
+        "strengths": {
+          "coding": 0.88,
+          "math": 0.9,
+          "reasoning": 0.9,
+          "longContext": 0.82,
+          "vision": 0.4,
+          "multilingual": 0.8,
+          "creative": 0.74,
+          "toolUse": 0.84,
+          "agentic": 0.84,
+          "instructionFollowing": 0.85
+        },
+        "toolUseReliability": 0.84,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 84
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "minimax-portal",
+    "name": "MiniMax (Global)",
+    "icon": "☁️",
+    "placeholder": "sk-...",
+    "model": "MiniMax",
+    "modelType": [
+      "text"
+    ],
+    "requiresApiKey": false,
+    "defaultModelId": "MiniMax-M3",
+    "showModelId": true,
+    "modelIdPlaceholder": "MiniMax-M3",
+    "apiKeyUrl": "https://platform.minimax.io",
+    "category": "official",
+    "envVar": "MINIMAX_API_KEY",
+    "supportedAuthModes": [
+      "oauth_device",
+      "api_key"
+    ],
+    "defaultAuthMode": "oauth_device",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "anthropic-messages",
+    "models": {
+      "MiniMax-M3": {
+        "pricing": {
+          "inputPerM": 0.15,
+          "outputPerM": 0.6,
+          "currency": "USD"
+        },
+        "contextWindow": 245760,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 140,
+          "ttftMs": 350
+        },
+        "strengths": {
+          "coding": 0.68,
+          "math": 0.66,
+          "reasoning": 0.72,
+          "longContext": 0.82,
+          "vision": 0.72,
+          "multilingual": 0.85,
+          "creative": 0.75,
+          "toolUse": 0.7,
+          "agentic": 0.7,
+          "instructionFollowing": 0.8
+        },
+        "toolUseReliability": 0.7,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 71
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "minimax-portal-cn",
+    "name": "MiniMax (CN)",
+    "icon": "☁️",
+    "placeholder": "sk-...",
+    "model": "MiniMax",
+    "modelType": [
+      "text",
+      "image_generate",
+      "music_generate",
+      "video_generate",
+      "tts"
+    ],
+    "requiresApiKey": false,
+    "showModelId": true,
+    "defaultModelId": [
+      "MiniMax-M3",
+      "image-01",
+      "music-2.6",
+      "MiniMax-Hailuo-2.3",
+      "speech-2.8-hd"
+    ],
+    "modelIdPlaceholder": [
+      [
+        "MiniMax-M3",
+        "MiniMax-M2.7",
+        "MiniMax-M2.7-highspeed",
+        "MiniMax-M2.5",
+        "MiniMax-M2.5-highspeed"
+      ],
+      [
+        "image-01",
+        "image-01-live"
+      ],
+      [
+        "music-2.6",
+        "music-cover",
+        "music-2.6-free",
+        "music-cover-free"
+      ],
+      [
+        "MiniMax-Hailuo-2.3"
+      ],
+      [
+        "speech-2.8-hd",
+        "speech-2.8-turbo",
+        "speech-2.6-hd",
+        "speech-2.6-turbo",
+        "speech-02-hd",
+        "speech-02-turbo"
+      ]
+    ],
+    "apiKeyUrl": "https://platform.minimaxi.com/",
+    "category": "official",
+    "envVar": "MINIMAX_CN_API_KEY",
+    "supportedAuthModes": [
+      "oauth_device",
+      "api_key"
+    ],
+    "defaultAuthMode": "oauth_device",
+    "supportsMultipleAccounts": true,
+    "defaultBaseUrl": "https://api.minimaxi.com/anthropic/v1",
+    "apiProtocol": "anthropic-messages",
+    "voiceRuntimeProviderId": "minimax",
+    "models": {
+      "MiniMax-M3": {
+        "pricing": {
+          "inputPerM": 0.15,
+          "outputPerM": 0.6,
+          "currency": "USD"
+        },
+        "contextWindow": 245760,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 140,
+          "ttftMs": 350
+        },
+        "strengths": {
+          "coding": 0.68,
+          "math": 0.66,
+          "reasoning": 0.72,
+          "longContext": 0.82,
+          "vision": 0.72,
+          "multilingual": 0.85,
+          "creative": 0.75,
+          "toolUse": 0.7,
+          "agentic": 0.7,
+          "instructionFollowing": 0.8
+        },
+        "toolUseReliability": 0.7,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 71
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      },
+      "image-01": {
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "image_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      },
+      "music-2.6": {
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "music_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      },
+      "MiniMax-Hailuo-2.3": {
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "video_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      },
+      "speech-2.8-hd": {
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "tts"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "zai",
+    "name": "Z.AI (CN)",
+    "icon": "Z",
+    "placeholder": "your-z.ai-api-key",
+    "model": "GLM",
+    "modelType": [
+      "text"
+    ],
+    "requiresApiKey": true,
+    "defaultBaseUrl": "https://open.bigmodel.cn/api/paas/v4",
+    "showBaseUrl": true,
+    "showModelId": true,
+    "defaultModelId": [
+      "glm-5.2"
+    ],
+    "modelIdPlaceholder": [
+      "glm-5.2"
+    ],
+    "apiKeyUrl": "https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys",
+    "category": "official",
+    "envVar": "ZAI_API_KEY",
+    "codePlanPresetBaseUrl": "https://open.bigmodel.cn/api/coding/paas/v4",
+    "codePlanPresetModelId": "glm-5.2",
+    "codePlanDocsUrl": "https://docs.bigmodel.cn/cn/coding-plan/quick-start",
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "models": {
+      "glm-5.2": {
+        "pricing": {
+          "inputPerM": 0.6,
+          "outputPerM": 2.2,
+          "currency": "USD"
+        },
+        "contextWindow": 1000000,
+        "maxOutputTokens": 131072,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-15",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      },
+      "glm-5.1": {
+        "pricing": {
+          "inputPerM": 0.4,
+          "outputPerM": 1.5,
+          "currency": "USD"
+        },
+        "contextWindow": 200000,
+        "maxOutputTokens": 131072,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-15",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      },
+      "glm-4.7": {
+        "contextWindow": 200000,
+        "maxOutputTokens": 131072,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-15",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "zai-global",
+    "name": "Z.AI (Global)",
+    "icon": "Z",
+    "placeholder": "your-z.ai-api-key",
+    "model": "GLM",
+    "modelType": [
+      "text"
+    ],
+    "requiresApiKey": true,
+    "defaultBaseUrl": "https://api.z.ai/api/paas/v4",
+    "showBaseUrl": true,
+    "showModelId": true,
+    "defaultModelId": [
+      "glm-5.2"
+    ],
+    "modelIdPlaceholder": [
+      "glm-5.2"
+    ],
+    "apiKeyUrl": "https://z.ai/manage-apikey",
+    "category": "official",
+    "envVar": "ZAI_API_KEY",
+    "codePlanPresetBaseUrl": "https://api.z.ai/api/coding/paas/v4",
+    "codePlanPresetModelId": "glm-5.2",
+    "codePlanDocsUrl": "https://docs.z.ai/devpack/quick-start",
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "models": {
+      "glm-5.2": {
+        "pricing": {
+          "inputPerM": 0.6,
+          "outputPerM": 2.2,
+          "currency": "USD"
+        },
+        "contextWindow": 1000000,
+        "maxOutputTokens": 131072,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-15",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      },
+      "glm-5.1": {
+        "pricing": {
+          "inputPerM": 0.4,
+          "outputPerM": 1.5,
+          "currency": "USD"
+        },
+        "contextWindow": 200000,
+        "maxOutputTokens": 131072,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-15",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      },
+      "glm-4.7": {
+        "contextWindow": 200000,
+        "maxOutputTokens": 131072,
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-15",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "overseas"
+      }
+    }
+  },
+  {
+    "id": "modelstudio",
+    "name": "Model Studio",
+    "icon": "☁️",
+    "placeholder": "sk-...",
+    "model": "Qwen",
+    "modelType": [
+      "text",
+      "image",
+      "image_generate",
+      "music_generate",
+      "video_generate"
+    ],
+    "requiresApiKey": true,
+    "defaultBaseUrl": "https://coding.dashscope.aliyuncs.com/v1",
+    "showBaseUrl": true,
+    "showModelId": true,
+    "showModelIdInDevModeOnly": true,
+    "hidden": true,
+    "defaultModelId": [
+      "qwen3.6-plus",
+      "qwen3.6-plus",
+      "wan2.7-image-pro",
+      "fun-music-v1",
+      "happyhorse-1.0-t2v"
+    ],
+    "modelIdPlaceholder": [
+      [
+        "qwen3.6-plus",
+        "qwen3.6-flash",
+        "qwen3.6-max-preview"
+      ],
+      [
+        "qwen3.6-plus"
+      ],
+      [
+        "wan2.7-image-pro",
+        "qwen-image-2.0-pro"
+      ],
+      [
+        "fun-music-v1"
+      ],
+      [
+        "happyhorse-1.0-t2v",
+        "happyhorse-1.0-i2v",
+        "happyhorse-1.0-r2v"
+      ]
+    ],
+    "apiKeyUrl": "https://bailian.console.aliyun.com/",
+    "category": "official",
+    "envVar": "MODELSTUDIO_API_KEY",
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true,
+    "apiProtocol": "openai-completions",
+    "models": {
+      "qwen3.6-plus": {
+        "pricing": {
+          "inputPerM": 0.3,
+          "outputPerM": 1.2,
+          "currency": "USD"
+        },
+        "contextWindow": 131072,
+        "maxOutputTokens": 32768,
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "text"
+        ],
+        "speed": {
+          "throughputTokPerSec": 120,
+          "ttftMs": 400
+        },
+        "strengths": {
+          "coding": 0.82,
+          "math": 0.8,
+          "reasoning": 0.8,
+          "longContext": 0.82,
+          "vision": 0.78,
+          "multilingual": 0.86,
+          "creative": 0.74,
+          "toolUse": 0.82,
+          "agentic": 0.8,
+          "instructionFollowing": 0.84
+        },
+        "toolUseReliability": 0.82,
+        "reasoningSupport": true,
+        "knowledgeCutoff": "2026-03",
+        "benchmarks": {
+          "qualityIndex": 74
+        },
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      },
+      "wan2.7-image-pro": {
+        "inputModalities": [
+          "text",
+          "image"
+        ],
+        "outputModalities": [
+          "image_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      },
+      "fun-music-v1": {
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "music_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      },
+      "happyhorse-1.0-t2v": {
+        "inputModalities": [
+          "text"
+        ],
+        "outputModalities": [
+          "video_generate"
+        ],
+        "provenance": {
+          "seed": {
+            "source": "bundled-seed",
+            "updatedAt": "2026-07-05",
+            "confidence": 0.3
+          }
+        },
+        "status": "active",
+        "origin": "domestic"
+      }
+    }
+  },
+  {
+    "id": "ollama",
+    "name": "Ollama",
+    "icon": "🦙",
+    "placeholder": "Not required",
+    "modelType": [
+      "text",
+      "image"
+    ],
+    "requiresApiKey": false,
+    "defaultBaseUrl": "http://localhost:11434/v1",
+    "showBaseUrl": true,
+    "showModelId": true,
+    "modelIdPlaceholder": "qwen3:latest",
+    "category": "local",
+    "supportedAuthModes": [
+      "local"
+    ],
+    "defaultAuthMode": "local",
+    "supportsMultipleAccounts": true
+  },
+  {
+    "id": "custom",
+    "name": "Custom",
+    "icon": "⚙️",
+    "placeholder": "API key...",
+    "modelType": [
+      "text",
+      "image",
+      "image_generate",
+      "music_generate",
+      "video_generate",
+      "tts",
+      "transcription"
+    ],
+    "requiresApiKey": true,
+    "showBaseUrl": true,
+    "showModelId": true,
+    "modelIdPlaceholder": "your-provider/model-id",
+    "category": "custom",
+    "envVar": "CUSTOM_API_KEY",
+    "supportedAuthModes": [
+      "api_key"
+    ],
+    "defaultAuthMode": "api_key",
+    "supportsMultipleAccounts": true
+  }
+]

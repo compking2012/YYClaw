@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   updateSingleAgentModelProvider: vi.fn(),
   getProviderApiKeyFromOpenClaw: vi.fn(),
   listAgentsSnapshot: vi.fn(),
+  listAgentsSnapshotReadOnly: vi.fn(),
 }));
 
 vi.mock('@electron/services/providers/provider-store', () => ({
@@ -41,7 +42,8 @@ vi.mock('@electron/utils/secure-storage', () => ({
   getProvider: mocks.getProvider,
 }));
 
-vi.mock('@electron/utils/provider-registry', () => ({
+vi.mock('@electron/utils/provider-registry', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@electron/utils/provider-registry')>()),
   getProviderConfig: mocks.getProviderConfig,
   getProviderDefaultModel: mocks.getProviderDefaultModel,
 }));
@@ -49,6 +51,7 @@ vi.mock('@electron/utils/provider-registry', () => ({
 vi.mock('@electron/utils/openclaw-auth', () => ({
   ensureAnthropicMessagesModelMaxTokens: vi.fn().mockResolvedValue([]),
   ensureOpenClawProviderAgentRuntimePins: vi.fn().mockResolvedValue([]),
+  clearOpenClawUnsupportedDefaultModels: vi.fn().mockResolvedValue(undefined),
   migrateAllAgentAuthProfilesToSqlite: vi.fn().mockResolvedValue(undefined),
   pruneInvalidApiProviderEntries: vi.fn().mockResolvedValue([]),
   removeProviderFromOpenClaw: mocks.removeProviderFromOpenClaw,
@@ -69,6 +72,7 @@ vi.mock('@electron/utils/openclaw-auth', () => ({
 
 vi.mock('@electron/utils/agent-config', () => ({
   listAgentsSnapshot: mocks.listAgentsSnapshot,
+  listAgentsSnapshotReadOnly: mocks.listAgentsSnapshotReadOnly,
 }));
 
 vi.mock('@electron/utils/logger', () => ({
@@ -108,6 +112,7 @@ function createGateway(state: 'running' | 'stopped' = 'running') {
     debouncedRestart: vi.fn(),
     restart: vi.fn(),
     getStatus: vi.fn(() => ({ state } as ReturnType<GatewayManager['getStatus']>)),
+    rpc: vi.fn().mockResolvedValue({ agents: [] }),
   };
 }
 
@@ -143,6 +148,7 @@ describe('provider-runtime-sync config delivery', () => {
     mocks.getProviderApiKeyFromOpenClaw.mockResolvedValue(null);
     mocks.listProviderAccounts.mockResolvedValue([]);
     mocks.listAgentsSnapshot.mockResolvedValue({ agents: [] });
+    mocks.listAgentsSnapshotReadOnly.mockResolvedValue({ agents: [] });
   });
 
   it('does not schedule an independent reload or restart after saving provider config', async () => {
@@ -276,11 +282,11 @@ describe('provider-runtime-sync config delivery', () => {
     );
   });
 
-  it('normalizes a provider-prefixed model before updating OpenAI runtime config', async () => {
+  it('prefixes the bare provider model with the runtime provider key for OpenAI runtime config', async () => {
     const openaiProvider = createProvider({
       id: 'openai-personal',
       type: 'openai',
-      model: 'openai/gpt-5.6',
+      model: 'gpt-5.6',
     });
     mocks.getProviderAccount.mockResolvedValue({ authMode: 'oauth_browser' });
     mocks.getDefaultProvider.mockResolvedValue(openaiProvider.id);
@@ -294,16 +300,18 @@ describe('provider-runtime-sync config delivery', () => {
 
     expect(mocks.syncProviderConfigToOpenClaw).toHaveBeenCalledWith(
       'openai',
-      'gpt-5.6',
+      ['gpt-5.6'],
       expect.objectContaining({
         api: 'openai-responses',
         baseUrl: 'https://api.openai.com/v1',
       }),
+      ['text'],
     );
     expect(mocks.setOpenClawDefaultModel).toHaveBeenCalledWith(
       'openai',
       'openai/gpt-5.6',
       [],
+      'model',
     );
   });
 
@@ -334,6 +342,7 @@ describe('provider-runtime-sync config delivery', () => {
         {
           id: 'coder',
           modelRef: 'ark/ark-code-latest',
+          overrideModelRef: 'ark/ark-code-latest',
         },
       ],
     });
@@ -346,7 +355,7 @@ describe('provider-runtime-sync config delivery', () => {
       expect.objectContaining({
         baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
         api: 'openai-completions',
-        models: [{ id: 'ark-code-latest', name: 'ark-code-latest', cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+        models: [expect.objectContaining({ id: 'ark-code-latest', name: 'ark-code-latest' })],
       }),
     );
   });
@@ -368,11 +377,12 @@ describe('provider-runtime-sync config delivery', () => {
 
     expect(mocks.syncProviderConfigToOpenClaw).toHaveBeenCalledWith(
       'ollama-ollamafd',
-      'qwen3:30b',
+      ['qwen3:30b'],
       expect.objectContaining({
         baseUrl: 'http://localhost:11434/v1',
         api: 'openai-completions',
       }),
+      ['text'],
     );
     expectNoGatewayLifecycleCalls(gateway);
   });
@@ -402,6 +412,7 @@ describe('provider-runtime-sync config delivery', () => {
         api: 'openai-completions',
       }),
       expect.any(Array),
+      'model',
     );
   });
   it('syncs updated Ollama provider as default with correct override config', async () => {
@@ -429,6 +440,7 @@ describe('provider-runtime-sync config delivery', () => {
         api: 'openai-completions',
       }),
       expect.any(Array),
+      'model',
     );
     // Should NOT call the non-override path
     expect(mocks.setOpenClawDefaultModel).not.toHaveBeenCalled();

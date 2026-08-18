@@ -1,0 +1,12 @@
+{
+  "name": "session-send-remote",
+  "version": "0.1.5",
+  "description": "YYClaw remote session tools",
+  "type": "module",
+  "main": "./index.js",
+  "openclaw": {
+    "extensions": [
+      "./index.js"
+    ]
+  }
+}

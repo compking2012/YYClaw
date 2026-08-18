@@ -1,7 +1,7 @@
 import { completeSetup, expect, test } from './fixtures/electron';
 
 test.describe('Channels binding regression', () => {
-  test('keeps newly added non-default Feishu accounts unassigned until the user binds an agent', async ({ electronApp, page }) => {
+  test('adding a non-default Feishu account does not auto-bind and the channel row no longer exposes an agent selector', async ({ electronApp, page }) => {
     await electronApp.evaluate(({ ipcMain }) => {
       const state = {
         nextAccountId: 'feishu-a1b2c3d4',
@@ -99,8 +99,10 @@ test.describe('Channels binding regression', () => {
 
     await completeSetup(page);
 
-    await page.getByTestId('sidebar-nav-channels').click();
-    await expect(page.getByTestId('channels-page')).toBeVisible();
+    await page.getByTestId('sidebar-nav-settings').click();
+
+    await page.getByTestId('settings-tab-channels').click();
+    await expect(page.getByTestId('channels-tab')).toBeVisible();
     await expect(page.getByText('Feishu / Lark')).toBeVisible();
 
     const feishuGroupHeader = page.locator('div.rounded-2xl').filter({ hasText: 'Feishu / Lark' }).first();
@@ -120,11 +122,11 @@ test.describe('Channels binding regression', () => {
 
     const newAccountRow = page.locator('div.rounded-xl').filter({ hasText: newAccountId }).first();
     await expect(newAccountRow).toBeVisible();
-    const bindingSelect = newAccountRow.locator('select');
-    await expect(bindingSelect).toHaveValue('');
 
-    await bindingSelect.selectOption('code');
-    await expect(bindingSelect).toHaveValue('code');
+    // Agent binding was moved to the Agents page: the channel account row must no
+    // longer expose an agent-binding <select>, and simply adding an account must
+    // not trigger any binding write.
+    await expect(newAccountRow.locator('select')).toHaveCount(0);
 
     const counters = await electronApp.evaluate(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -133,6 +135,6 @@ test.describe('Channels binding regression', () => {
     });
 
     expect(counters.saveCount).toBe(1);
-    expect(counters.bindingCount).toBe(1);
+    expect(counters.bindingCount).toBe(0);
   });
 });

@@ -4,6 +4,7 @@
  */
 import { vi } from 'vitest';
 import '@testing-library/jest-dom';
+import { resetSidebarOfficeSessionVisibility } from '../shared/internal-session';
 
 // Provide a minimal `electron` mock so tests that transitively import
 // main-process code (logger, store, etc.) don't blow up when the Electron
@@ -14,6 +15,7 @@ vi.mock('electron', () => ({
     getPath: vi.fn().mockReturnValue('/tmp/clawx-test'),
     getVersion: vi.fn().mockReturnValue('0.0.0-test'),
     getName: vi.fn().mockReturnValue('clawx-test'),
+    getAppPath: vi.fn().mockReturnValue(process.cwd()),
     isPackaged: false,
     isReady: vi.fn().mockResolvedValue(true),
     on: vi.fn(),
@@ -92,6 +94,16 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// Polyfill ResizeObserver (jsdom does not implement it; Radix UI primitives use it).
+if (typeof globalThis !== 'undefined' && typeof globalThis.ResizeObserver === 'undefined') {
+  class ResizeObserverMock {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+}
+
 // Mock matchMedia
 if (typeof window !== 'undefined') {
   Object.defineProperty(window, 'matchMedia', {
@@ -109,7 +121,10 @@ if (typeof window !== 'undefined') {
   });
 }
 
-// Reset mocks after each test
+// Reset mocks after each test; restore real timers so one suite's fake timers
+// cannot stall dynamic imports or async work in other parallelized test files.
 afterEach(() => {
   vi.clearAllMocks();
+  vi.useRealTimers();
+  resetSidebarOfficeSessionVisibility();
 });

@@ -22,7 +22,7 @@ describe('collectQuickAccessSkills', () => {
     rmSync(testRoot, { recursive: true, force: true });
   });
 
-  it('prioritizes workspace over openclaw over agents duplicates', async () => {
+  it('scans only openclaw + bundled roots and ignores workspace/.agents', async () => {
     const workspaceDir = join(testRoot, 'workspace');
     const openClawDir = join(testRoot, 'openclaw');
     const personalAgentsDir = join(testRoot, 'personal-agents');
@@ -30,17 +30,17 @@ describe('collectQuickAccessSkills', () => {
     writeSkill(
       join(workspaceDir, 'skill'),
       'create-skill',
-      "---\ndescription: Workspace version wins.\n---\n# Workspace Skill\n",
+      "---\ndescription: Workspace copy must not appear.\n---\n# Workspace Skill\n",
     );
     writeSkill(
       join(openClawDir, 'skills'),
       'create-skill',
-      "---\ndescription: OpenClaw fallback.\n---\n# OpenClaw Skill\n",
+      "---\ndescription: Managed OpenClaw skill.\n---\n# OpenClaw Skill\n",
     );
     writeSkill(
       join(personalAgentsDir, '.agents', 'skills'),
       'create-skill',
-      "---\ndescription: Agents fallback.\n---\n# Agents Skill\n",
+      "---\ndescription: Agents copy must not appear.\n---\n# Agents Skill\n",
     );
     writeSkill(
       join(openClawDir, 'skills'),
@@ -56,122 +56,48 @@ describe('collectQuickAccessSkills', () => {
       openClawDir,
     });
 
-    expect(skills.map((skill) => `${skill.source}:${skill.name}`)).toEqual([
-      'workspace:create-skill',
+    expect(skills.map((skill) => `${skill.source}:${skill.name}`).sort()).toEqual([
+      'openclaw:create-skill',
       'openclaw:summarize',
     ]);
-    expect(skills[0]).toMatchObject({
-      name: 'create-skill',
-      source: 'workspace',
-      description: 'Workspace version wins.',
+    expect(skills.find((skill) => skill.name === 'create-skill')).toMatchObject({
+      source: 'openclaw',
+      description: 'Managed OpenClaw skill.',
     });
   });
 
-  it('supports plural skills directories and falls back to body text descriptions', async () => {
-    const workspaceDir = join(testRoot, 'workspace');
-    const openClawDir = join(testRoot, 'openclaw');
+  it('prefers managed openclaw roots over bundled/legacy duplicates', async () => {
+    const managedDir = join(testRoot, 'managed');
+    const bundledDir = join(testRoot, 'bundled');
 
     writeSkill(
-      join(workspaceDir, 'skills'),
-      'docs-search',
-      "# Docs Search\n\nSearch project docs and summarize the answer.\n",
-    );
-
-    const skills = await collectQuickAccessSkills({
-      agentsRoots: [],
-      legacyRoots: [],
-      openClawRoots: [join(openClawDir, 'skills')],
-      workspace: workspaceDir,
-      openClawDir,
-    });
-
-    expect(skills).toHaveLength(1);
-    expect(skills[0]).toMatchObject({
-      name: 'docs-search',
-      source: 'workspace',
-      description: 'Search project docs and summarize the answer.',
-    });
-  });
-
-  it('loads project and personal .agents skill directories under the agents source', async () => {
-    const workspaceDir = join(testRoot, 'workspace');
-    const personalAgentsDir = join(testRoot, 'personal-agents');
-
-    writeSkill(
-      join(workspaceDir, '.agents', 'skills'),
-      'project-skill',
-      "---\ndescription: Project level .agents skill.\n---\n# Project Skill\n",
-    );
-    writeSkill(
-      join(personalAgentsDir, '.agents', 'skills'),
-      'personal-skill',
-      "---\ndescription: Personal .agents skill.\n---\n# Personal Skill\n",
-    );
-
-    const skills = await collectQuickAccessSkills({
-      agentsRoots: [
-        join(workspaceDir, '.agents', 'skills'),
-        join(personalAgentsDir, '.agents', 'skills'),
-      ],
-      legacyRoots: [],
-      openClawRoots: [join(testRoot, 'openclaw', 'skills')],
-      workspace: workspaceDir,
-      openClawDir: join(testRoot, 'openclaw'),
-    });
-
-    expect(skills.map((skill) => `${skill.source}:${skill.name}`)).toEqual([
-      'agents:personal-skill',
-      'agents:project-skill',
-    ]);
-    expect(skills.find((skill) => skill.name === 'personal-skill')).toMatchObject({
-      source: 'agents',
-      sourceLabel: '.agents',
-    });
-    expect(skills.find((skill) => skill.name === 'project-skill')).toMatchObject({
-      source: 'agents',
-      sourceLabel: '.agents',
-    });
-  });
-
-  it('prefers project .agents skills over personal .agents duplicates', async () => {
-    const workspaceDir = join(testRoot, 'workspace');
-    const personalAgentsDir = join(testRoot, 'personal-agents');
-
-    writeSkill(
-      join(workspaceDir, '.agents', 'skills'),
+      managedDir,
       'shared-skill',
-      "---\ndescription: Project .agents wins.\n---\n# Shared Skill\n",
+      "---\ndescription: Managed wins.\n---\n# Shared\n",
     );
     writeSkill(
-      join(personalAgentsDir, '.agents', 'skills'),
+      bundledDir,
       'shared-skill',
-      "---\ndescription: Personal .agents fallback.\n---\n# Shared Skill\n",
+      "---\ndescription: Bundled fallback.\n---\n# Shared\n",
     );
 
     const skills = await collectQuickAccessSkills({
-      agentsRoots: [
-        join(workspaceDir, '.agents', 'skills'),
-        join(personalAgentsDir, '.agents', 'skills'),
-      ],
-      legacyRoots: [],
-      openClawRoots: [join(testRoot, 'openclaw', 'skills')],
-      workspace: workspaceDir,
+      openClawRoots: [managedDir],
+      legacyRoots: [bundledDir],
+      workspace: join(testRoot, 'workspace'),
       openClawDir: join(testRoot, 'openclaw'),
     });
 
     expect(skills).toHaveLength(1);
     expect(skills[0]).toMatchObject({
       name: 'shared-skill',
-      source: 'agents',
-      sourceLabel: '.agents',
-      description: 'Project .agents wins.',
+      source: 'openclaw',
+      description: 'Managed wins.',
     });
   });
 
-  it('loads legacy openclaw and extension skill roots at the lowest priority', async () => {
-    const workspaceDir = join(testRoot, 'workspace');
+  it('loads bundled/extension legacy roots when openclaw roots are empty', async () => {
     const openClawDir = join(testRoot, 'openclaw');
-    const agentsDir = join(testRoot, 'agents-home');
     const extensionDir = join(testRoot, 'extensions');
 
     writeSkill(
@@ -186,13 +112,12 @@ describe('collectQuickAccessSkills', () => {
     );
 
     const skills = await collectQuickAccessSkills({
-      agentsRoots: [join(agentsDir, '.agents', 'skills')],
       legacyRoots: [
         join(openClawDir, 'skills'),
         join(extensionDir, 'wecom', 'skills'),
       ],
       openClawRoots: [],
-      workspace: workspaceDir,
+      workspace: join(testRoot, 'workspace'),
     });
 
     expect(skills.map((skill) => `${skill.source}:${skill.name}`)).toEqual([
@@ -207,7 +132,7 @@ describe('collectQuickAccessSkills', () => {
         name: 'apple-notes',
         description: 'Legacy OpenClaw built-in skill.',
         source: 'legacy',
-        sourceLabel: 'Legacy',
+        sourceLabel: 'Bundled',
         manifestPath: '/tmp/openclaw/skills/apple-notes/SKILL.md',
         baseDir: '/tmp/openclaw/skills/apple-notes',
       },
@@ -215,17 +140,17 @@ describe('collectQuickAccessSkills', () => {
         name: 'wecom-meeting-manage',
         description: 'Extension skill.',
         source: 'legacy',
-        sourceLabel: 'Legacy',
+        sourceLabel: 'Bundled',
         manifestPath: '/tmp/extensions/wecom/skills/wecom-meeting-manage/SKILL.md',
         baseDir: '/tmp/extensions/wecom/skills/wecom-meeting-manage',
       },
       {
-        name: 'workspace-skill',
-        description: 'Workspace skill.',
-        source: 'workspace',
-        sourceLabel: 'Workspace',
-        manifestPath: '/tmp/workspace/skills/workspace-skill/SKILL.md',
-        baseDir: '/tmp/workspace/skills/workspace-skill',
+        name: 'managed-skill',
+        description: 'Managed skill.',
+        source: 'openclaw',
+        sourceLabel: 'OpenClaw',
+        manifestPath: '/tmp/.openclaw/skills/managed-skill/SKILL.md',
+        baseDir: '/tmp/.openclaw/skills/managed-skill',
       },
     ];
 
@@ -236,13 +161,13 @@ describe('collectQuickAccessSkills', () => {
         { skillKey: 'wecom-meeting-manage', disabled: true, baseDir: '/tmp/extensions/wecom/skills/wecom-meeting-manage' },
       ],
       {
-        'workspace-skill': { enabled: true },
+        'managed-skill': { enabled: true },
       },
     );
 
     expect(filtered.map((skill) => skill.name)).toEqual([
       'apple-notes',
-      'workspace-skill',
+      'managed-skill',
     ]);
   });
 });

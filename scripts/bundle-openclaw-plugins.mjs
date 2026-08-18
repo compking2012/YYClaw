@@ -7,10 +7,8 @@
  * Current plugins:
  *   - @soimy/dingtalk -> build/openclaw-plugins/dingtalk
  *   - @wecom/wecom-openclaw-plugin -> build/openclaw-plugins/wecom
- *   - @openclaw/discord -> build/openclaw-plugins/discord
- *   - @openclaw/qqbot -> build/openclaw-plugins/qqbot
- *   - @openclaw/whatsapp -> build/openclaw-plugins/whatsapp
  *   - @tencent-weixin/openclaw-weixin -> build/openclaw-plugins/openclaw-weixin
+ *   - @openclaw/tokenjuice -> build/openclaw-plugins/tokenjuice
  *
  * The output plugin directory contains:
  *   - plugin source files (index.ts, openclaw.plugin.json, package.json, ...)
@@ -26,6 +24,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT_ROOT = path.join(ROOT, 'build', 'openclaw-plugins');
 const NODE_MODULES = path.join(ROOT, 'node_modules');
+const CACHE_FILE = path.join(OUTPUT_ROOT, '.bundle-cache.json');
+const LOCK_FILE = path.join(ROOT, 'pnpm-lock.yaml');
+const SCRIPT_FILE = path.join(__dirname, 'bundle-openclaw-plugins.mjs');
 
 // On Windows, pnpm virtual store paths can exceed MAX_PATH (260 chars).
 // Adding \\?\ prefix bypasses the limit for Win32 fs calls.
@@ -38,14 +39,31 @@ function normWin(p) {
   return '\\\\?\\' + p.replace(/\//g, '\\');
 }
 
+echo`📦 Bundling OpenClaw plugin mirrors...`;
+
+import crypto from 'node:crypto';
+function calculateHash() {
+  const hash = crypto.createHash('sha256');
+  if (fs.existsSync(LOCK_FILE)) hash.update(fs.readFileSync(LOCK_FILE));
+  if (fs.existsSync(SCRIPT_FILE)) hash.update(fs.readFileSync(SCRIPT_FILE));
+  return hash.digest('hex');
+}
+
+const currentHash = calculateHash();
+
 const PLUGINS = [
   { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
   { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
-  { npmName: '@larksuite/openclaw-lark', pluginId: 'feishu-openclaw-plugin' },
-  { npmName: '@openclaw/discord', pluginId: 'discord' },
-  { npmName: '@openclaw/qqbot', pluginId: 'qqbot' },
-  { npmName: '@openclaw/whatsapp', pluginId: 'whatsapp' },
+  { npmName: '@larksuite/openclaw-lark', pluginId: 'openclaw-lark' },
   { npmName: '@tencent-weixin/openclaw-weixin', pluginId: 'openclaw-weixin' },
+  // openclaw 2026.7.1 stopped shipping dist/extensions/tokenjuice (excluded via
+  // "!dist/extensions/tokenjuice/**" in its package files), so tokenjuice became
+  // an *external* official plugin. Its catalog entry uses defaultChoice: "npm",
+  // which makes the kernel's startup migration shell out to npm and then refuse
+  // to report the Gateway ready when npm is absent — bricking the app for every
+  // user who has prompt optimization enabled but no local Node/npm. Mirror it
+  // here so the plugin ships with ClawX and never needs a package manager.
+  { npmName: '@openclaw/tokenjuice', pluginId: 'tokenjuice' },
 ];
 
 function getVirtualStoreNodeModules(realPkgPath) {
@@ -240,11 +258,40 @@ function patchPluginId(pluginDir, expectedId) {
   }
 }
 
-echo`📦 Bundling OpenClaw plugin mirrors...`;
+if (fs.existsSync(CACHE_FILE)) {
+  try {
+    const cacheData = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+    if (cacheData.hash === currentHash) {
+      const allExist = PLUGINS.every(({ pluginId }) => fs.existsSync(path.join(OUTPUT_ROOT, pluginId)));
+      if (allExist) {
+        echo`⚡️ openclaw-plugins bundle cache hit! Skipping build.`;
+        process.exit(0);
+      }
+    }
+  } catch (e) {
+    /* ignore parse errors */
+  }
+}
+
+if (fs.existsSync(OUTPUT_ROOT)) {
+  fs.rmSync(OUTPUT_ROOT, { recursive: true, force: true });
+}
 fs.mkdirSync(OUTPUT_ROOT, { recursive: true });
 
+let hasErrors = false;
 for (const plugin of PLUGINS) {
-  bundleOnePlugin(plugin);
+  try {
+    bundleOnePlugin(plugin);
+  } catch (err) {
+    echo`❌ Error bundling ${plugin.pluginId}: ${err.message}`;
+    hasErrors = true;
+  }
 }
+
+if (hasErrors) {
+  process.exit(1);
+}
+
+fs.writeFileSync(CACHE_FILE, JSON.stringify({ hash: currentHash, timestamp: Date.now() }, null, 2), 'utf8');
 
 echo`✅ Plugin mirrors ready: ${OUTPUT_ROOT}`;

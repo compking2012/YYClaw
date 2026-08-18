@@ -74,8 +74,10 @@ test.describe('Channels account ID validation', () => {
 
     await completeSetup(page);
 
-    await page.getByTestId('sidebar-nav-channels').click();
-    await expect(page.getByTestId('channels-page')).toBeVisible();
+    await page.getByTestId('sidebar-nav-settings').click();
+
+    await page.getByTestId('settings-tab-channels').click();
+    await expect(page.getByTestId('channels-tab')).toBeVisible();
     await expect(page.getByText('Feishu / Lark')).toBeVisible();
 
     await page.getByRole('button', { name: /Add Account|account\.add/i }).click();

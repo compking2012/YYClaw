@@ -1,0 +1,13 @@
+/**
+ * @deprecated 请使用 `room-prompts/workflow/blocks` 或 `room-prompts/smart/blocks`。
+ */
+export {
+  WORKFLOW_AGENT_NO_FAST_ACK_RULE as ROOM_NO_FAST_ACK_RULE,
+  WORKFLOW_COORDINATOR_MENTION_AUDIT_RULE as ROOM_COORDINATOR_MENTION_AUDIT_RULE,
+  WORKFLOW_COORDINATION_RULE as ROOM_ASSIST_OR_HANDOFF_RULE,
+  WORKFLOW_DISCUSSION_RULES as ROOM_DISCUSSION_RULES,
+  WORKFLOW_MENTION_AT_FORMAT_RULE as ROOM_MENTION_AT_FORMAT_RULE,
+  WORKFLOW_MENTION_RULES_BLOCK as ROOM_MENTION_RULES_BLOCK,
+} from './room-prompts/workflow/blocks';
+
+export { roomTaskBlock } from './room-prompts/shared';

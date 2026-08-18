@@ -11,6 +11,10 @@ import enSkills from './locales/en/skills.json';
 import enCron from './locales/en/cron.json';
 import enSetup from './locales/en/setup.json';
 import enMenu from './locales/en/menu.json';
+import enOffice from './locales/en/office.json';
+import enWorkflow from './locales/en/workflow.json';
+import enWorkspace from './locales/en/workspace.json';
+import enErrors from './locales/en/errors.json';
 
 // ZH
 import zhCommon from './locales/zh/common.json';
@@ -23,6 +27,10 @@ import zhSkills from './locales/zh/skills.json';
 import zhCron from './locales/zh/cron.json';
 import zhSetup from './locales/zh/setup.json';
 import zhMenu from './locales/zh/menu.json';
+import zhOffice from './locales/zh/office.json';
+import zhWorkflow from './locales/zh/workflow.json';
+import zhWorkspace from './locales/zh/workspace.json';
+import zhErrors from './locales/zh/errors.json';
 
 // JA
 import jaCommon from './locales/ja/common.json';
@@ -35,6 +43,10 @@ import jaSkills from './locales/ja/skills.json';
 import jaCron from './locales/ja/cron.json';
 import jaSetup from './locales/ja/setup.json';
 import jaMenu from './locales/ja/menu.json';
+import jaOffice from './locales/ja/office.json';
+import jaWorkflow from './locales/ja/workflow.json';
+import jaWorkspace from './locales/ja/workspace.json';
+import jaErrors from './locales/ja/errors.json';
 
 // RU
 import ruCommon from './locales/ru/common.json';
@@ -47,6 +59,10 @@ import ruSkills from './locales/ru/skills.json';
 import ruCron from './locales/ru/cron.json';
 import ruSetup from './locales/ru/setup.json';
 import ruMenu from './locales/ru/menu.json';
+import ruOffice from './locales/ru/office.json';
+import ruWorkflow from './locales/ru/workflow.json';
+import ruWorkspace from './locales/ru/workspace.json';
+import ruErrors from './locales/ru/errors.json';
 
 export const I18N_NAMESPACES = [
   'common',
@@ -59,6 +75,10 @@ export const I18N_NAMESPACES = [
   'cron',
   'setup',
   'menu',
+  'office',
+  'workflow',
+  'workspace',
+  'errors',
 ] as const;
 
 export const I18N_RESOURCES = {
@@ -73,6 +93,10 @@ export const I18N_RESOURCES = {
     cron: enCron,
     setup: enSetup,
     menu: enMenu,
+    office: enOffice,
+    workflow: enWorkflow,
+    workspace: enWorkspace,
+    errors: enErrors,
   },
   zh: {
     common: zhCommon,
@@ -85,6 +109,10 @@ export const I18N_RESOURCES = {
     cron: zhCron,
     setup: zhSetup,
     menu: zhMenu,
+    office: zhOffice,
+    workflow: zhWorkflow,
+    workspace: zhWorkspace,
+    errors: zhErrors,
   },
   ja: {
     common: jaCommon,
@@ -97,6 +125,10 @@ export const I18N_RESOURCES = {
     cron: jaCron,
     setup: jaSetup,
     menu: jaMenu,
+    office: jaOffice,
+    workflow: jaWorkflow,
+    workspace: jaWorkspace,
+    errors: jaErrors,
   },
   ru: {
     common: ruCommon,
@@ -109,6 +141,10 @@ export const I18N_RESOURCES = {
     cron: ruCron,
     setup: ruSetup,
     menu: ruMenu,
+    office: ruOffice,
+    workflow: ruWorkflow,
+    workspace: ruWorkspace,
+    errors: ruErrors,
   },
 } as const;
 

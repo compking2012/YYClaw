@@ -36,9 +36,11 @@ import {
 import { dispatchJsonRpcNotification, dispatchProtocolEvent } from './event-dispatch';
 import { GatewayStateController } from './state';
 import { prepareGatewayLaunchContext } from './config-sync';
+import { runLegacyCronMigrationOnce } from '../services/cron-legacy-migrate';
 import { connectGatewaySocket, waitForGatewayReady } from './ws-client';
 import {
   findExistingGatewayProcess,
+  forceKillGatewayProcesses,
   runOpenClawDoctorRepair,
   terminateOwnedGatewayProcess,
   unloadLaunchctlGatewayService,
@@ -51,6 +53,13 @@ import { launchGatewayProcess } from './process-launcher';
 import { GatewayRestartController } from './restart-controller';
 import { GatewayRestartGovernor } from './restart-governor';
 import {
+  DEFAULT_GATEWAY_RELOAD_POLICY,
+  loadGatewayReloadPolicy,
+  type GatewayReloadPolicy,
+} from './reload-policy';
+import { readOpenClawConfig } from '../utils/channel-config';
+import { applyOpenClawConfigViaGatewayRpc } from './config-apply-rpc';
+import {
   classifyGatewayStderrMessage,
   GATEWAY_STARTUP_SLOW_STAGE_MS,
   GATEWAY_STARTUP_SLOW_TOTAL_MS,
@@ -61,6 +70,7 @@ import { runGatewayStartupSequence } from './startup-orchestrator';
 import {
   hasFatalRuntimeFailureSignal,
   hasInvalidConfigFailureSignal,
+  hasMissingRuntimeFailureSignal,
   hasStartupMigrationLockSignal,
 } from './startup-recovery';
 import {
@@ -168,6 +178,13 @@ export interface GatewayManagerEvents {
   'channel:status': (data: GatewayChannelStatusEvent) => void;
   'chat:message': (data: GatewayChatMessageEvent) => void;
   'chat:runtime-event': (data: ChatRuntimeEvent) => void;
+  'port-conflict': (data: GatewayPortConflictData | null) => void;
+  'talk:event': (data: unknown) => void;
+}
+
+export interface GatewayPortConflictData {
+  port: number;
+  externalPids: string[];
 }
 
 /**
@@ -196,21 +213,31 @@ export class GatewayManager extends EventEmitter {
   private readonly lifecycleController = new GatewayLifecycleController();
   private readonly restartController = new GatewayRestartController();
   private readonly restartGovernor = new GatewayRestartGovernor();
+  private reloadDebounceTimer: NodeJS.Timeout | null = null;
+  private reloadPolicy: GatewayReloadPolicy = { ...DEFAULT_GATEWAY_RELOAD_POLICY };
+  private reloadPolicyLoadedAt = 0;
+  private reloadPolicyRefreshPromise: Promise<void> | null = null;
   private upgradeSnapshotCleanupAttempted = false;
   private externalShutdownSupported: boolean | null = null;
   private reconnectAttemptsTotal = 0;
   private reconnectSuccessTotal = 0;
+  private static readonly RELOAD_POLICY_REFRESH_MS = 15_000;
   public static readonly RESTART_COOLDOWN_MS = 5_000;
   private lastRestartAt = 0;
   /** Set by scheduleReconnect() before calling start() to signal auto-reconnect. */
   private isAutoReconnectStart = false;
   private gatewayReadyFallbackTimer: NodeJS.Timeout | null = null;
   private gatewayReadyFallbackAttempt = 0;
+  private pendingPortConflict: GatewayPortConflictData | null = null;
+  private pendingPortConflictResolver: ((forceKill: boolean) => void) | null = null;
   private readonly capabilityMonitor = new GatewayCapabilityMonitor();
   private diagnostics: GatewayDiagnosticsSnapshot = {
     consecutiveHeartbeatMisses: 0,
     consecutiveRpcFailures: 0,
   };
+  /** runIds currently in flight, tracked via run.started/run.ended so a
+   * restart can be deferred while a chat run is executing (see restart()). */
+  private readonly activeChatRunIds = new Set<string>();
 
   constructor(config?: Partial<ReconnectConfig>) {
     super();
@@ -248,6 +275,15 @@ export class GatewayManager extends EventEmitter {
         logger.info('Gateway subsystems ready (event received)');
         this.setStatus({ gatewayReady: true });
       }
+      // Legacy cron JSON -> SQLite rescue migration (silent, idempotent).
+      void runLegacyCronMigrationOnce(this);
+      void import('../utils/workspace-agent-skills-sync')
+        .then(({ scheduleWorkspaceAgentSkillsReconcile }) => {
+          scheduleWorkspaceAgentSkillsReconcile('gateway:ready');
+        })
+        .catch((error) => {
+          logger.warn('Failed to schedule workspace agent skills reconcile after gateway ready:', error);
+        });
       void this.cleanupOpenClawUpgradeSnapshot();
     });
     this.on('gateway:health', (payload) => {
@@ -256,6 +292,65 @@ export class GatewayManager extends EventEmitter {
     this.on('gateway:presence', (payload) => {
       this.capabilityMonitor.recordPresence(payload);
     });
+    this.on('chat:runtime-event', (event: ChatRuntimeEvent) => {
+      if (event.type === 'run.started') {
+        this.activeChatRunIds.add(event.runId);
+      } else if (event.type === 'run.ended') {
+        this.activeChatRunIds.delete(event.runId);
+        if (this.activeChatRunIds.size === 0) {
+          this.tryFlushDeferredRestart('chat-run-quiesced');
+        }
+      }
+    });
+  }
+
+  /** True while any chat run (foreground, background, or cron) is in flight. */
+  hasActiveChatRuns(): boolean {
+    return this.activeChatRunIds.size > 0;
+  }
+
+  getPendingPortConflict(): GatewayPortConflictData | null {
+    return this.pendingPortConflict;
+  }
+
+  isSettingsRestartBusy(): boolean {
+    return this.restartInFlight !== null || this.status.state === 'starting';
+  }
+
+  cooperativeCancelSessionsListForAdminSync(_reason?: unknown): void {
+    // Compatibility hook for Admin Console sync. Current Gateway RPC backpressure
+    // path does not keep a cancellable sessions.list handle.
+  }
+
+  resolvePortConflict(forceKill: boolean): void {
+    const resolver = this.pendingPortConflictResolver;
+    this.pendingPortConflict = null;
+    this.pendingPortConflictResolver = null;
+    this.emit('port-conflict', null);
+    resolver?.(forceKill);
+  }
+
+  private async requestPortConflictResolution(
+    port: number,
+    externalPids: string[],
+  ): Promise<boolean> {
+    if (this.pendingPortConflictResolver) {
+      this.resolvePortConflict(false);
+    }
+
+    this.pendingPortConflict = { port, externalPids };
+    this.emit('port-conflict', this.pendingPortConflict);
+
+    const forceKill = await new Promise<boolean>((resolve) => {
+      this.pendingPortConflictResolver = resolve;
+    });
+
+    if (forceKill) {
+      await forceKillGatewayProcesses(port, externalPids);
+      return true;
+    }
+
+    return false;
   }
 
   private async initDeviceIdentity(): Promise<void> {
@@ -311,6 +406,11 @@ export class GatewayManager extends EventEmitter {
    */
   isConnected(): boolean {
     return this.stateController.isConnected(this.ws?.readyState === WebSocket.OPEN);
+  }
+
+  /** Whether an unexpected disconnect should trigger automatic reconnect. */
+  isAutoReconnectEnabled(): boolean {
+    return this.shouldReconnect;
   }
 
   /**
@@ -408,6 +508,10 @@ export class GatewayManager extends EventEmitter {
         waitForPortFree: async (port) => {
           await waitForPortFree(port);
         },
+        onPortConflict: async (port, externalPids) => {
+          logger.warn(`Gateway port ${port} is occupied by external process(es): ${externalPids.join(', ')}`);
+          return this.requestPortConflictResolution(port, externalPids);
+        },
         startProcess: async () => {
           await this.startProcess();
           tSpawned = Date.now();
@@ -474,11 +578,18 @@ export class GatewayManager extends EventEmitter {
         error
       );
       this.setStatus({ state: 'error', error: String(error) });
+      const missingRuntime = hasMissingRuntimeFailureSignal(error, this.recentStartupStderrLines);
       const fatalStartupFailure = isOpenClawFatalConfigExitCode(this.processExitCode)
         || hasFatalRuntimeFailureSignal(error, this.recentStartupStderrLines)
         || hasStartupMigrationLockSignal(error, this.recentStartupStderrLines)
         || hasInvalidConfigFailureSignal(error, this.recentStartupStderrLines);
-      if (fatalStartupFailure) {
+      if (missingRuntime) {
+        this.shouldReconnect = false;
+        logger.error(
+          'Bundled OpenClaw runtime is missing from the install directory; '
+          + 'automatic reconnect disabled. Reinstall YYClaw to restore it.',
+        );
+      } else if (fatalStartupFailure) {
         // OpenClaw 2026.7.1 uses EX_CONFIG for fatal configuration failures.
         // Runtime and SQLite compatibility failures are likewise not repaired
         // by restarting the same binary, so leave recovery to a manual start.
@@ -559,6 +670,7 @@ export class GatewayManager extends EventEmitter {
     this.ownsProcess = false;
 
     clearPendingGatewayRequests(this.pendingRequests, new Error('Gateway stopped'));
+    this.activeChatRunIds.clear();
 
     this.restartController.resetDeferredRestart();
     this.isAutoReconnectStart = false;
@@ -597,6 +709,25 @@ export class GatewayManager extends EventEmitter {
         state: this.status.state,
         startLock: this.startLock,
       });
+      return;
+    }
+
+    const { isOfficeExecutionSyncActive } = await import('../services/office/office-sync-runtime');
+    if (isOfficeExecutionSyncActive()) {
+      this.restartController.markDeferredRestart('office-execution-active', {
+        state: this.status.state,
+        startLock: this.startLock,
+      });
+      logger.info('Deferring Gateway restart while Office projects are executing');
+      return;
+    }
+
+    if (this.hasActiveChatRuns()) {
+      this.restartController.markDeferredRestart('chat-run-active', {
+        state: this.status.state,
+        startLock: this.startLock,
+      });
+      logger.info('Deferring Gateway restart while a chat run is in progress');
       return;
     }
 
@@ -690,6 +821,227 @@ export class GatewayManager extends EventEmitter {
     });
   }
 
+  /** Flush a deferred restart once Office execution or an active chat run has quiesced. */
+  tryFlushDeferredRestart(trigger: string): void {
+    this.restartController.flushDeferredRestart(
+      trigger,
+      {
+        state: this.status.state,
+        startLock: this.startLock,
+        shouldReconnect: this.shouldReconnect,
+      },
+      () => {
+        void this.restart().catch((error) => {
+          logger.warn('Deferred Gateway restart failed:', error);
+        });
+      },
+    );
+  }
+
+  /**
+   * Ask the Gateway process to reload config in-place when possible.
+   * Falls back to restart on unsupported platforms or signaling failures.
+   */
+  async reload(): Promise<void> {
+    await this.refreshReloadPolicy();
+
+    if (this.reloadPolicy.mode === 'off' || this.reloadPolicy.mode === 'restart') {
+      logger.info(
+        `[gateway-refresh] mode=reload result=policy_forced_restart policy=${this.reloadPolicy.mode}`,
+      );
+      await this.restart();
+      return;
+    }
+
+    if (this.restartController.isRestartDeferred({
+      state: this.status.state,
+      startLock: this.startLock,
+    })) {
+      this.restartController.markDeferredRestart('reload', {
+        state: this.status.state,
+        startLock: this.startLock,
+      });
+      return;
+    }
+
+    const pidBefore = this.process?.pid;
+    logger.info(`[gateway-refresh] mode=reload requested pid=${pidBefore ?? 'n/a'} state=${this.status.state}`);
+
+    if (!this.process?.pid || this.status.state !== 'running') {
+      logger.warn('[gateway-refresh] mode=reload result=fallback_restart cause=not_running');
+      logger.warn('Gateway reload requested while not running; falling back to restart');
+      await this.restart();
+      return;
+    }
+
+    const connectedForMs = this.status.connectedAt
+      ? Date.now() - this.status.connectedAt
+      : Number.POSITIVE_INFINITY;
+
+    // Avoid signaling a process that just came up; it will already read latest config.
+    if (connectedForMs < 8000) {
+      logger.info(
+        `[gateway-refresh] mode=reload result=skipped_recent_connect connectedForMs=${connectedForMs} pid=${this.process.pid}`,
+      );
+      logger.info(`Gateway connected ${connectedForMs}ms ago, skipping reload signal`);
+      return;
+    }
+
+    if (process.platform === 'win32') {
+      // Windows does not support SIGUSR1 for in-process reload.
+      // Fall back to a full restart.  The connectedForMs < 8000 guard above
+      // already skips unnecessary restarts for recently-started processes.
+      logger.warn('[gateway-refresh] mode=reload result=fallback_restart cause=windows');
+      await this.restart();
+      return;
+    }
+
+    try {
+      process.kill(this.process.pid, 'SIGUSR1');
+      logger.info(`Sent SIGUSR1 to Gateway for config reload (pid=${this.process.pid})`);
+      // Some gateway builds do not handle SIGUSR1 as an in-process reload.
+      // If process state doesn't recover quickly, fall back to restart.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      if (this.status.state !== 'running' || !this.process?.pid) {
+        logger.warn('[gateway-refresh] mode=reload result=fallback_restart cause=post_signal_unhealthy');
+        logger.warn('Gateway did not stay running after reload signal, falling back to restart');
+        await this.restart();
+      } else {
+        const pidAfter = this.process.pid;
+        logger.info(
+          `[gateway-refresh] mode=reload result=applied_in_place pidBefore=${pidBefore} pidAfter=${pidAfter}`,
+        );
+      }
+    } catch (error) {
+      logger.warn('[gateway-refresh] mode=reload result=fallback_restart cause=signal_error');
+      logger.warn('Gateway reload signal failed, falling back to restart:', error);
+      await this.restart();
+    }
+  }
+
+  /**
+   * Debounced reload — coalesces multiple rapid config-change events into one
+   * in-process reload when possible.
+   */
+  debouncedReload(delayMs?: number): void {
+    void this.refreshReloadPolicy();
+    const effectiveDelay = delayMs ?? this.reloadPolicy.debounceMs;
+    if (this.reloadPolicy.mode === 'off' || this.reloadPolicy.mode === 'restart') {
+      logger.debug(
+        `Gateway reload policy=${this.reloadPolicy.mode}; routing debouncedReload to debouncedRestart (${effectiveDelay}ms)`,
+      );
+      this.debouncedRestart(effectiveDelay);
+      return;
+    }
+
+    if (this.reloadDebounceTimer) {
+      clearTimeout(this.reloadDebounceTimer);
+    }
+    logger.debug(`Gateway reload debounced (will fire in ${effectiveDelay}ms)`);
+    this.reloadDebounceTimer = setTimeout(() => {
+      this.reloadDebounceTimer = null;
+      void this.reload().catch((err) => {
+        logger.warn('Debounced Gateway reload failed:', err);
+      });
+    }, effectiveDelay);
+  }
+
+  /**
+   * Deterministically push the current on-disk openclaw.json to the kernel via
+   * the `config.apply` control-plane RPC. YYClaw has already written the
+   * full config; this makes the kernel validate it, diff it against its live
+   * in-memory snapshot, and apply the reload plan in-process (agents/models =
+   * hot), keeping the Gateway PID stable so model switches take effect for new
+   * messages without a restart.
+   *
+   * Unlike the old debounced `hotApplyConfig`, this is awaitable and fires
+   * immediately so the convergence scheduler can push-then-repoll when the
+   * kernel's native file watcher misses an atomic-rename write. Returns true
+   * only when the config.apply RPC succeeds; callers own any further fallback.
+   */
+  async applyConfigViaRpc(): Promise<boolean> {
+    await this.refreshReloadPolicy();
+    // Respect the reload policy: 'off' disables refresh entirely; 'restart'
+    // forces a full process restart instead of an in-place hot apply.
+    if (this.reloadPolicy.mode === 'off') {
+      logger.debug('Gateway reload policy=off; skipping config.apply push');
+      return false;
+    }
+    if (this.reloadPolicy.mode === 'restart') {
+      logger.debug('Gateway reload policy=restart; routing config.apply push to debouncedRestart');
+      this.debouncedRestart();
+      return false;
+    }
+    if (this.status.state !== 'running' || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      logger.info('[gateway-refresh] mode=hot result=fallback cause=not_connected method=config.apply');
+      return false;
+    }
+    try {
+      await applyOpenClawConfigViaGatewayRpc({
+        rpc: (method, params, timeoutMs) => this.rpc(method, params, timeoutMs),
+        readConfig: readOpenClawConfig,
+      });
+      logger.info('[gateway-refresh] mode=hot result=applied_via_rpc method=config.apply');
+      return true;
+    } catch (error) {
+      logger.warn('[gateway-refresh] mode=hot result=fallback cause=rpc_error method=config.apply', error);
+      return false;
+    }
+  }
+
+  /**
+   * Apply config through RPC without ever scheduling a process restart.
+   * Filesystem-driven skill mutations use this path so Windows/policy fallback
+   * cannot interrupt active Gateway sessions.
+   */
+  async applyConfigHotOnly(): Promise<boolean> {
+    if (this.status.state !== 'running' || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      logger.info('[gateway-refresh] mode=hot-only result=skipped cause=not_connected');
+      return false;
+    }
+    try {
+      await applyOpenClawConfigViaGatewayRpc({
+        rpc: (method, params, timeoutMs) => this.rpc(method, params, timeoutMs),
+        readConfig: readOpenClawConfig,
+      });
+      logger.info('[gateway-refresh] mode=hot-only result=applied method=config.apply');
+      return true;
+    } catch (error) {
+      logger.warn('[gateway-refresh] mode=hot-only result=failed method=config.apply', error);
+      // Re-throw control-plane rate limits so skill hot-apply can stop retrying
+      // (OpenClaw caps config.apply at 3 writes / 60s) and schedule a deferred push.
+      const message = error instanceof Error ? error.message : String(error ?? '');
+      if (/rate limit exceeded for config\.apply/i.test(message)) {
+        throw error instanceof Error ? error : new Error(message);
+      }
+      return false;
+    }
+  }
+
+  private async refreshReloadPolicy(force = false): Promise<void> {
+    const now = Date.now();
+    if (!force && now - this.reloadPolicyLoadedAt < GatewayManager.RELOAD_POLICY_REFRESH_MS) {
+      return;
+    }
+
+    if (this.reloadPolicyRefreshPromise) {
+      await this.reloadPolicyRefreshPromise;
+      return;
+    }
+
+    this.reloadPolicyRefreshPromise = (async () => {
+      const nextPolicy = await loadGatewayReloadPolicy();
+      this.reloadPolicy = nextPolicy;
+      this.reloadPolicyLoadedAt = Date.now();
+    })();
+
+    try {
+      await this.reloadPolicyRefreshPromise;
+    } finally {
+      this.reloadPolicyRefreshPromise = null;
+    }
+  }
+
   /**
    * Clear all active timers
    */
@@ -753,6 +1105,13 @@ export class GatewayManager extends EventEmitter {
         logger.info('Gateway ready fallback RPC router probe succeeded');
         this.resetGatewayReadyFallback();
         this.setStatus({ gatewayReady: true });
+        void import('../utils/workspace-agent-skills-sync')
+          .then(({ scheduleWorkspaceAgentSkillsReconcile }) => {
+            scheduleWorkspaceAgentSkillsReconcile('gateway:ready-fallback');
+          })
+          .catch((error) => {
+            logger.warn('Failed to schedule workspace agent skills reconcile after gateway ready fallback:', error);
+          });
         // A fast Gateway can emit gateway.ready before the WebSocket client is
         // attached. A successful router probe is equivalent readiness, so it
         // must also complete the one-time migration snapshot lifecycle.
@@ -1123,9 +1482,13 @@ export class GatewayManager extends EventEmitter {
     // Handle OpenClaw protocol response format: { type: "res", id: "...", ok: true/false, ... }
     if (msg.type === 'res' && typeof msg.id === 'string') {
       if (msg.ok === false || msg.error) {
-        const errorObj = msg.error as { message?: string; code?: number } | undefined;
+        const errorObj = msg.error as { message?: string; code?: string | number } | undefined;
         const errorMsg = errorObj?.message || JSON.stringify(msg.error) || 'Unknown error';
-        if (rejectPendingGatewayRequest(this.pendingRequests, msg.id, new Error(errorMsg))) {
+        const err = new Error(errorMsg) as Error & { code?: string };
+        if (errorObj?.code !== undefined && errorObj.code !== null) {
+          err.code = String(errorObj.code);
+        }
+        if (rejectPendingGatewayRequest(this.pendingRequests, msg.id, err)) {
           return;
         }
       } else if (resolvePendingGatewayRequest(this.pendingRequests, msg.id, msg.payload ?? msg)) {
@@ -1142,10 +1505,17 @@ export class GatewayManager extends EventEmitter {
     // Fallback: Check if this is a JSON-RPC 2.0 response (legacy support)
     if (isResponse(message) && message.id && this.pendingRequests.has(String(message.id))) {
       if (message.error) {
-        const errorMsg = typeof message.error === 'object'
-          ? (message.error as { message?: string }).message || JSON.stringify(message.error)
+        const errObj = typeof message.error === 'object'
+          ? (message.error as { message?: string; code?: string | number })
+          : undefined;
+        const errorMsg = errObj
+          ? (errObj.message || JSON.stringify(message.error))
           : String(message.error);
-        rejectPendingGatewayRequest(this.pendingRequests, String(message.id), new Error(errorMsg));
+        const err = new Error(errorMsg) as Error & { code?: string };
+        if (errObj?.code !== undefined && errObj.code !== null) {
+          err.code = String(errObj.code);
+        }
+        rejectPendingGatewayRequest(this.pendingRequests, String(message.id), err);
       } else {
         resolvePendingGatewayRequest(this.pendingRequests, String(message.id), message.result);
       }

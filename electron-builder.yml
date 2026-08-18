@@ -1,8 +1,11 @@
 appId: app.clawx.desktop
-productName: ClawX
-copyright: Copyright © 2026 ClawX
+productName: YYClaw
+copyright: Copyright © 2026 Yang Yang
 compression: maximum
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
 
 directories:
   output: release
@@ -20,8 +23,19 @@ extraResources:
       - "**/*"
       - "!icons/*.md"
       - "!icons/*.svg"
+      # 整棵 resources/bin 不随此条打进包；各平台仅在下方 mac/linux/win.extraResources 按需拷贝
+      # resources/bin/<platform>-<arch>/（与当前目标 arch 一致），避免 arm64 安装包带入 darwin-x64/linux 等。
+      # 须同时排除顶层「bin」链本身：仅 !bin/** 仍会拷贝 resources/bin → .app 内断链，codesign 遍历会 ENOENT。
+      - "!bin"
       - "!bin/**"
+      # skills-bundled 由下方独立条目拷贝；若此处包含会与第二条重复（EEXIST 等）。
+      - "!skills-bundled"
+      - "!skills-bundled/**"
+      # build_rel 将全平台缓存放在此目录；若打进 app 会成倍放大各 arch 的 dmg/zip
+      - "!build-cache/**"
       - "!screenshot/**"
+  - from: resources/skills-bundled/
+    to: resources/skills-bundled/
   # OpenClaw package (node_modules copied separately by afterPack hook
   # because electron-builder respects .gitignore which excludes node_modules/)
   - from: build/openclaw/
@@ -55,17 +69,16 @@ npmRebuild: false
 # Fallback: GitHub Releases (backup, used when OSS is unavailable)
 publish:
   - provider: generic
-    url: https://oss.intelli-spectrum.com/latest
+    url: https://claw-x.com/latest
     useMultipleRangeRequest: false
-  - provider: github
-    owner: ValueCell-ai
-    repo: ClawX
 
 # macOS Configuration
 mac:
+  # 仅影响 mac 的 zip 等 ArchiveTarget；DMG 在 dmg 段用 format: UDBZ 保持与原 compression:maximum 等价的 bzip2。根 compression 仍用于 win/linux。zip blockmap 不变。
+  compression: normal
   extraResources:
-    - from: resources/bin/darwin-${arch}
-      to: bin
+    - from: resources/bin/darwin-${arch}/
+      to: bin/
     - from: resources/cli/posix/
       to: cli/
   category: public.app-category.productivity
@@ -86,10 +99,13 @@ mac:
   entitlementsInherit: entitlements.mac.plist
   notarize: true
   extendInfo:
-    NSMicrophoneUsageDescription: ClawX requires microphone access for voice features
-    NSCameraUsageDescription: ClawX requires camera access for video features
+    NSMicrophoneUsageDescription: YYClaw requires microphone access for voice features
+    NSCameraUsageDescription: YYClaw requires camera access for video features
 
 dmg:
+  format: UDBZ
+  # Skip blockmap generation (faster build; updates will be full-download instead of differential)
+  writeUpdateInfo: false
   # Explicit volume size prevents dmg-builder@1.2.0 auto-calculation from
   # underestimating (causes "No space left on device" for large app bundles).
   # The final .dmg is bzip2-compressed, so this only affects the temp volume.
@@ -115,8 +131,8 @@ win:
   # code-signing certificate, so verifying would always fail on the updater.
   verifyUpdateCodeSignature: false
   extraResources:
-    - from: resources/bin/win32-${arch}
-      to: bin
+    - from: resources/bin/win32-${arch}/
+      to: bin/
     - from: resources/cli/win32/
       to: cli/
   icon: resources/icons/icon.ico
@@ -131,10 +147,12 @@ nsis:
   allowToChangeInstallationDirectory: true
   deleteAppDataOnUninstall: false
   differentialPackage: true
-  createDesktopShortcut: true
+  # String "always" enables RECREATE_DESKTOP_SHORTCUT in NSIS; customInstall also forces
+  # shortcut recreation after upgrade when KeepShortcuts + deleted .lnk would skip it.
+  createDesktopShortcut: always
   createStartMenuShortcut: true
-  shortcutName: ClawX
-  uninstallDisplayName: ClawX
+  shortcutName: YYClaw
+  uninstallDisplayName: YYClaw
   license: LICENSE
   include: scripts/installer.nsh
   installerIcon: resources/icons/icon.ico
@@ -143,8 +161,8 @@ nsis:
 # Linux Configuration
 linux:
   extraResources:
-    - from: resources/bin/linux-${arch}
-      to: bin
+    - from: resources/bin/linux-${arch}/
+      to: bin/
     - from: resources/cli/posix/
       to: cli/
   icon: resources/icons
@@ -157,21 +175,18 @@ linux:
       arch:
         - x64
         - arm64
-    - target: rpm
-      arch:
-        - x64
   category: Utility
-  maintainer: ClawX Team <public@valuecell.ai>
-  vendor: ClawX
+  maintainer: YYClaw Team
+  vendor: YYClaw
   synopsis: AI Assistant powered by OpenClaw
-  description: ClawX is a graphical AI assistant application that integrates with OpenClaw Gateway to provide intelligent automation and assistance across multiple messaging platforms.
+  description: YYClaw is a graphical AI assistant application that integrates with OpenClaw Gateway to provide intelligent automation and assistance across multiple messaging platforms.
   desktop:
     entry:
-      Name: ClawX
+      Name: YYClaw
       Comment: AI Assistant powered by OpenClaw
       Categories: Utility;Network;
       Keywords: ai;assistant;automation;chat;
-      StartupWMClass: clawx
+      StartupWMClass: yyclaw
 
 appImage:
   license: LICENSE

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
+import { useSettingsStore } from '@/stores/settings';
 
 const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stickState } = vi.hoisted(() => ({
   acpState: {
@@ -39,6 +40,12 @@ const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stic
     loadSessions: vi.fn().mockResolvedValue(undefined),
     selectAcpSession: vi.fn(),
     acknowledgeAcpSessionCreated: vi.fn(),
+    routeAndMaybeStartWorkflow: vi.fn(),
+    ingestAcpObservedWorkflow: vi.fn(),
+    healStaleObservedWorkflows: vi.fn(),
+    workflowCardsBySession: {},
+    workspaceOverrideBySessionKey: {},
+    sessionModelOverrideBySessionKey: {},
   },
   gatewayState: {
     status: { state: 'running', gatewayReady: true, port: 18789 },
@@ -214,6 +221,9 @@ describe('ACP Chat page inline timeline lifecycle', () => {
   beforeEach(() => {
     ensureAcpChatSubscriptions.mockReset();
     resolveWorkspaceContext.mockReset();
+    // Tool call cards only render in developer mode; unlock it so the
+    // inline-tool assertions in this suite remain meaningful.
+    useSettingsStore.setState({ devModeUnlocked: true });
     resolveWorkspaceContext.mockImplementation(async (input: {
       workspaceRoot: string;
       executionCwd: string;

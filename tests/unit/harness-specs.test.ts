@@ -83,7 +83,9 @@ describe('harness specs', () => {
       id: 'web-browser',
       scenario: 'gateway-backend-communication',
       taskType: 'runtime-bridge',
-      requiredProfiles: ['fast'],
+      // The scenario requires the `comms` profile, so the task spec must declare
+      // it too — `harness validate` rejects the spec otherwise.
+      requiredProfiles: ['fast', 'comms'],
       requiredRules: expectedRules,
       docs: { required: true },
     });

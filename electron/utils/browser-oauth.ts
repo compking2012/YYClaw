@@ -141,7 +141,8 @@ class BrowserOAuthManager extends EventEmitter {
     const oauthTokenSubject = typeof token.accountId === 'string' ? token.accountId : undefined;
 
     const normalizedExistingModel = (() => {
-      const value = existing?.model?.trim();
+      const rawValue = Array.isArray(existing?.model) ? existing.model[0] : existing?.model;
+      const value = rawValue?.trim();
       if (!value) return undefined;
       if (value.startsWith('openai/') || value.startsWith('openai-codex/')) {
         return value.split('/').pop();

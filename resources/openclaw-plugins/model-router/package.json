@@ -1,0 +1,14 @@
+{
+  "name": "openclaw-model-router",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Data-driven per-task model auto-selection for OpenClaw (YYClaw first-party plugin).",
+  "main": "index.ts",
+  "openclaw": {
+    "extensions": ["./index.ts"],
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2"
+    }
+  }
+}

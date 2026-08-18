@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { request } from 'https';
+import { request } from 'node:https';
 import path from 'path';
 import { logger } from './logger';
 import { getOpenClawConfigDir } from './paths';

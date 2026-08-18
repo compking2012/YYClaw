@@ -10,8 +10,16 @@ import { toOpenClawChannelType, toUiChannelType } from '../utils/channel-alias';
 import { resolveAccountIdFromSessionHistory } from '../utils/session-util';
 import { loadSessionTranscriptByKey } from './sessions-api';
 import { isRecord } from './payload-utils';
+import {
+  getWindow,
+  isWithinWindow,
+  pruneWindows,
+  removeWindow,
+  setDesiredEnabled,
+  writeWindow,
+} from './cron-window-store';
 
-interface GatewayCronJob {
+export interface GatewayCronJob {
   id: string;
   name: string;
   description?: string;
@@ -330,7 +338,7 @@ function getUnsupportedCronDeliveryError(_channel: string | undefined): string |
   return null;
 }
 
-function normalizeCronDelivery(
+export function normalizeCronDelivery(
   rawDelivery: unknown,
   fallbackMode: CronJobDelivery['mode'] = 'none',
 ): CronJobDelivery {
@@ -380,7 +388,7 @@ function normalizeCronSchedule(schedule: GatewayCronJob['schedule']): CronJob['s
  * schedule; structured `at` / `every` / `cron` objects pass through after a
  * minimal shape check.
  */
-function normalizeScheduleInput(schedule: unknown): CronSchedule {
+export function normalizeScheduleInput(schedule: unknown): CronSchedule {
   if (typeof schedule === 'string') {
     return { kind: 'cron', expr: schedule };
   }
@@ -475,6 +483,40 @@ function transformCronJob(job: GatewayCronJob): CronJob {
   };
 }
 
+/** Merge the locally-persisted validity window (if any) onto a transformed job. */
+function attachWindow(job: CronJob): CronJob {
+  const record = getWindow(job.id);
+  if (!record) return job;
+  return {
+    ...job,
+    window: {
+      desiredEnabled: record.desiredEnabled,
+      ...(record.start ? { start: record.start } : {}),
+      ...(record.end ? { end: record.end } : {}),
+    },
+  };
+}
+
+/**
+ * Pull the UI-only `window` off a create/update input. Returns the normalized
+ * window (or null when both bounds are blank → no constraint) plus a flag for
+ * whether the caller supplied the field at all (update semantics).
+ */
+function extractWindowInput(input: Record<string, unknown>): {
+  present: boolean;
+  window: { start?: string; end?: string; desiredEnabled?: boolean } | null;
+} {
+  if (!('window' in input)) return { present: false, window: null };
+  const raw = input.window;
+  if (!raw || typeof raw !== 'object') return { present: true, window: null };
+  const record = raw as Record<string, unknown>;
+  const start = typeof record.start === 'string' && record.start.trim() ? record.start.trim() : undefined;
+  const end = typeof record.end === 'string' && record.end.trim() ? record.end.trim() : undefined;
+  if (!start && !end) return { present: true, window: null };
+  const desiredEnabled = typeof record.desiredEnabled === 'boolean' ? record.desiredEnabled : undefined;
+  return { present: true, window: { start, end, desiredEnabled } };
+}
+
 async function listCronJobs(gatewayManager: GatewayManager): Promise<CronJob[]> {
   let jobs: GatewayCronJob[] = [];
   let usedFallback = false;
@@ -497,9 +539,18 @@ async function listCronJobs(gatewayManager: GatewayManager): Promise<CronJob[]> 
 
   if (!usedFallback && jobs.length > 0) {
     repairCronJobsInBackground(gatewayManager, jobs);
+    // Drop persisted windows for jobs that no longer exist.
+    try {
+      pruneWindows(jobs.map((job) => job.id));
+    } catch {
+      // best-effort cleanup
+    }
   }
 
-  return jobs.map((job) => ({ ...transformCronJob(job), ...(usedFallback ? { _fromFallback: true } : {}) }));
+  return jobs.map((job) => ({
+    ...attachWindow(transformCronJob(job)),
+    ...(usedFallback ? { _fromFallback: true } : {}),
+  }));
 }
 
 function repairCronJobsInBackground(gatewayManager: GatewayManager, jobs: GatewayCronJob[]): void {
@@ -590,11 +641,17 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
       if (delivery.mode === 'announce' && unsupportedDeliveryError) {
         throw new Error(unsupportedDeliveryError);
       }
+      // Validity window is enforced app-side, not by the Gateway. Compute the
+      // effective enabled state (user intent gated by the window) for the job,
+      // then persist the window after the job id is known.
+      const { window } = extractWindowInput(input as unknown as Record<string, unknown>);
+      const desiredEnabled = typeof input.enabled === 'boolean' ? input.enabled : true;
+      const gatewayEnabled = window ? desiredEnabled && isWithinWindow(window) : desiredEnabled;
       const result = await gatewayManager.rpc('cron.add', {
         name: input.name,
         schedule: normalizeScheduleInput(input.schedule),
         payload: { kind: 'agentTurn', message: input.message },
-        enabled: typeof input.enabled === 'boolean' ? input.enabled : true,
+        enabled: gatewayEnabled,
         wakeMode: 'next-heartbeat',
         sessionTarget: 'isolated',
         agentId,
@@ -603,15 +660,39 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
       if (!result || typeof result !== 'object') {
         throw new Error('Cron create returned an invalid job');
       }
-      return transformCronJob(result as GatewayCronJob);
+      const job = transformCronJob(result as GatewayCronJob);
+      if (window) {
+        writeWindow(job.id, { start: window.start, end: window.end, desiredEnabled });
+      }
+      return attachWindow(job);
     },
     update: async (payload) => {
       const body = payload;
       const id = getId(body);
       const input = isRecord(body.input) ? body.input : {};
+      const existingWindow = getWindow(id);
+      const { present: windowPresent, window } = extractWindowInput(input);
       const patch = buildCronUpdatePatch(input);
       delete patch.id;
       delete patch.input;
+      delete patch.window;
+      const providedEnabled = typeof input.enabled === 'boolean' ? input.enabled : undefined;
+      // Reconcile the app-side validity window and derive the effective enabled
+      // state the Gateway should hold (user intent gated by the window).
+      if (windowPresent) {
+        if (window) {
+          const desiredEnabled = window.desiredEnabled ?? providedEnabled ?? existingWindow?.desiredEnabled ?? true;
+          writeWindow(id, { start: window.start, end: window.end, desiredEnabled });
+          patch.enabled = desiredEnabled && isWithinWindow(window);
+        } else {
+          removeWindow(id);
+          const desiredEnabled = providedEnabled ?? existingWindow?.desiredEnabled;
+          if (typeof desiredEnabled === 'boolean') patch.enabled = desiredEnabled;
+        }
+      } else if (existingWindow && providedEnabled !== undefined) {
+        setDesiredEnabled(id, providedEnabled);
+        patch.enabled = providedEnabled && isWithinWindow(existingWindow);
+      }
       const deliveryPatch = patch.delivery && typeof patch.delivery === 'object'
         ? patch.delivery as Record<string, unknown>
         : undefined;
@@ -629,14 +710,30 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
       if (!result || typeof result !== 'object') {
         throw new Error('Cron update returned an invalid job');
       }
-      return transformCronJob(result as GatewayCronJob);
+      return attachWindow(transformCronJob(result as GatewayCronJob));
     },
-    delete: async (payload) => gatewayManager.rpc('cron.remove', { id: getId(payload) }),
+    delete: async (payload) => {
+      const id = getId(payload);
+      removeWindow(id);
+      return gatewayManager.rpc('cron.remove', { id });
+    },
     toggle: async (payload) => {
       const body = payload;
+      const id = getId(body);
+      const enabled = body.enabled === true;
+      // For a windowed job, the toggle expresses the user's *intent*; the actual
+      // Gateway enabled state stays gated by the validity window.
+      const existingWindow = getWindow(id);
+      if (existingWindow) {
+        setDesiredEnabled(id, enabled);
+        return gatewayManager.rpc('cron.update', {
+          id,
+          patch: { enabled: enabled && isWithinWindow(existingWindow) },
+        });
+      }
       return gatewayManager.rpc('cron.update', {
-        id: getId(body),
-        patch: { enabled: body.enabled === true },
+        id,
+        patch: { enabled },
       });
     },
     trigger: async (payload) => gatewayManager.rpc('cron.run', { id: getId(payload), mode: 'force' }),

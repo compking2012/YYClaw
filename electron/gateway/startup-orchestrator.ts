@@ -7,6 +7,16 @@ export interface ExistingGatewayInfo {
   externalToken?: string;
 }
 
+export class PortConflictError extends Error {
+  constructor(
+    public readonly port: number,
+    public readonly externalPids: string[],
+  ) {
+    super(`Port conflict: external processes [${externalPids.join(', ')}] are using port ${port}`);
+    this.name = 'PortConflictError';
+  }
+}
+
 type StartupHooks = {
   port: number;
   ownedPid?: never; // Removed: pid is now read dynamically in findExistingGateway to avoid stale-snapshot bug
@@ -28,6 +38,7 @@ type StartupHooks = {
   runDoctorRepair: () => Promise<boolean>;
   onDoctorRepairSuccess: () => void;
   delay: (ms: number) => Promise<void>;
+  onPortConflict: (port: number, externalPids: string[]) => Promise<boolean>;
 };
 
 async function connectWithStartupRetry(
@@ -111,6 +122,18 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
     } catch (error) {
       if (error instanceof LifecycleSupersededError) {
         throw error;
+      }
+
+      if (error instanceof PortConflictError) {
+        logger.warn(`Port conflict on ${error.port} with pids: ${error.externalPids.join(', ')}`);
+        const shouldKill = await hooks.onPortConflict(error.port, error.externalPids);
+        if (shouldKill) {
+          logger.info('User chose to force kill existing gateway processes. Retrying start.');
+          continue;
+        } else {
+          logger.info('User declined to force kill gateway processes. Aborting startup.');
+          throw new Error('Startup aborted due to unresolved port conflict.', { cause: error });
+        }
       }
 
       const recoveryAction = getGatewayStartupRecoveryAction({

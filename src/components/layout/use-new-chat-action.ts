@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { resolveEffectiveWorkspace } from '@/lib/workspace-context';
+import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -10,17 +10,14 @@ export function useNewChatAction(): () => void {
   const setChatWorkspacePath = useSettingsStore((state) => state.setChatWorkspacePath);
 
   return useCallback(() => {
-    const { currentSessionKey, sessions } = useChatStore.getState();
-    const selectedSession = sessions.find((session) => session.key === currentSessionKey);
-
-    // Start the draft in the selected conversation's effective workspace while
-    // keeping the workspace picker editable until the first message creates it.
-    if (selectedSession) {
-      const selectedWorkspacePath = resolveEffectiveWorkspace({
-        session: selectedSession,
-        globalWorkspace: useSettingsStore.getState().chatWorkspacePath,
-      }).cwd;
-      setChatWorkspacePath(selectedWorkspacePath);
+    // New Chat opens under the default agent; use that agent's own workspace.
+    const { defaultAgentId, agents } = useAgentsStore.getState();
+    const agentId = defaultAgentId || agents[0]?.id;
+    const workspace = agentId
+      ? agents.find((agent) => agent.id === agentId)?.workspace?.trim()
+      : undefined;
+    if (workspace) {
+      setChatWorkspacePath(workspace);
     }
 
     newSession();

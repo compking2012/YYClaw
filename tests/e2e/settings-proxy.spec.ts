@@ -9,10 +9,31 @@ async function ensureSwitchState(toggle: Locator, checked: boolean): Promise<voi
   }
 }
 
+// Developer mode is unlocked by tapping the version string in the About tab five
+// times in quick succession, then enabling the revealed Developer Mode switch.
+async function unlockDeveloperMode(page: Page): Promise<void> {
+  await page.getByTestId('settings-tab-about').click();
+  const version = page.getByTestId('about-version');
+  await expect(version).toBeVisible();
+  for (let i = 0; i < 5; i += 1) {
+    await version.click();
+  }
+  const toggle = page.getByTestId('settings-dev-mode-switch');
+  await expect(toggle).toBeVisible();
+  await ensureSwitchState(toggle, true);
+}
+
 async function readProxyEnabled(page: Page): Promise<boolean> {
   return await page.evaluate(async () => {
     const settings = await window.electron.ipcRenderer.invoke('settings:getAll');
     return Boolean(settings?.proxyEnabled);
+  });
+}
+
+async function readPromptOptimizationEnabled(page: Page): Promise<boolean> {
+  return await page.evaluate(async () => {
+    const settings = await window.electron.ipcRenderer.invoke('settings:getAll');
+    return Boolean(settings?.promptOptimizationEnabled);
   });
 }
 
@@ -21,11 +42,10 @@ test.describe('ClawX developer proxy settings', () => {
     await completeSetup(page);
 
     await page.getByTestId('sidebar-nav-settings').click();
-    await expect(page.getByTestId('settings-page')).toBeVisible();
+    await expect(page.getByTestId('settings-tab')).toBeVisible();
 
-    const devModeToggle = page.getByTestId('settings-dev-mode-switch');
-    await expect(devModeToggle).toBeVisible();
-    await ensureSwitchState(devModeToggle, true);
+    await unlockDeveloperMode(page);
+    await page.getByTestId('settings-tab-developer').click();
 
     const proxySection = page.getByTestId('settings-proxy-section');
     const proxyToggle = page.getByTestId('settings-proxy-toggle');
@@ -45,5 +65,22 @@ test.describe('ClawX developer proxy settings', () => {
     await expect(proxySaveButton).toBeEnabled();
     await proxySaveButton.click();
     await expect.poll(async () => await readProxyEnabled(page)).toBe(false);
+  });
+
+  test('persists prompt optimization toggle', async ({ page }) => {
+    await completeSetup(page);
+
+    await page.getByTestId('sidebar-nav-settings').click();
+    await expect(page.getByTestId('settings-tab')).toBeVisible();
+    await page.getByTestId('settings-tab-gateway').click();
+
+    const promptOptimizationToggle = page.getByTestId('settings-prompt-optimization-switch');
+    await expect(promptOptimizationToggle).toBeVisible();
+
+    await ensureSwitchState(promptOptimizationToggle, true);
+    await expect.poll(async () => await readPromptOptimizationEnabled(page)).toBe(true);
+
+    await ensureSwitchState(promptOptimizationToggle, false);
+    await expect.poll(async () => await readPromptOptimizationEnabled(page)).toBe(false);
   });
 });

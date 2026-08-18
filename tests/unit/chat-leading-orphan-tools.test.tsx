@@ -47,10 +47,18 @@ const { acpState, agentsState, artifactPanelState, chatState, settingsState } = 
     loadSessions: vi.fn().mockResolvedValue(undefined),
     selectAcpSession: vi.fn(),
     acknowledgeAcpSessionCreated: vi.fn(),
+    routeAndMaybeStartWorkflow: vi.fn(),
+    ingestAcpObservedWorkflow: vi.fn(),
+    healStaleObservedWorkflows: vi.fn(),
+    workflowCardsBySession: {},
+    workspaceOverrideBySessionKey: {},
+    sessionModelOverrideBySessionKey: {},
   },
   settingsState: {
     chatWorkspacePath: '/workspace',
     setChatWorkspacePath: vi.fn(),
+    devModeUnlocked: true,
+    promptOptimizationEnabled: false,
   },
 }));
 

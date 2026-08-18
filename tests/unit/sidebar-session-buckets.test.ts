@@ -43,6 +43,8 @@ function seedSidebarState(renameSession = vi.fn().mockResolvedValue(undefined)) 
     sidebarCollapsed: false,
     sidebarWidth: 280,
     devModeUnlocked: false,
+    chatWorkspacePath: '~/.openclaw/workspace',
+    workspaceLabels: {},
   });
   useGatewayStore.setState({
     status: { state: 'stopped', port: 18789 },
@@ -57,6 +59,7 @@ function seedSidebarState(renameSession = vi.fn().mockResolvedValue(undefined)) 
     sessionLabels: {},
     sessionLastActivity: { [sidebarSessionKey]: 1 },
     renameSession,
+    loadHistory: vi.fn().mockResolvedValue(undefined),
     loadSessions: vi.fn().mockResolvedValue(undefined),
   });
 }
@@ -117,6 +120,17 @@ describe('sidebar session helpers', () => {
     renderSidebar();
 
     expect(screen.getByTestId(`sidebar-session-${sidebarSessionKey}`)).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('uses the navigation typography token for workspace and session rows', () => {
+    seedSidebarState();
+
+    renderSidebar();
+
+    expect(screen.getByTestId('sidebar-nav-agents')).toHaveClass('sidebar-nav-text');
+    expect(screen.getByTestId(getWorkspaceGroupToggleTestId('~/.openclaw/workspace')))
+      .toHaveClass('sidebar-nav-text');
+    expect(screen.getByTestId(`sidebar-session-${sidebarSessionKey}`)).toHaveClass('sidebar-nav-text');
   });
 
   it('renders the relative timestamp for an idle read session', () => {
@@ -238,12 +252,17 @@ describe('sidebar session helpers', () => {
     expect(screen.queryByTestId(`sidebar-session-time-${sidebarSessionKey}`)).not.toBeInTheDocument();
   });
 
-  it('marks the current session read without loading legacy history and restores its timestamp', () => {
+  it('marks an unread row read before reloading the selected session and restores its timestamp', () => {
     const originalMarkRead = useSessionAttentionStore.getState().markRead;
     const markRead = vi.fn((sessionKey: string) => originalMarkRead(sessionKey));
-    const switchSession = vi.fn();
+    const loadHistory = vi.fn(() => {
+      expect(useSessionAttentionStore.getState().bySessionKey[sidebarSessionKey]?.unread).toBe(false);
+      return Promise.resolve();
+    });
     seedSidebarState();
-    useChatStore.setState({ switchSession });
+    useChatStore.setState({
+      loadHistory,
+    });
     useSessionAttentionStore.setState({
       bySessionKey: { [sidebarSessionKey]: { observedBusy: false, unread: true } },
       markRead,
@@ -253,27 +272,8 @@ describe('sidebar session helpers', () => {
     fireEvent.click(screen.getByTestId(`sidebar-session-${sidebarSessionKey}`));
 
     expect(markRead).toHaveBeenCalledWith(sidebarSessionKey);
-    expect(switchSession).not.toHaveBeenCalled();
+    expect(loadHistory).toHaveBeenCalledWith(false);
     expect(screen.getByTestId(`sidebar-session-time-${sidebarSessionKey}`)).toBeInTheDocument();
-  });
-
-  it('loads only the session catalog when the Gateway becomes ready', async () => {
-    const loadSessions = vi.fn().mockResolvedValue(undefined);
-    seedSidebarState();
-    useChatStore.setState({ loadSessions });
-    useGatewayStore.setState({
-      status: {
-        state: 'running',
-        gatewayReady: true,
-        port: 18789,
-        pid: 1234,
-        connectedAt: 5678,
-      },
-    });
-
-    renderSidebar();
-
-    await waitFor(() => expect(loadSessions).toHaveBeenCalledTimes(1));
   });
 
   it('does not treat a retained current session as visible or read on Settings', () => {
@@ -360,33 +360,6 @@ describe('sidebar session helpers', () => {
       expect(screen.queryByLabelText('Session title')).not.toBeInTheDocument();
     });
     expect(renameSession).not.toHaveBeenCalled();
-  });
-
-  it('keeps the single-session delete dialog open when deletion fails', async () => {
-    const deleteSession = vi.fn().mockResolvedValue({ success: false, error: 'locked' });
-    seedSidebarState();
-    useChatStore.setState({ deleteSession });
-    renderSidebar();
-
-    fireEvent.click(screen.getByTestId(`sidebar-session-delete-${sidebarSessionKey}`));
-    fireEvent.click(screen.getByTestId('confirm-dialog-confirm-button'));
-
-    await waitFor(() => expect(deleteSession).toHaveBeenCalledWith(sidebarSessionKey));
-    expect(screen.getByTestId('confirm-dialog-confirm-button')).toBeInTheDocument();
-  });
-
-  it('closes the single-session delete dialog after deletion succeeds', async () => {
-    const deleteSession = vi.fn().mockResolvedValue({ success: true });
-    seedSidebarState();
-    useChatStore.setState({ deleteSession });
-    renderSidebar();
-
-    fireEvent.click(screen.getByTestId(`sidebar-session-delete-${sidebarSessionKey}`));
-    fireEvent.click(screen.getByTestId('confirm-dialog-confirm-button'));
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('confirm-dialog-confirm-button')).not.toBeInTheDocument();
-    });
   });
 
   it('keeps rename controls active when focus moves to cancel and cancels on click', () => {

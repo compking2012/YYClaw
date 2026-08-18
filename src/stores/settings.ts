@@ -24,6 +24,9 @@ interface SettingsState {
   startMinimized: boolean;
   launchAtStartup: boolean;
   telemetryEnabled: boolean;
+  promptOptimizationEnabled: boolean;
+  /** When true, a single-agent turn may auto-decompose into a workflow. Default off. */
+  autoWorkflowEnabled: boolean;
 
   // Gateway
   gatewayAutoStart: boolean;
@@ -38,6 +41,7 @@ interface SettingsState {
   // Update
   updateChannel: UpdateChannel;
   autoCheckUpdate: boolean;
+  autoDownloadUpdate: boolean;
 
   // UI State
   sidebarCollapsed: boolean;
@@ -47,8 +51,14 @@ interface SettingsState {
   recentWorkspacePaths: string[];
   workspaceLabels: Record<string, string>;
 
+  // Voice
+  voiceAutoRead: boolean;
+  voiceInputMode: 'dictation' | 'conversation';
+  voiceCaps: { tts: boolean; transcription: boolean; realtime: boolean };
+
   // Setup
   setupComplete: boolean;
+  isLoggedIn: boolean;
 
   // Actions
   init: () => Promise<void>;
@@ -57,6 +67,8 @@ interface SettingsState {
   setStartMinimized: (value: boolean) => void;
   setLaunchAtStartup: (value: boolean) => void;
   setTelemetryEnabled: (value: boolean) => void;
+  setPromptOptimizationEnabled: (value: boolean) => void;
+  setAutoWorkflowEnabled: (value: boolean) => void;
   setGatewayAutoStart: (value: boolean) => void;
   setGatewayPort: (port: number) => void;
   setProxyEnabled: (value: boolean) => void;
@@ -67,13 +79,18 @@ interface SettingsState {
   setProxyBypassRules: (value: string) => void;
   setUpdateChannel: (channel: UpdateChannel) => void;
   setAutoCheckUpdate: (value: boolean) => void;
+  setAutoDownloadUpdate: (value: boolean) => void;
   setSidebarCollapsed: (value: boolean) => void;
   setSidebarWidth: (value: number) => void;
   setDevModeUnlocked: (value: boolean) => void;
+  setVoiceAutoRead: (value: boolean) => void;
+  setVoiceInputMode: (value: 'dictation' | 'conversation') => void;
+  refreshVoiceCapabilities: () => Promise<void>;
   setChatWorkspacePath: (workspacePath: string) => void;
   setWorkspaceLabel: (workspacePath: string, label: string) => void;
   removeWorkspace: (workspacePath: string) => Promise<void>;
   markSetupComplete: () => void;
+  setLoggedIn: (value: boolean, userInfo?: unknown) => void;
   resetSettings: () => void;
 }
 
@@ -83,6 +100,8 @@ const defaultSettings = {
   startMinimized: false,
   launchAtStartup: false,
   telemetryEnabled: true,
+  promptOptimizationEnabled: true,
+  autoWorkflowEnabled: false,
   gatewayAutoStart: true,
   gatewayPort: 18789,
   proxyEnabled: false,
@@ -93,20 +112,25 @@ const defaultSettings = {
   proxyBypassRules: '<local>;localhost;127.0.0.1;::1',
   updateChannel: 'stable' as UpdateChannel,
   autoCheckUpdate: true,
+  autoDownloadUpdate: false,
   sidebarCollapsed: false,
   sidebarWidth: 280,
   devModeUnlocked: false,
+  voiceAutoRead: false,
+  voiceInputMode: 'dictation' as 'dictation' | 'conversation',
+  voiceCaps: { tts: false, transcription: false, realtime: false },
   chatWorkspacePath: DEFAULT_WORKSPACE_CWD,
   recentWorkspacePaths: [DEFAULT_WORKSPACE_CWD],
   workspaceLabels: {},
   setupComplete: false,
+  isLoggedIn: false,
 };
 
 const clampSidebarWidth = (value: number) => Math.min(420, Math.max(220, Math.round(value)));
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       ...defaultSettings,
 
       init: async () => {
@@ -126,6 +150,7 @@ export const useSettingsStore = create<SettingsState>()(
           if (resolvedLanguage) {
             i18n.changeLanguage(resolvedLanguage);
           }
+          void get().refreshVoiceCapabilities();
         } catch {
           // Keep renderer-persisted settings as a fallback when the main
           // process store is not reachable.
@@ -151,6 +176,14 @@ export const useSettingsStore = create<SettingsState>()(
         set({ telemetryEnabled });
         void hostApi.settings.set('telemetryEnabled', telemetryEnabled).catch(() => { });
       },
+      setPromptOptimizationEnabled: (promptOptimizationEnabled) => {
+        set({ promptOptimizationEnabled });
+        void hostApi.settings.set('promptOptimizationEnabled', promptOptimizationEnabled).catch(() => { });
+      },
+      setAutoWorkflowEnabled: (autoWorkflowEnabled) => {
+        set({ autoWorkflowEnabled });
+        void hostApi.settings.set('autoWorkflowEnabled', autoWorkflowEnabled).catch(() => { });
+      },
       setGatewayAutoStart: (gatewayAutoStart) => {
         set({ gatewayAutoStart });
         void hostApi.settings.set('gatewayAutoStart', gatewayAutoStart).catch(() => { });
@@ -170,12 +203,38 @@ export const useSettingsStore = create<SettingsState>()(
         set({ autoCheckUpdate });
         void hostApi.settings.set('autoCheckUpdate', autoCheckUpdate).catch(() => { });
       },
+      setAutoDownloadUpdate: (autoDownloadUpdate) => {
+        set({ autoDownloadUpdate });
+        void hostApi.settings.set('autoDownloadUpdate', autoDownloadUpdate).catch(() => { });
+      },
 
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setSidebarWidth: (sidebarWidth) => set({ sidebarWidth: clampSidebarWidth(sidebarWidth) }),
       setDevModeUnlocked: (devModeUnlocked) => {
         set({ devModeUnlocked });
         void hostApi.settings.set('devModeUnlocked', devModeUnlocked).catch(() => { });
+      },
+      setVoiceAutoRead: (voiceAutoRead) => {
+        set({ voiceAutoRead });
+        void hostApi.settings.set('voiceAutoRead', voiceAutoRead).catch(() => { });
+      },
+      setVoiceInputMode: (voiceInputMode) => {
+        set({ voiceInputMode });
+        void hostApi.settings.set('voiceInputMode', voiceInputMode).catch(() => { });
+      },
+      refreshVoiceCapabilities: async () => {
+        try {
+          const res = await hostApi.voice.configStatus() as { success?: boolean; configured?: { tts?: boolean; transcription?: boolean; realtime?: boolean } };
+          set({
+            voiceCaps: {
+              tts: Boolean(res.configured?.tts),
+              transcription: Boolean(res.configured?.transcription),
+              realtime: Boolean(res.configured?.realtime),
+            },
+          });
+        } catch {
+          set({ voiceCaps: { tts: false, transcription: false, realtime: false } });
+        }
       },
       setChatWorkspacePath: (chatWorkspacePath) => {
         const normalized = normalizeWorkspacePath(chatWorkspacePath) ?? DEFAULT_WORKSPACE_CWD;
@@ -243,10 +302,17 @@ export const useSettingsStore = create<SettingsState>()(
         await hostApi.settings.setMany(patch);
       },
       markSetupComplete: () => set({ setupComplete: true }),
+      setLoggedIn: (isLoggedIn) => set({ isLoggedIn }),
       resetSettings: () => set(defaultSettings),
     }),
     {
       name: 'clawx-settings',
+      migrate: (persisted) => {
+        if (!persisted || typeof persisted !== 'object') return persisted;
+        const next = { ...(persisted as Record<string, unknown>) };
+        delete next.officeCollaborationEnabled;
+        return next;
+      },
     }
   )
 );

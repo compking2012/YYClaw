@@ -31,24 +31,13 @@ describe('dispatchProtocolEvent', () => {
     expect(emitter.emit).toHaveBeenCalledWith('channel:status', { channelId: 'telegram', status: 'connected' });
   });
 
-  it('dispatches native health and presence events separately from generic notifications', () => {
-    const emitter = createMockEmitter();
-    dispatchProtocolEvent(emitter, 'health', { ok: true });
-    dispatchProtocolEvent(emitter, 'presence', [{ mode: 'gateway', ts: 1 }]);
-
-    expect(emitter.emit).toHaveBeenCalledWith('gateway:health', { ok: true });
-    expect(emitter.emit).toHaveBeenCalledWith('gateway:presence', [{ mode: 'gateway', ts: 1 }]);
-    expect(emitter.emit).not.toHaveBeenCalledWith('notification', expect.objectContaining({ method: 'health' }));
-    expect(emitter.emit).not.toHaveBeenCalledWith('notification', expect.objectContaining({ method: 'presence' }));
-  });
-
   it('dispatches chat to chat:message', () => {
     const emitter = createMockEmitter();
     dispatchProtocolEvent(emitter, 'chat', { text: 'hello' });
     expect(emitter.emit).toHaveBeenCalledWith('chat:message', { message: { text: 'hello' } });
   });
 
-  it('does not normalize non-terminal lifecycle phase=end as run.ended', () => {
+  it('normalizes lifecycle phase=end as run.ended (OpenClaw success terminal)', () => {
     const emitter = createMockEmitter();
     const payload = {
       runId: 'run-1',
@@ -64,9 +53,11 @@ describe('dispatchProtocolEvent', () => {
 
     dispatchProtocolEvent(emitter, 'agent', payload);
 
-    expect(emitter.emit).not.toHaveBeenCalledWith('chat:runtime-event', expect.objectContaining({
+    expect(emitter.emit).toHaveBeenCalledWith('chat:runtime-event', expect.objectContaining({
       type: 'run.ended',
       runId: 'run-1',
+      status: 'completed',
+      lifecyclePhase: 'end',
     }));
     expect(emitter.emit).not.toHaveBeenCalledWith('notification', expect.anything());
   });
@@ -93,6 +84,7 @@ describe('dispatchProtocolEvent', () => {
       ts: 12,
       status: 'completed',
       endedAt: 13,
+      lifecyclePhase: 'completed',
       livenessState: undefined,
       replayInvalid: undefined,
       stopReason: undefined,

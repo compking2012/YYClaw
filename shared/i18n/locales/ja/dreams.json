@@ -1,0 +1,71 @@
+{
+    "title": "夢境",
+    "subtitle": "記憶シグナル、夢日記、メンテナンス操作を確認します。",
+    "gatewayNotReady": "ゲートウェイは起動中または切断されています。利用可能になると夢境データを読み込みます。",
+    "metrics": {
+        "shortTerm": "短期エントリ",
+        "grounded": "固定済みシグナル",
+        "signals": "シグナル合計",
+        "promotedToday": "今日の昇格"
+    },
+    "diary": {
+        "title": "夢日記",
+        "notFound": "DREAMS.md はまだ作成されていません。",
+        "empty": "夢日記のエントリはまだありません。",
+        "undated": "日付なし"
+    },
+    "actions": {
+        "title": "メンテナンス",
+        "enable": "夢境を開始",
+        "disable": "夢境を停止",
+        "backfill": "日記をバックフィル",
+        "dedupe": "日記を重複排除",
+        "repair": "キャッシュを修復",
+        "resetGrounded": "再生済みを消去",
+        "resetDiary": "バックフィル日記をリセット",
+        "enableSuccess": "夢境を開始しました。管理スケジュールを適用するためゲートウェイが再起動する場合があります。",
+        "disableSuccess": "夢境を停止しました。管理スケジュールを削除するためゲートウェイが再起動する場合があります。",
+        "backfillSuccess": "{{count}} 件の夢日記をバックフィルしました。",
+        "dedupeSuccess": "{{removed}} 件の重複夢エントリを削除し、{{kept}} 件を保持しました。",
+        "repairSuccess": "夢キャッシュの修復が完了しました。",
+        "resetDiarySuccess": "{{count}} 件のバックフィル夢日記を削除しました。",
+        "resetGroundedSuccess": "{{count}} 件の再生済み短期エントリを消去しました。"
+    },
+    "confirmations": {
+        "dedupe": {
+            "title": "夢日記を重複排除しますか？",
+            "message": "DREAMS.md を書き換え、完全に重複した日記エントリだけを削除します。"
+        },
+        "repair": {
+            "title": "夢キャッシュを修復しますか？",
+            "message": "派生した夢キャッシュファイルをアーカイブし、クリーンな入力から再構築します。夢日記は変更されません。"
+        },
+        "resetDiary": {
+            "title": "バックフィル日記をリセットしますか？",
+            "message": "DREAMS.md からバックフィルされた日記エントリを削除します。手書きの内容は対象ではありません。"
+        },
+        "resetGrounded": {
+            "title": "再生済み短期エントリを消去しますか？",
+            "message": "固定済み記憶シグナルへ再生された短期エントリを消去します。"
+        }
+    },
+    "phases": {
+        "title": "夢境フェーズ",
+        "light": "浅い夢",
+        "rem": "REM",
+        "deep": "深い夢",
+        "noSchedule": "管理スケジュールなし"
+    },
+    "signals": {
+        "title": "最近のシグナル",
+        "storageMode": "ストレージ: {{mode}}",
+        "noStorageMode": "ストレージモードは利用できません",
+        "empty": "最近の短期または昇格済み夢シグナルはありません。",
+        "unknownSource": "不明なソース",
+        "noSnippet": "スニペットはありません。"
+    },
+    "errors": {
+        "configHashMissing": "config base hash が利用できないため夢境を更新できません。",
+        "memoryInitializing": "夢境メモリはまだ初期化中です。ゲートウェイの起動完了後に再試行してください。"
+    }
+}

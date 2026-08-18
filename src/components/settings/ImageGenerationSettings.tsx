@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Eye, EyeOff, ImagePlus, Loader2, Play, RefreshCw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,7 +20,7 @@ import {
 import { cn } from '@/lib/utils';
 
 const inputClasses =
-  'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
+  'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
 
 function extractTestOutputPath(result: unknown): string | null {
@@ -61,7 +61,7 @@ export function ImageGenerationSettings() {
       setShowRelayApiKey(false);
       setTestAgentId(settings.defaultAgentId);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.appError(error);
     } finally {
       setLoading(false);
     }
@@ -127,7 +127,7 @@ export function ImageGenerationSettings() {
       setShowRelayApiKey(false);
       toast.success(t('imageGeneration.toast.saved'));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.appError(error);
     } finally {
       setSaving(false);
     }
@@ -145,7 +145,7 @@ export function ImageGenerationSettings() {
       setClearConfirmOpen(false);
       toast.success(t('imageGeneration.toast.cleared'));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.appError(error);
     } finally {
       setClearing(false);
     }
@@ -179,7 +179,7 @@ export function ImageGenerationSettings() {
         toast.error(result.error || result.stderr || t('imageGeneration.toast.testFailed'));
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.appError(error);
     } finally {
       setTesting(false);
     }

@@ -1,0 +1,45 @@
+{
+  "id": "model-router",
+  "name": "Model Router",
+  "description": "Data-driven per-task model auto-selection — picks the best model per task for efficiency/cost/performance.",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "description": "Master switch for auto-selection."
+      },
+      "defaultAgentId": {
+        "type": ["string", "null"],
+        "description": "Agent id used when the session key does not encode one."
+      },
+      "byAgent": {
+        "type": "object",
+        "description": "Per-agent routing config, keyed by agent id.",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "autoSelectText": { "type": "boolean", "description": "Auto-select the text model for this agent." },
+            "profile": { "type": "string", "enum": ["quality", "balanced", "cost", "latency"], "description": "Optimization profile." }
+          },
+          "additionalProperties": false
+        }
+      },
+      "candidates": {
+        "type": "array",
+        "description": "Text-capable model candidates with enriched ModelMeta, injected by the host.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "modelRef": { "type": "string" },
+            "modelId": { "type": "string" },
+            "modelType": { "type": "array", "items": { "type": "string" } },
+            "meta": { "type": "object" }
+          },
+          "required": ["modelRef", "modelId"],
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

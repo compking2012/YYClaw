@@ -1,6 +1,6 @@
 {
   "title": "Настройки",
-  "subtitle": "Настройте ваш опыт работы с ClawX",
+  "subtitle": "Настройте ваш опыт работы с YYClaw",
   "appearance": {
     "title": "Общие",
     "description": "Настройте внешний вид",
@@ -11,10 +11,16 @@
     "language": "Язык",
     "menuLanguageUpdated": "Язык меню обновлён",
     "launchAtStartup": "Запуск при старте системы",
-    "launchAtStartupDesc": "Автоматически запускать ClawX при входе в систему"
+    "launchAtStartupDesc": "Автоматически запускать YYClaw при входе в систему",
+    "officeCollaboration": "Офисная коллаборация",
+    "officeCollaborationDesc": "Показывать раздел «Офис» в боковой панели и включать API команд/проектов (по умолчанию выкл.)",
+    "officeCollaborationGatewayWait": "Дождитесь завершения запуска шлюза, затем повторите",
+    "officeCollaborationApplying": "Синхронизация настроек шлюза и перезапуск, подождите…",
+    "officeCollaborationEnabledOk": "Офис-коллаборация включена; шлюз перезапущен в режиме без стриминга",
+    "officeCollaborationDisabledOk": "Офис-коллаборация выключена; шлюз вернул стриминг вывода"
   },
   "aiProviders": {
-    "title": "AI-провайдеры",
+    "title": "Модели",
     "description": "Настройте провайдеров AI-моделей и API-ключи",
     "overview": {
       "title": "Учётные записи провайдеров",
@@ -38,7 +44,7 @@
     "notRequired": "Не требуется",
     "empty": {
       "title": "Провайдеры не настроены",
-      "desc": "Добавьте AI-провайдера, чтобы начать использовать ClawX",
+      "desc": "Добавьте AI-провайдера, чтобы начать использовать YYClaw",
       "cta": "Добавить первого провайдера"
     },
     "dialog": {
@@ -62,7 +68,7 @@
       "protocol": "Протокол",
       "advancedConfig": "Расширенная конфигурация",
       "userAgent": "User-Agent",
-      "userAgentPlaceholder": "ClawX/1.0",
+      "userAgentPlaceholder": "YYClaw/1.0",
       "fallbackModels": "Резервные модели",
       "fallbackProviders": "Резервные провайдеры",
       "fallbackModelIds": "ID резервных моделей",
@@ -75,7 +81,7 @@
       "save": "Сохранить",
       "customDoc": "Документация",
       "validate": "Проверить",
-      "failed": "Ошибка"
+      "addModelType": "Добавить тип"
     },
     "card": {
       "default": "По умолчанию",
@@ -106,7 +112,8 @@
       "invalidKey": "Неверный API-ключ",
       "modelRequired": "Требуется ID модели",
       "minimaxConflict": "Нельзя добавить оба провайдера MiniMax (Global) и MiniMax (CN).",
-      "zaiConflict": "Нельзя добавить оба провайдера Z.AI (Global) и Z.AI (CN)."
+      "zaiConflict": "Нельзя добавить оба провайдера Z.AI (Global) и Z.AI (CN).",
+      "remoteCatalogFailed": "Не удалось загрузить онлайн-список провайдеров. Показан доступный сейчас каталог."
     },
     "oauth": {
       "loginMode": "Вход через OAuth",
@@ -127,6 +134,28 @@
       "step2": "Откройте страницу входа в браузере.",
       "step3": "Вставьте код для подтверждения доступа.",
       "requestingCode": "Запрос кода безопасного входа..."
+    },
+    "modelKind": {
+      "text": "Текст",
+      "image": "Распознавание изображений",
+      "image_generate": "Генерация изображений",
+      "music_generate": "Генерация музыки",
+      "video_generate": "Генерация видео",
+      "tts": "Синтез",
+      "transcription": "Распознавание",
+      "realtime": "Реальное время"
+    },
+    "kindParams": {
+      "default": "По умолчанию",
+      "voice": "Голос",
+      "voiceId": "ID голоса",
+      "format": "Аудиоформат",
+      "responseFormat": "Аудиоформат",
+      "speed": "Скорость",
+      "vol": "Громкость",
+      "pitch": "Тон",
+      "sampleRate": "Частота дискретизации",
+      "language": "Язык"
     }
   },
   "gateway": {
@@ -138,7 +167,7 @@
     "appLogs": "Журналы приложения",
     "openFolder": "Открыть папку",
     "autoStart": "Автозапуск шлюза",
-    "autoStartDesc": "Запускать шлюз при старте ClawX",
+    "autoStartDesc": "Запускать шлюз при старте YYClaw",
     "proxyTitle": "Прокси",
     "proxyDesc": "Направлять трафик Electron и шлюза через локальный прокси-клиент.",
     "proxyServer": "Прокси-сервер",
@@ -159,11 +188,11 @@
   },
   "updates": {
     "title": "Обновления",
-    "description": "Поддерживайте ClawX в актуальном состоянии",
+    "description": "Поддерживайте YYClaw в актуальном состоянии",
     "autoCheck": "Автопроверка обновлений",
     "autoCheckDesc": "Проверять обновления при запуске",
-    "autoDownload": "Уведомления об обновлениях",
-    "autoDownloadDesc": "Показывать уведомление при наличии новой версии; загружать только после вашего выбора",
+    "autoDownload": "Автообновление",
+    "autoDownloadDesc": "Автоматически загружать и устанавливать обновления",
     "status": {
       "checking": "Проверка обновлений...",
       "downloading": "Загрузка обновления...",
@@ -188,13 +217,13 @@
     "whatsNew": "Что нового:",
     "errorDetails": "Детали ошибки:",
     "toast": {
-      "availableTitle": "Доступно обновление ClawX",
-      "availableDescription": "Доступна версия v{{version}}. Скачайте её, когда будете готовы.",
-      "downloadedTitle": "Обновление ClawX готово",
-      "downloadedDescription": "Версия v{{version}} загружена. Перезапустите приложение для установки.",
-      "unknownVersion": "новая"
+      "availableTitle": "Доступно обновление",
+      "availableDescription": "Доступна версия {{version}}. Скачать сейчас?",
+      "downloadedTitle": "Обновление готово",
+      "downloadedDescription": "Версия {{version}} загружена и готова к установке.",
+      "unknownVersion": "новая версия"
     },
-    "help": "ClawX автоматически проверяет обновления и показывает уведомление перед загрузкой или установкой."
+    "help": "Когда автообновление включено, обновления загружаются и устанавливаются автоматически."
   },
   "advanced": {
     "title": "Дополнительные",
@@ -202,7 +231,28 @@
     "devMode": "Режим разработчика",
     "devModeDesc": "Показывать инструменты и ярлыки разработчика",
     "telemetry": "Анонимные данные об использовании",
-    "telemetryDesc": "Разрешить предоставление анонимных базовых данных об использовании для улучшения ClawX"
+    "telemetryDesc": "Разрешить предоставление анонимных базовых данных об использовании для улучшения YYClaw",
+    "devModeUnlocked": "Режим разработчика разблокирован",
+    "promptOptimization": "Оптимизация промпта",
+    "promptOptimizationDesc": "Применять обратимое сжатие промпта к LLM-запросам и показывать сэкономленные символы внизу каждого хода. Файлы llm_dump создаются только при включённом режиме разработчика. Изменения применяются после перезапуска Gateway.",
+    "autoWorkflow": "Автоматическое разбиение на рабочий процесс",
+    "autoWorkflowDesc": "Когда включено, ход одного агента, похожий на многошаговую задачу, может автоматически разбиваться на рабочий процесс. По умолчанию выключено — оставьте выключенным, чтобы всегда получать обычный ответ в чате.",
+    "sessionMaintenanceModeWarn": "Только предупреждение",
+    "sessionMaintenanceModeEnforce": "Принудительно (авто-удаление, по умолчанию)",
+    "sessionMaintenance": "Политика авто-очистки сессий",
+    "sessionMaintenanceDesc": "Настройте session.maintenance в openclaw.json. Записи сессий в каталоге agents добавляются только в конец и могут достигать нескольких ГБ; в принудительном режиме Gateway автоматически удаляет устаревшие и превышающие лимит сессии. Оставьте поле пустым, чтобы использовать значение OpenClaw по умолчанию.",
+    "sessionMaintenanceMode": "Режим",
+    "sessionMaintenancePruneAfter": "Удалять старше (напр. 30d, 12h)",
+    "sessionMaintenanceMaxEntries": "Макс. число записей",
+    "sessionMaintenanceMaxDiskBytes": "Бюджет диска (напр. 500mb)",
+    "sessionMaintenanceHint": "Режим по умолчанию — принудительный, Gateway удаляет по своему расписанию. Установите «Только предупреждение», чтобы отключить автоудаление. Пустые поля используют значения OpenClaw по умолчанию.",
+    "sessionMaintenanceSaved": "Политика авто-очистки сохранена",
+    "sessionMaintenanceSaveFailed": "Не удалось сохранить политику авто-очистки",
+    "farmApiBearerToken": "Farm API bearer token",
+    "farmApiBearerTokenDesc": "JWT администратора YYClaw (как в веб-консоли). Нужен для публикации навыка по WebSocket `GET /api/v1/admin/workspace-skills/upload-ws`.",
+    "farmApiBearerTokenPlaceholder": "Вставьте access token (опционально)",
+    "farmApiBearerTokenSave": "Сохранить токен",
+    "farmApiBearerTokenSaved": "Сохранено"
   },
   "developer": {
     "title": "Разработчик",
@@ -256,16 +306,59 @@
     "installCmdDesc": "Устанавливает ~/.local/bin/openclaw (без прав администратора)",
     "installTitle": "Установить команду OpenClaw",
     "installMessage": "Установить команду \"openclaw\"?",
-    "installDetail": "Это создаст ~/.local/bin/openclaw. Убедитесь, что ~/.local/bin в PATH, если хотите запускать глобально."
+    "installDetail": "Это создаст ~/.local/bin/openclaw. Убедитесь, что ~/.local/bin в PATH, если хотите запускать глобально.",
+    "controlUiDesc": "Веб-консоль OpenClaw. При включении в openclaw.json устанавливается gateway.controlUi.enabled = true.",
+    "controlUiOpen": "Открыть",
+    "controlUiRestartHint": "Перезапустите Gateway, чтобы применить изменение.",
+    "controlUiEnabled": "Консоль OpenClaw включена",
+    "controlUiDisabled": "Консоль OpenClaw отключена",
+    "controlUiSaveFailed": "Не удалось сохранить переключатель консоли OpenClaw",
+    "controlUiOpenFailed": "Не удалось открыть консоль OpenClaw"
   },
   "about": {
     "title": "О приложении",
-    "appName": "ClawX",
+    "appName": "YYClaw",
     "tagline": "Графический AI-ассистент",
-    "basedOn": "На базе OpenClaw",
+    "basedOn": "На базе OpenClaw {{version}}",
     "version": "Версия {{version}}",
     "docs": "Веб-сайт",
     "github": "GitHub",
     "faq": "FAQ"
+  },
+  "close": "Закрыть",
+  "tabs": {
+    "general": "Общее",
+    "voice": "Голос",
+    "gateway": "Шлюз",
+    "developer": "Разработчик",
+    "updates": "Обновления",
+    "about": "О программе",
+    "models": "Модели",
+    "usage": "Использование",
+    "channels": "Каналы",
+    "skills": "Навыки",
+    "memory": "Память"
+  },
+  "integrations": {
+    "title": "Интеграции",
+    "larkCli": "Lark/Feishu CLI",
+    "larkCliDesc": "Подключите официальный Lark CLI для включения навыков Lark.",
+    "larkCliStatus": "Статус",
+    "larkCliConnect": "Подключить Lark CLI",
+    "larkCliReconnect": "Переподключить",
+    "larkCliNotConfigured": "Не настроено",
+    "larkCliConfigured": "Настроено",
+    "larkCliConnecting": "Подключение в браузере...",
+    "larkCliSuccess": "Lark CLI успешно подключен",
+    "larkCliFailed": "Не удалось подключить Lark CLI"
+  },
+  "voice": {
+    "title": "Голос",
+    "autoRead": "Автоозвучивание ответов",
+    "autoReadDesc": "Автоматически озвучивать ответы ассистента по завершении.",
+    "inputMode": "Режим голосового ввода",
+    "inputModeDesc": "Транскрипция преобразует вашу речь в текст в поле ввода.",
+    "modeDictation": "Транскрипция",
+    "modeConversation": "Диалог"
   }
 }

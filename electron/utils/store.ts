@@ -36,6 +36,7 @@ export interface AppSettings {
   gatewayAutoStart: boolean;
   gatewayPort: number;
   gatewayToken: string;
+  configKey: string;
   proxyEnabled: boolean;
   proxyServer: string;
   proxyHttpServer: string;
@@ -53,6 +54,17 @@ export interface AppSettings {
   // UI State
   sidebarCollapsed: boolean;
   devModeUnlocked: boolean;
+  promptOptimizationEnabled: boolean;
+  autoWorkflowEnabled: boolean;
+  voiceAutoRead: boolean;
+  voiceInputMode: 'dictation' | 'conversation';
+  isLoggedIn: boolean;
+  feishuAccessToken: string | null;
+  feishuRefreshToken: string | null;
+  feishuUserInfo: unknown;
+  feishuCreatorAccessToken: string | null;
+  feishuCreatorRefreshToken: string | null;
+  feishuCreatorTokenExpiry: number | null;
   chatWorkspacePath: string;
   recentWorkspacePaths: string[];
   workspaceLabels: Record<string, string>;
@@ -91,6 +103,7 @@ function createDefaultSettings(): AppSettings {
     gatewayAutoStart: true,
     gatewayPort: 18789,
     gatewayToken: generateToken(),
+    configKey: generateToken(),
     proxyEnabled: false,
     proxyServer: '',
     proxyHttpServer: '',
@@ -108,6 +121,17 @@ function createDefaultSettings(): AppSettings {
     // UI State
     sidebarCollapsed: false,
     devModeUnlocked: false,
+    promptOptimizationEnabled: false,
+    autoWorkflowEnabled: false,
+    voiceAutoRead: false,
+    voiceInputMode: 'dictation',
+    isLoggedIn: false,
+    feishuAccessToken: null,
+    feishuRefreshToken: null,
+    feishuUserInfo: null,
+    feishuCreatorAccessToken: null,
+    feishuCreatorRefreshToken: null,
+    feishuCreatorTokenExpiry: null,
     chatWorkspacePath: DEFAULT_WORKSPACE_CWD,
     recentWorkspacePaths: [DEFAULT_WORKSPACE_CWD],
     workspaceLabels: {},
@@ -157,7 +181,9 @@ export async function setSetting<K extends keyof AppSettings>(
  */
 export async function getAllSettings(): Promise<AppSettings> {
   const store = await getSettingsStore();
-  return store.store;
+  const raw = { ...store.store } as Record<string, unknown>;
+  delete raw.officeCollaborationEnabled;
+  return raw as unknown as AppSettings;
 }
 
 /**
@@ -173,7 +199,9 @@ export async function resetSettings(): Promise<void> {
  */
 export async function exportSettings(): Promise<string> {
   const store = await getSettingsStore();
-  return JSON.stringify(store.store, null, 2);
+  const raw = { ...store.store } as Record<string, unknown>;
+  delete raw.officeCollaborationEnabled;
+  return JSON.stringify(raw, null, 2);
 }
 
 /**
@@ -181,7 +209,8 @@ export async function exportSettings(): Promise<string> {
  */
 export async function importSettings(json: string): Promise<void> {
   try {
-    const settings = JSON.parse(json);
+    const settings = JSON.parse(json) as Record<string, unknown>;
+    delete settings.officeCollaborationEnabled;
     const store = await getSettingsStore();
     store.set(settings);
   } catch {

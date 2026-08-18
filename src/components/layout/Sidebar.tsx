@@ -7,32 +7,33 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
-  Network,
   Bot,
-  Puzzle,
   Clock,
   Settings as SettingsIcon,
   PanelLeftClose,
   PanelLeft,
   Plus,
-  Terminal,
-  ExternalLink,
   Trash2,
   Pencil,
   Check,
   X,
-  Cpu,
+  Building2,
+  Workflow,
   ImagePlus,
-  ChevronRight,
   ChevronsUpDown,
   ChevronsDownUp,
+  Folder,
+  FolderOpen,
   LoaderCircle,
   Loader2,
+  Terminal,
+  ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { isGatewayRestarting } from '@/lib/gateway-status';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { useSettingsStore } from '@/stores/settings';
+import { useSettingsModal } from '@/stores/settings-modal';
 import { useChatStore } from '@/stores/chat';
 import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useGatewayStore } from '@/stores/gateway';
@@ -44,12 +45,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { MarqueeText } from '@/components/ui/marquee-text';
 import { hostApi } from '@/lib/host-api';
 import { formatSessionRelativeTime } from '@/lib/relative-time';
 import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '@shared/sidebar-layout';
 import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
 import { useNewChatAction } from './use-new-chat-action';
+import { SHOW_OFFICE_COLLABORATION } from '@/lib/feature-office';
 import { isDefaultWorkspacePath } from '@/lib/workspace-context';
 import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
 import { projectSessionRunState } from '@/stores/chat/session-status';
@@ -142,6 +145,7 @@ export function Sidebar() {
   const sidebarWidth = useSettingsStore((state) => state.sidebarWidth);
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
+  const openSettings = useSettingsModal((s) => s.openSettings);
   const chatWorkspacePath = useSettingsStore((state) => state.chatWorkspacePath);
   const recentWorkspacePaths = useSettingsStore((state) => state.recentWorkspacePaths);
   const workspaceLabels = useSettingsStore((state) => state.workspaceLabels);
@@ -159,6 +163,7 @@ export function Sidebar() {
   const deleteSessions = useChatStore((s) => s.deleteSessions);
   const renameSession = useChatStore((s) => s.renameSession);
   const loadSessions = useChatStore((s) => s.loadSessions);
+  const loadHistory = useChatStore((s) => s.loadHistory);
   const sessionAttentionByKey = useSessionAttentionStore((s) => s.bySessionKey);
   const markRead = useSessionAttentionStore((s) => s.markRead);
   const handleNewChat = useNewChatAction();
@@ -169,10 +174,26 @@ export function Sidebar() {
   const gatewayRestarting = isGatewayRestarting(gatewayStatus);
   const gatewayRuntimeKey = `${gatewayStatus.pid ?? 'none'}:${gatewayStatus.connectedAt ?? 'none'}:${gatewayStatus.port}`;
 
+  const hasLoadedCurrentRuntimeRef = useRef(false);
+
+  useEffect(() => {
+    hasLoadedCurrentRuntimeRef.current = false;
+  }, [gatewayRuntimeKey]);
+
   useEffect(() => {
     if (!isGatewayReady) return;
-    void loadSessions();
-  }, [gatewayRuntimeKey, isGatewayReady, loadSessions]);
+    let cancelled = false;
+    (async () => {
+      await loadSessions();
+      if (cancelled) return;
+      if (hasLoadedCurrentRuntimeRef.current) return;
+      hasLoadedCurrentRuntimeRef.current = true;
+      await loadHistory(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [gatewayRuntimeKey, isGatewayReady, loadHistory, loadSessions]);
   const agents = useAgentsStore((s) => s.agents);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
 
@@ -200,6 +221,8 @@ export function Sidebar() {
   const openDevConsole = async () => {
     await openControlUi('OpenClaw Page');
   };
+
+
 
   const { t, i18n } = useTranslation(['common', 'chat']);
   const [sessionToDelete, setSessionToDelete] = useState<{ key: string; label: string } | null>(null);
@@ -410,28 +433,10 @@ export function Sidebar() {
 
   const coreNavItems = [
     {
-      to: '/models',
-      icon: <Cpu className="h-4 w-4" strokeWidth={2} />,
-      label: t('sidebar.models'),
-      testId: 'sidebar-nav-models',
-    },
-    {
       to: '/agents',
       icon: <Bot className="h-4 w-4" strokeWidth={2} />,
       label: t('sidebar.agents'),
       testId: 'sidebar-nav-agents',
-    },
-    {
-      to: '/channels',
-      icon: <Network className="h-4 w-4" strokeWidth={2} />,
-      label: t('sidebar.channels'),
-      testId: 'sidebar-nav-channels',
-    },
-    {
-      to: '/skills',
-      icon: <Puzzle className="h-4 w-4" strokeWidth={2} />,
-      label: t('sidebar.skills'),
-      testId: 'sidebar-nav-skills',
     },
     {
       to: '/cron',
@@ -439,8 +444,20 @@ export function Sidebar() {
       label: t('sidebar.cronTasks'),
       testId: 'sidebar-nav-cron',
     },
+    {
+      to: '/office',
+      icon: <Building2 className="h-4 w-4" strokeWidth={2} />,
+      label: t('sidebar.office'),
+      testId: 'sidebar-nav-office',
+    },
     ...(devModeUnlocked
       ? [
+          {
+            to: '/workflows',
+            icon: <Workflow className="h-4 w-4" strokeWidth={2} />,
+            label: t('sidebar.workflows'),
+            testId: 'sidebar-nav-workflows',
+          },
           {
             to: '/image-generation',
             icon: <ImagePlus className="h-4 w-4" strokeWidth={2} />,
@@ -452,7 +469,10 @@ export function Sidebar() {
   ];
 
   const navItems = [
-    ...coreNavItems.filter((item) => !hiddenRoutes.has(item.to)),
+    ...coreNavItems.filter((item) => (
+      !hiddenRoutes.has(item.to)
+      && (item.to !== '/office' || SHOW_OFFICE_COLLABORATION)
+    )),
     ...extraNavItems.map((item) => ({
       to: item.to,
       icon: <item.icon className="h-4 w-4" strokeWidth={2} />,
@@ -485,8 +505,10 @@ export function Sidebar() {
       >
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2 px-2 overflow-hidden">
-            <img src={logoSvg} alt="ClawX" className="h-5 w-auto shrink-0" />
-            <span className="text-sm font-semibold truncate whitespace-nowrap text-foreground/90">ClawX</span>
+            <img src={logoSvg} alt={t('common:appName')} className="h-5 w-auto shrink-0" />
+            <span className="text-sm font-semibold truncate whitespace-nowrap text-foreground/90">
+              {t('common:appName')}
+            </span>
           </div>
         )}
         <Button
@@ -621,15 +643,14 @@ export function Sidebar() {
                             handleStartWorkspaceRename(workspaceGroup.workspacePath, workspaceGroup.label);
                           }
                         }}
-                        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-meta font-semibold text-foreground/75 transition-colors hover:text-foreground"
+                        className="sidebar-nav-text flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left font-semibold text-foreground/75 transition-colors hover:text-foreground"
                         title={workspaceGroup.workspacePath}
                       >
-                        <ChevronRight
-                          className={cn(
-                            'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform',
-                            !collapsed && 'rotate-90',
-                          )}
-                        />
+                        {collapsed ? (
+                          <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        )}
                         <span className="min-w-0 flex-1 truncate">{workspaceGroup.label}</span>
                         {workspaceUnavailable && (
                           <Badge
@@ -748,14 +769,16 @@ export function Sidebar() {
                                   aria-current={isCurrentSession ? 'page' : undefined}
                                   onClick={() => {
                                     markRead(s.key);
-                                    if (currentSessionKey !== s.key) {
+                                    if (currentSessionKey === s.key) {
+                                      void loadHistory(false);
+                                    } else {
                                       switchSession(s.key);
                                     }
                                     navigate('/');
                                   }}
                                   onDoubleClick={() => handleStartRename(s.key, sessionLabel)}
                                   className={cn(
-                                    'flex-1 min-w-0 text-left px-2.5 py-1.5 text-meta',
+                                    'sidebar-nav-text flex-1 min-w-0 text-left px-2.5 py-1.5',
                                     isCurrentSession
                                       ? 'text-foreground font-medium'
                                       : 'text-foreground/75',
@@ -774,7 +797,12 @@ export function Sidebar() {
                                         {channelName}
                                       </span>
                                     )}
-                                    <span className="truncate">{sessionLabel}</span>
+                                    <MarqueeText
+                                      data-testid={`sidebar-session-title-${s.key}`}
+                                      className="min-w-0 flex-1"
+                                    >
+                                      {sessionLabel}
+                                    </MarqueeText>
                                   </div>
                                 </button>
                                 {isBusy ? (
@@ -892,27 +920,23 @@ export function Sidebar() {
           </div>
         </div>
 
-        <NavLink
-          to="/settings"
+        <button
+          type="button"
           data-testid="sidebar-nav-settings"
-          className={({ isActive }) =>
-            cn(
-              'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
-              'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
-              isActive && 'bg-black/5 dark:bg-white/10 text-foreground',
-              sidebarCollapsed ? 'justify-center px-0' : '',
-            )
-          }
+          onClick={() => openSettings()}
+          className={cn(
+            'sidebar-nav-text flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
+            'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
+            sidebarCollapsed ? 'justify-center px-0' : '',
+          )}
         >
-          <>
-            <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
-              <SettingsIcon className="h-4 w-4" strokeWidth={2} />
-            </div>
-            {!sidebarCollapsed && (
-              <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.settings')}</span>
-            )}
-          </>
-        </NavLink>
+          <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
+            <SettingsIcon className="h-4 w-4" strokeWidth={2} />
+          </div>
+          {!sidebarCollapsed && (
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.settings')}</span>
+          )}
+        </button>
 
         {devModeUnlocked && (
           <Button
@@ -969,8 +993,7 @@ export function Sidebar() {
         onConfirm={async () => {
           const targetSession = sessionToDelete;
           if (!targetSession) return;
-          const result = await deleteSession(targetSession.key);
-          if (!result.success) return;
+          await deleteSession(targetSession.key);
           if (currentSessionKey === targetSession.key) navigate('/');
           setDeleteDialogOpen(false);
         }}

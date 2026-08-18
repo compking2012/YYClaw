@@ -114,6 +114,17 @@ export function acquireProcessInstanceFileLock(
   // (Electron's requestSingleInstanceLock) already guarantees exclusivity.
   if (options.force && existsSync(lockPath)) {
     const staleOwner = readLockOwner(lockPath);
+    if (
+      (staleOwner.kind === 'legacy' || staleOwner.kind === 'structured')
+      && staleOwner.pid !== pid
+      && isPidAlive(staleOwner.pid)
+    ) {
+      try {
+        process.kill(staleOwner.pid, 'SIGKILL');
+      } catch {
+        // best-effort
+      }
+    }
     try {
       rmSync(lockPath, { force: true });
     } catch {
@@ -121,7 +132,7 @@ export function acquireProcessInstanceFileLock(
     }
     if (staleOwner.kind !== 'unknown') {
       console.info(
-        `[ClawX] Force-cleaned stale instance lock (pid=${staleOwner.pid}, format=${staleOwner.kind})`,
+        `[YYClaw] Force-cleaned stale instance lock (pid=${staleOwner.pid}, format=${staleOwner.kind})`,
       );
     }
   }

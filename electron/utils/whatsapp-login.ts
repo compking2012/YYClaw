@@ -4,6 +4,7 @@ import { createRequire } from 'module';
 import { EventEmitter } from 'events';
 import { existsSync, mkdirSync, rmSync, readdirSync } from 'fs';
 import { deflateSync } from 'zlib';
+import { getOpenClawResolvedDir } from './paths';
 import { resolveOpenClawRuntimeModulePath } from './runtime-package-resolution';
 
 const require = createRequire(import.meta.url);
@@ -18,8 +19,26 @@ type BaileysExports = {
     fetchLatestBaileysVersion: () => Promise<{ version: unknown }>;
 };
 
+type QrCodeMatrix = {
+  addData(input: string): void;
+  make(): void;
+  getModuleCount(): number;
+  isDark(row: number, col: number): boolean;
+};
+
+type QrCodeConstructor = new (typeNumber: number, errorCorrectionLevel: unknown) => QrCodeMatrix;
+type QrErrorCorrectLevelModule = {
+  L: unknown;
+};
+
+type QrRenderDeps = {
+  QRCode: QrCodeConstructor;
+  QRErrorCorrectLevel: QrErrorCorrectLevelModule;
+};
+
 let baileysExports: BaileysExports | null = null;
 let baileysPackageDir: string | null = null;
+let qrRenderDeps: QrRenderDeps | null = null;
 
 /** Load Baileys on demand so a missing packaged dependency does not crash app startup. */
 function loadBaileys(): BaileysExports {
@@ -38,6 +57,21 @@ function getBaileysPackageDir(): string {
         loadBaileys();
     }
     return baileysPackageDir!;
+}
+
+function getQrRenderDeps(): QrRenderDeps {
+    if (qrRenderDeps) {
+        return qrRenderDeps;
+    }
+
+    const openclawRequire = createRequire(join(getOpenClawResolvedDir(), 'package.json'));
+    const qrCodeModulePath = openclawRequire.resolve('qrcode-terminal/vendor/QRCode/index.js');
+    const qrErrorCorrectLevelPath = openclawRequire.resolve('qrcode-terminal/vendor/QRCode/QRErrorCorrectLevel.js');
+    qrRenderDeps = {
+        QRCode: require(qrCodeModulePath),
+        QRErrorCorrectLevel: require(qrErrorCorrectLevelPath),
+    };
+    return qrRenderDeps;
 }
 
 // Types from Baileys (approximate since we don't have types for dynamic require)
@@ -60,39 +94,6 @@ type BaileysSocket = {
     ws?: { close(): void };
     end: (error: undefined) => void;
 };
-
-type QrCodeMatrix = {
-    addData(input: string): void;
-    make(): void;
-    getModuleCount(): number;
-    isDark(row: number, col: number): boolean;
-};
-type QrCodeConstructor = new (typeNumber: number, errorCorrectionLevel: unknown) => QrCodeMatrix;
-type QrErrorCorrectLevelModule = {
-    L: unknown;
-};
-type QrRenderDeps = {
-    QRCode: QrCodeConstructor;
-    QRErrorCorrectLevel: QrErrorCorrectLevelModule;
-};
-
-let qrRenderDeps: QrRenderDeps | null = null;
-
-function getQrRenderDeps(): QrRenderDeps {
-    if (qrRenderDeps) {
-        return qrRenderDeps;
-    }
-
-    const qrCodeModulePath = resolveOpenClawRuntimeModulePath('qrcode-terminal/vendor/QRCode/index.js');
-    const qrErrorCorrectLevelPath = resolveOpenClawRuntimeModulePath(
-        'qrcode-terminal/vendor/QRCode/QRErrorCorrectLevel.js',
-    );
-    qrRenderDeps = {
-        QRCode: require(qrCodeModulePath),
-        QRErrorCorrectLevel: require(qrErrorCorrectLevelPath),
-    };
-    return qrRenderDeps;
-}
 
 // --- QR Generation Logic (Adapted from OpenClaw) ---
 
@@ -327,8 +328,6 @@ export class WhatsAppLoginManager extends EventEmitter {
                 printQRInTerminal: false,
                 logger: pino({ level: 'silent' }), // Silent logger
                 connectTimeoutMs: 60000,
-                // mobile: false,
-                // browser: ['ClawX', 'Chrome', '1.0.0'],
             });
 
             let connectionOpened = false;
@@ -362,8 +361,6 @@ export class WhatsAppLoginManager extends EventEmitter {
                         const error = lastDisconnect?.error as BaileysError | undefined;
                         const statusCode = error?.output?.statusCode;
                         const isLoggedOut = statusCode === DisconnectReason.loggedOut;
-                        // Treat 401 as transient if we haven't exhausted retries (max 2 attempts)
-                        // This handles the case where WhatsApp's session hasn't fully released
                         const shouldReconnect = !isLoggedOut || this.retryCount < 2;
                         console.log('[WhatsAppLogin] Connection closed.',
                             'Reconnect:', shouldReconnect,
@@ -382,7 +379,6 @@ export class WhatsAppLoginManager extends EventEmitter {
                                 this.emit('error', 'Connection failed after multiple retries');
                             }
                         } else {
-                            // Logged out or explicitly stopped
                             this.active = false;
                             if (error?.output?.statusCode === DisconnectReason.loggedOut) {
                                 try {
@@ -402,7 +398,6 @@ export class WhatsAppLoginManager extends EventEmitter {
                         this.retryCount = 0;
                         connectionOpened = true;
 
-                        // Safety timeout: if creds don't update within 15s, proceed anyway
                         credsTimeout = setTimeout(async () => {
                             if (!credsReceived && this.active) {
                                 console.warn('[WhatsAppLogin] Timed out waiting for creds.update after connection open, proceeding...');
@@ -438,11 +433,7 @@ export class WhatsAppLoginManager extends EventEmitter {
         this.qr = null;
         if (this.socket) {
             try {
-                // Remove listeners to prevent handling closure as error
                 this.socket.ev.removeAllListeners('connection.update');
-                // Use ws.close() for proper WebSocket teardown
-                // This ensures WhatsApp server receives a clean close frame
-                // and releases the session, preventing 401 on next connect
                 try {
                     this.socket.ws?.close();
                 } catch {
@@ -455,17 +446,12 @@ export class WhatsAppLoginManager extends EventEmitter {
             this.socket = null;
         }
 
-        // Clean up the credentials directory that was created during start()
-        // when the login was cancelled (not successfully authenticated).
-        // This prevents listConfiguredChannels() from reporting WhatsApp
-        // as configured based solely on the existence of this directory.
         if (shouldCleanup && cleanupAccountId) {
             try {
                 const authDir = join(homedir(), '.openclaw', 'credentials', 'whatsapp', cleanupAccountId);
                 if (existsSync(authDir)) {
                     rmSync(authDir, { recursive: true, force: true });
                     console.log(`[WhatsAppLogin] Cleaned up auth dir for cancelled login: ${authDir}`);
-                    // Also remove the parent whatsapp dir if it's now empty
                     const parentDir = join(homedir(), '.openclaw', 'credentials', 'whatsapp');
                     if (existsSync(parentDir)) {
                         const remaining = readdirSync(parentDir);

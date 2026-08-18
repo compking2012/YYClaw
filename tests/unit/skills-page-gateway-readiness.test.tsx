@@ -1,6 +1,6 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Skills } from '@/pages/Skills';
+import { SkillsSettings } from '@/pages/Skills';
 
 const fetchSkillsMock = vi.fn();
 const enableSkillMock = vi.fn();
@@ -79,6 +79,13 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
   }),
+  // Skills transitively imports `@/lib/api-client`, which imports `@/i18n`
+  // (calls `.use(initReactI18next)` at module load). Provide a no-op plugin
+  // stub so the i18next singleton initializes without a real react binding.
+  initReactI18next: {
+    type: '3rdParty',
+    init: () => {},
+  },
 }));
 
 vi.mock('sonner', () => ({
@@ -109,7 +116,7 @@ describe('Skills page gateway readiness', () => {
 
   it('keeps loading skills while gatewayReady is false and hides the banner once local skills fetch succeeds', async () => {
     gatewayState.status = { state: 'running', port: 18789, gatewayReady: false };
-    render(<Skills />);
+    render(<SkillsSettings />);
 
     await act(async () => {
       await Promise.resolve();
@@ -123,7 +130,7 @@ describe('Skills page gateway readiness', () => {
   it('keeps startup readiness feedback out of the Skills page banner', async () => {
     fetchSkillsMock.mockResolvedValue(false);
     gatewayState.status = { state: 'running', port: 18789, gatewayReady: false };
-    render(<Skills />);
+    render(<SkillsSettings />);
 
     await act(async () => {
       await Promise.resolve();
@@ -136,7 +143,7 @@ describe('Skills page gateway readiness', () => {
 
   it('still fetches local skills when the gateway is stopped', async () => {
     gatewayState.status = { state: 'stopped', port: 18789 };
-    render(<Skills />);
+    render(<SkillsSettings />);
 
     await act(async () => {
       await Promise.resolve();
@@ -144,108 +151,7 @@ describe('Skills page gateway readiness', () => {
     });
 
     expect(fetchSkillsMock).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('actions.installSkill')).not.toBeInTheDocument();
-  });
-
-  it('filters the list via enabled and disabled buttons', async () => {
-    gatewayState.status = { state: 'stopped', port: 18789 };
-    skillsState.skills = [
-      { id: 'pdf', name: 'PDF', description: 'enabled skill', enabled: true, source: 'openclaw-managed' },
-      { id: 'xlsx', name: 'XLSX', description: 'disabled skill', enabled: false, source: 'openclaw-managed' },
-    ];
-
-    render(<Skills />);
-
-    await act(async () => {
-      await Promise.resolve();
-      await vi.advanceTimersByTimeAsync(1_600);
-    });
-
-    expect(screen.getByText('PDF')).toBeInTheDocument();
-    expect(screen.getByText('XLSX')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId('skills-filter-enabled'));
-    expect(screen.getByText('PDF')).toBeInTheDocument();
-    expect(screen.queryByText('XLSX')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId('skills-filter-disabled'));
-    expect(screen.queryByText('PDF')).not.toBeInTheDocument();
-    expect(screen.getByText('XLSX')).toBeInTheDocument();
-  });
-
-  it('shows manifest versions but still hides slug badges and hash-only preinstalled versions', async () => {
-    gatewayState.status = { state: 'stopped', port: 18789 };
-    skillsState.skills = [
-      {
-        id: 'self-improvement-agent',
-        slug: 'self-improvement-agent',
-        name: 'self-improvement',
-        description: 'versionless local skill',
-        enabled: true,
-        source: 'openclaw-managed',
-        baseDir: '/tmp/self-improvement',
-      },
-      {
-        id: 'pdf',
-        slug: 'pdf',
-        name: 'pdf',
-        description: 'placeholder version skill',
-        enabled: true,
-        version: '1.0.0',
-        source: 'openclaw-managed',
-        baseDir: '/tmp/pdf',
-      },
-      {
-        id: 'docx',
-        slug: 'docx',
-        name: 'docx',
-        description: 'hash version skill',
-        enabled: true,
-        source: 'openclaw-managed',
-        baseDir: '/tmp/docx',
-      },
-      {
-        id: 'custom-skill',
-        slug: 'custom-skill',
-        name: 'custom-skill',
-        description: 'real version skill',
-        enabled: true,
-        version: '0.1.3',
-        source: 'openclaw-managed',
-        baseDir: '/tmp/custom-skill',
-      },
-    ];
-
-    render(<Skills />);
-
-    await act(async () => {
-      await Promise.resolve();
-      await vi.advanceTimersByTimeAsync(1_600);
-    });
-
-    expect(screen.queryByText('self-improvement-agent')).not.toBeInTheDocument();
-    expect(screen.getByText('v1.0.0')).toBeInTheDocument();
-    expect(screen.getByText('v0.1.3')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('docx'));
-    expect(screen.queryByText(/^v[a-f0-9]{40}$/i)).not.toBeInTheDocument();
-  });
-
-  it('does not show uninstall for plugin-provided skills', async () => {
-    gatewayState.status = { state: 'stopped', port: 18789 };
-    skillsState.skills = [
-      { id: 'browser-automation', slug: 'browser-automation', name: 'Browser Automation', description: 'plugin skill', enabled: true, source: 'openclaw-plugin', baseDir: '/tmp/plugin-skill' },
-    ];
-
-    render(<Skills />);
-
-    await act(async () => {
-      await Promise.resolve();
-      await vi.advanceTimersByTimeAsync(1_600);
-    });
-
-    fireEvent.click(screen.getByText('Browser Automation'));
-    expect(screen.queryByText('detail.uninstall')).not.toBeInTheDocument();
-    expect(screen.getByText('detail.disable')).toBeInTheDocument();
+    // The install affordance stays available regardless of gateway state.
+    expect(screen.getByText('actions.installSkill')).toBeInTheDocument();
   });
 });

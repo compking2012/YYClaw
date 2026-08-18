@@ -275,6 +275,12 @@ async function installAcpPromptFailureMock(app: ElectronApplication, error: stri
     const originalHostInvoke = handlers?.get('host:invoke');
     ipcMain.removeHandler('host:invoke');
     ipcMain.handle('host:invoke', async (event: unknown, request: { id?: string; module?: string; action?: string }) => {
+      // A target-agent switch now loads a freshly-minted `agent:<id>:session-<ts>`
+      // key that no static hostApi mock covers — succeed the load so the send
+      // (which we force to fail) is actually reached.
+      if (request?.module === 'chat' && request.action === 'loadAcpSession') {
+        return { id: request.id, ok: true, data: { success: true, generation: 1 } };
+      }
       if (request?.module === 'chat' && request.action === 'sendAcpPrompt') {
         return { id: request.id, ok: true, data: { success: false, error: promptError } };
       }
@@ -284,7 +290,7 @@ async function installAcpPromptFailureMock(app: ElectronApplication, error: stri
 }
 
 async function installTargetAgentRequestRecorder(app: ElectronApplication) {
-  await app.evaluate(async ({ app: _app }, targetSessionKey) => {
+  await app.evaluate(async ({ app: _app }, targetAgentPrefix) => {
     const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
     type HostInvokeRequest = {
       id?: string;
@@ -303,20 +309,23 @@ async function installTargetAgentRequestRecorder(app: ElectronApplication) {
     ipcMain.removeHandler('host:invoke');
     ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
       const requestPayload = request.payload ?? (Array.isArray(request.args) ? request.args[0] : undefined);
+      const sessionKey = requestPayload && typeof requestPayload === 'object'
+        ? String((requestPayload as Record<string, unknown>).sessionKey ?? '')
+        : '';
       if (
         request?.module === 'chat'
         && (request.action === 'loadAcpSession' || request.action === 'sendAcpPrompt')
-        && requestPayload?.sessionKey === targetSessionKey
+        && sessionKey.startsWith(targetAgentPrefix)
       ) {
         globals.__targetAgentRequests?.push({
           action: request.action,
-          payload: requestPayload,
+          payload: requestPayload as Record<string, unknown>,
         });
         return { id: request.id, ok: true, data: { success: true, generation: 1 } };
       }
       return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
     });
-  }, REVIEWER_SESSION_KEY);
+  }, 'agent:reviewer:');
 }
 
 async function getTargetAgentRequests(app: ElectronApplication) {
@@ -704,6 +713,9 @@ test.describe('ClawX ACP inline timeline', () => {
 
       await expect(copyButton).toHaveAttribute('aria-label', 'Copied');
       await expect.poll(() => page.evaluate(() => (window as unknown as { __acpCopiedText?: string }).__acpCopiedText)).toBe('Copy this ACP answer');
+
+      // The speak/播报 button sits alongside copy in the assistant hover bar.
+      await expect(page.getByTestId('acp-assistant-speak')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
@@ -1221,7 +1233,7 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
-  test('creates and sends the first prompt to a newly targeted agent workspace', async ({ launchElectronApp }) => {
+  test('starts a fresh session for a newly targeted agent instead of reusing its main', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -1233,6 +1245,9 @@ test.describe('ClawX ACP inline timeline', () => {
             result: {
               sessions: [
                 { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE, updatedAt: new Date().toISOString() },
+                // The reviewer already has an existing conversation. The @mention
+                // switch must NOT resurrect it (that is the "上下文串用" bug).
+                { key: REVIEWER_SESSION_KEY, displayName: 'reviewer', workspacePath: REVIEWER_WORKSPACE, updatedAt: new Date().toISOString() },
               ],
             },
           },
@@ -1282,21 +1297,30 @@ test.describe('ClawX ACP inline timeline', () => {
       }).toBe(true);
 
       const requests = await getTargetAgentRequests(app);
-      expect(requests.filter((request) => request.action === 'loadAcpSession')).toEqual([{
+      const loads = requests.filter((request) => request.action === 'loadAcpSession');
+      expect(loads).toHaveLength(1);
+      const targetKey = String(loads[0]!.payload.sessionKey);
+      // A brand-new reviewer session is minted — never the reviewer's existing
+      // main session — so its old context cannot bleed into this turn.
+      expect(targetKey).toMatch(/^agent:reviewer:session-/);
+      expect(targetKey).not.toBe(REVIEWER_SESSION_KEY);
+      expect(loads[0]).toEqual({
         action: 'loadAcpSession',
         payload: {
-          sessionKey: REVIEWER_SESSION_KEY,
+          sessionKey: targetKey,
           workspaceRoot: REVIEWER_WORKSPACE,
           cwd: REVIEWER_WORKSPACE,
           createIfMissing: true,
         },
-      }]);
+      });
       expect(requests.some((request) => (
         request.action === 'sendAcpPrompt'
-        && request.payload.sessionKey === REVIEWER_SESSION_KEY
+        && request.payload.sessionKey === targetKey
         && request.payload.cwd === REVIEWER_WORKSPACE
         && request.payload.message === 'Hello reviewer'
       ))).toBe(true);
+      // The reviewer's pre-existing session is never targeted.
+      expect(requests.some((request) => request.payload.sessionKey === REVIEWER_SESSION_KEY)).toBe(false);
     } finally {
       await closeElectronApp(app);
     }
@@ -1418,6 +1442,46 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId(defaultWorkspaceSessionGroupTestId())).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('sidebar-session-agent:main:heartbeat')).toHaveCount(0);
       await expect(page.getByTestId('sidebar-session-agent:main:session-1710000000000')).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('renders a persisted engine workflow turn inline instead of the empty welcome state', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      const initialPage = await getStableWindow(app);
+      // An engine (single-agent auto) workflow never sends an ACP prompt, so its
+      // triggering user message + synthesized reply live only on the persisted
+      // card. Seed one for the main session; the conversation must render it
+      // inline (user bubble → card → reply) and NOT show the welcome state.
+      await initialPage.addInitScript((sessionKey) => {
+        localStorage.setItem('clawx:workflow-cards', JSON.stringify({
+          [sessionKey]: [{
+            runId: 'e2e-engine-run',
+            messageId: 'wf-card-e2e-engine-run',
+            userMessageId: 'wf-user-e2e-engine-run',
+            userText: 'Decompose the launch checklist',
+            title: 'Launch checklist',
+            steps: [],
+            status: 'done',
+            createdAt: 1710000000000,
+            finalText: 'Here is the synthesized launch plan.',
+            source: 'engine',
+          }],
+        }));
+      }, MAIN_SESSION_KEY);
+
+      const page = await openChat(app);
+
+      await expect(page.getByTestId('workflow-turn-block')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('acp-chat-empty-state')).toHaveCount(0);
+      await expect(page.getByTestId('workflow-inline-card')).toBeVisible();
+      await expect(page.getByTestId('workflow-inline-card')).toContainText('Launch checklist');
+      await expect(page.getByTestId('acp-user-message')).toContainText('Decompose the launch checklist');
+      await expect(page.getByTestId('acp-assistant-message')).toContainText('Here is the synthesized launch plan.');
     } finally {
       await closeElectronApp(app);
     }

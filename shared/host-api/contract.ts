@@ -15,6 +15,17 @@ import type { WebBrowserNavigatePayload } from '../web-browser';
 export type JsonRecord = Record<string, unknown>;
 export type HostSuccess = { success: boolean; error?: string };
 export type OptionalHostSuccess = { success?: boolean; error?: string };
+export type LegacyFetchPayload = {
+  path: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+};
+export type LegacyFetchResult = {
+  status: number;
+  headers: Record<string, string>;
+  body?: unknown;
+};
 
 export type OpenClawDoctorMode = 'diagnose' | 'fix';
 export type OpenClawDoctorResult = HostSuccess & {
@@ -29,6 +40,18 @@ export type OpenClawDoctorResult = HostSuccess & {
 };
 export type OpenClawDoctorPayload = { mode: OpenClawDoctorMode };
 
+export type SessionMaintenanceConfig = {
+  mode?: 'warn' | 'enforce';
+  pruneAfter?: string | number;
+  maxEntries?: number;
+  maxDiskBytes?: string | number;
+  highWaterBytes?: string | number;
+  resetArchiveRetention?: string | number | false;
+};
+export type SessionMaintenancePayload = Partial<Record<keyof SessionMaintenanceConfig, unknown>>;
+
+export type ControlUiEnabledPayload = { enabled: boolean };
+
 export type OpenClawStatusResult = {
   packageExists: boolean;
   isBuilt: boolean;
@@ -37,9 +60,119 @@ export type OpenClawStatusResult = {
   version?: string;
 };
 export type OpenClawCliCommandResult = HostSuccess & { command?: string };
+export type AdminConsoleSessionSendRemotePayload = JsonRecord;
+export type AdminConsoleSessionListRemotePayload = JsonRecord;
+export type AdminConsoleSessionHistoryRemotePayload = JsonRecord;
+export type AdminConsoleSessionStatusRemotePayload = JsonRecord;
+export type AdminConsoleSharedWorkspaceSyncPayload = JsonRecord;
+export type AdminConsoleRemoteResult = JsonRecord | unknown;
+export type VoiceConfigStatusResult = HostSuccess & {
+  configured?: { tts: boolean; transcription: boolean; realtime: boolean };
+  tts?: boolean;
+  transcription?: boolean;
+  realtime?: boolean;
+};
+export type VoiceSelectionsResult = HostSuccess & { selections?: unknown };
+export type VoiceTranscribePayload = { audioBase64: string; mimeType?: string; language?: string };
+export type VoiceTranscribeResult = HostSuccess & { text?: string };
+export type VoiceTtsAudioPayload = { text: string; provider?: string; voiceId?: string; modelId?: string };
+export type VoiceTtsAudioResult = HostSuccess & {
+  base64?: string;
+  mimeType?: string;
+  provider?: string;
+  outputFormat?: string;
+};
+export type VoiceAccountPayload = { accountId: string; model?: string };
+export type WorkspaceAgentItem = { id: string; name: string; workspace: string; isDefault?: boolean };
+export type WorkspaceFileTreeNode = {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  children?: WorkspaceFileTreeNode[];
+};
+export type WorkspaceAgentsResult = HostSuccess & { agents?: WorkspaceAgentItem[] };
+export type WorkspaceTreePayload = { agentId?: string; includeHidden?: boolean };
+export type WorkspaceTreeResult = HostSuccess & {
+  agentId?: string;
+  agentName?: string;
+  workspace?: string;
+  tree?: WorkspaceFileTreeNode[];
+};
+export type WorkspaceFilePayload = { agentId?: string; path: string };
+export type WorkspaceDeleteFileResult = HostSuccess;
+export type WorkspaceRebuildPayload = { agentId: string };
+export type WorkspaceRebuildResult = HostSuccess;
+export type PromptOptimizationSummary = { optimized: number; total: number; percent: number };
+export type PromptOptimizationRegisterPayload = { sessionKey: string; runId: string };
+export type PromptOptimizationRecordPayload = {
+  runId: string;
+  before_chars?: number;
+  after_chars?: number;
+  saved_chars?: number;
+};
+export type PromptOptimizationSummaryPayload = { runId: string };
+export type PromptOptimizationSummaryResult = HostSuccess & { summary?: PromptOptimizationSummary };
+export type PromptOptimizationActiveRunResult = HostSuccess & { active?: JsonRecord | null };
+export type WorkflowListResult = HostSuccess & { definitions?: unknown[]; runs?: unknown[] };
+export type WorkflowStartPayload = { defId: string; input?: unknown };
+export type WorkflowStartResult = HostSuccess & { runId?: string; run?: unknown | null };
+export type WorkflowRunIdPayload = { runId: string };
+export type WorkflowResumeResult = HostSuccess & { resumed?: boolean; run?: JsonRecord | null };
+export type WorkflowRetryResult = HostSuccess & { retried?: boolean; run?: JsonRecord | null };
+export type WorkflowAbortResult = HostSuccess & { aborted?: boolean; run?: JsonRecord | null };
+export type WorkflowStatusResult = HostSuccess & { run?: JsonRecord | null };
+export type WorkflowStartDynamicPayload = {
+  task?: string;
+  definition?: JsonRecord;
+  input?: JsonRecord;
+  /** Installed workflow-shaped skills, so the generator can defer to one instead of inventing steps. */
+  skills?: Array<{ name: string; description?: string }>;
+  /**
+   * Context of an unfinished run in this conversation. When present, the server's
+   * generation call doubles as a resume-vs-new triage: if the model judges the
+   * message a "continue this run" request it returns `resume:true` (no new steps).
+   */
+  resumable?: {
+    runId: string;
+    title?: string;
+    steps?: Array<{ title: string; status?: 'done' | 'failed' | 'pending' }>;
+    error?: string;
+  };
+};
+export type WorkflowStartDynamicResult = HostSuccess & {
+  routed?: boolean;
+  runId?: string;
+  title?: string;
+  steps?: JsonRecord[];
+  run?: JsonRecord | null;
+  /** Set when the task matched an installed skill instead of being decomposed. */
+  matchedSkill?: string;
+  /** Set when `resumable` was provided and the model judged the turn a resume request. */
+  resume?: boolean;
+};
+export type OfficeIdPayload = { id: string };
+export type OfficeScenarioIdPayload = { scenarioId: string };
+export type OfficeTaskIdPayload = { taskId: string };
+export type OfficeSnapshotResult = HostSuccess & JsonRecord;
+export type OfficeRoleResult = HostSuccess & { role?: JsonRecord; errors?: string[] };
+export type OfficeScenarioResult = HostSuccess & { scenario?: JsonRecord; deletedRoleCount?: number; deletedTaskCount?: number };
+export type OfficeTaskResult = HostSuccess & { task?: JsonRecord };
+export type OfficeMessagesResult = HostSuccess & { messages?: JsonRecord[] };
+export type OfficeRunTaskPayload = { taskId: string; options?: JsonRecord };
+export type OfficeRoomMessagePayload = { taskId: string; content: string; fromRoleId?: string; replyToId?: string };
+export type OfficeP2PPayload = { fromRoleId: string; toRoleId: string; content: string };
+export type OfficeP2PResult = HostSuccess & { sessionKey?: string; reply?: string; completed?: boolean };
+export type OfficeReorderScenariosPayload = { orderedIds: string[] };
+export type OfficeGenerateWorkflowPayload = JsonRecord;
+export type OfficeGenerateWorkflowResult = HostSuccess & JsonRecord;
 
 export type ShellPathPayload = { path: string };
 export type ShellOpenExternalPayload = { url: string };
+export type ShellOpenAuthWindowPayload = {
+  url: string;
+  title?: string;
+  intent?: 'feishu-credentials' | 'feishu-delete';
+};
 export type DialogOpenPayload = {
   title?: string;
   defaultPath?: string;
@@ -86,6 +219,7 @@ export type UpdateInfoSnapshot = {
   version: string;
   releaseDate?: string;
   releaseNotes?: string | null;
+  forceUpdate?: boolean;
 };
 export type UpdateProgressSnapshot = {
   total: number;
@@ -110,6 +244,8 @@ export type SettingsSnapshot = Partial<{
   startMinimized: boolean;
   launchAtStartup: boolean;
   telemetryEnabled: boolean;
+  promptOptimizationEnabled: boolean;
+  autoWorkflowEnabled: boolean;
   gatewayAutoStart: boolean;
   gatewayPort: number;
   proxyEnabled: boolean;
@@ -120,9 +256,13 @@ export type SettingsSnapshot = Partial<{
   proxyBypassRules: string;
   updateChannel: 'stable' | 'beta' | 'dev';
   autoCheckUpdate: boolean;
+  autoDownloadUpdate: boolean;
   sidebarCollapsed: boolean;
   sidebarWidth: number;
   devModeUnlocked: boolean;
+  voiceAutoRead: boolean;
+  voiceInputMode: 'dictation' | 'conversation';
+  isLoggedIn: boolean;
   setupComplete: boolean;
   chatWorkspacePath: string;
   recentWorkspacePaths: string[];
@@ -248,13 +388,51 @@ export type ChannelSaveConfigResult = HostSuccess & {
   warning?: string;
 };
 export type ChannelConfiguredResult = HostSuccess & { channels?: Array<string | JsonRecord> };
+export type FeishuCandidateIcon = { name: string; mimeType: string; base64: string };
+export type FeishuCandidateIconsResult = HostSuccess & { candidates?: FeishuCandidateIcon[] };
+export type FeishuUserApp = { appId: string; appName: string; avatarUrl: string; status: number | string };
+export type FeishuMyAppsResult = HostSuccess & { apps?: FeishuUserApp[] };
+export type FeishuAppInfoPayload = { appId: string; appSecret: string };
+export type FeishuAppInfoResult = HostSuccess & { appName?: string; avatarUrl?: string };
+export type FeishuAutoCreatePayload = { appName: string; iconBase64?: string; iconMimeType?: string };
+export type FeishuAutoCreateResult = HostSuccess & {
+  app_id?: string;
+  app_secret?: string;
+  larkCliReady?: boolean;
+  larkCliError?: string;
+  disabledAppId?: string;
+  manageUrl?: string;
+};
+export type FeishuUpdateAppPayload = FeishuAppInfoPayload & FeishuAutoCreatePayload;
+export type FeishuUpdateAppResult = HostSuccess & { larkCliReady?: boolean; larkCliError?: string; recovered?: boolean; manageUrl?: string };
+export type FeishuDeleteAppPayload = { appId: string };
+export type FeishuDeleteAppResult = HostSuccess & { url?: string; disabled?: boolean; manageUrl?: string };
 
 export type AgentSnapshotResult = AgentsSnapshot & OptionalHostSuccess;
-export type AgentCreatePayload = { name: string; inheritWorkspace?: boolean };
-export type AgentUpdatePayload = { id: string; name: string };
-export type AgentUpdateModelPayload = { id: string; modelRef: string | null };
+export type AgentModelSlot = 'model' | 'imageModel' | 'imageGenerationModel' | 'videoGenerationModel' | 'musicGenerationModel';
+export type AgentCreatePayload = { name: string; id?: string; inheritWorkspace?: boolean; skills?: string[] };
+export type AgentUpdatePayload = { id: string; name?: string; skills?: string[] };
+export type AgentUpdateIdPayload = { id: string; newId: string };
+export type AgentUpdateModelPayload = { id: string; modelRef: string | null; targetSlot?: AgentModelSlot };
+export type AgentUpdateDefaultModelsPayload = { models: Partial<Record<AgentModelSlot, string | null>> };
+export type AgentUpdateAutoSelectPayload = {
+  id: string;
+  autoSelectModel?: Partial<Record<AgentModelSlot, boolean>>;
+  optimizationProfile?: 'quality' | 'balanced' | 'cost' | 'latency';
+  sensitiveMode?: boolean;
+};
 export type AgentIdPayload = { id: string };
 export type AgentChannelPayload = { id: string; channelType: string };
+export type AgentUpdateGlobalSkillsPayload = { skills: string[] };
+export type AgentGenerateTextPayload = {
+  agentId?: string;
+  system: string;
+  input: string;
+  temperature?: number;
+  maxOutputTokens?: number;
+  timeoutMs?: number;
+};
+export type AgentGenerateTextResult = HostSuccess & { text?: string; modelRef?: string };
 
 export type AcpTraceSource = 'main' | 'renderer';
 export type AcpTraceEntry = {
@@ -301,6 +479,7 @@ export type ProviderType =
   | 'custom';
 export type ProviderAuthMode = 'api_key' | 'oauth_device' | 'oauth_browser' | 'local';
 export type ProviderVendorCategory = 'official' | 'compatible' | 'local' | 'custom';
+export type ModelKind = 'text' | 'image' | 'image_generate' | 'music_generate' | 'video_generate' | 'tts' | 'transcription' | 'realtime';
 export type ProviderProtocol =
   | 'openai-completions'
   | 'openai-responses'
@@ -318,7 +497,9 @@ export type ProviderConfig = {
   baseUrl?: string;
   apiProtocol?: ProviderProtocol;
   headers?: Record<string, string>;
-  model?: string;
+  model?: string | string[];
+  modelType?: ModelKind[];
+  modelParams?: Record<string, unknown>;
   fallbackModels?: string[];
   fallbackProviderIds?: string[];
   enabled: boolean;
@@ -334,14 +515,16 @@ export type ProviderVendorInfo = {
   name: string;
   icon: string;
   placeholder: string;
-  model?: string;
+  model?: string | string[];
+  modelType?: ModelKind[];
+  modelParams?: Record<string, unknown>;
   requiresApiKey: boolean;
   defaultBaseUrl?: string;
   showBaseUrl?: boolean;
   showModelId?: boolean;
   showModelIdInDevModeOnly?: boolean;
   modelIdPlaceholder?: string;
-  defaultModelId?: string;
+  defaultModelId?: string | string[];
   isOAuth?: boolean;
   supportsApiKey?: boolean;
   apiKeyUrl?: string;
@@ -354,19 +537,24 @@ export type ProviderVendorInfo = {
   hideOAuthUi?: boolean;
   category: ProviderVendorCategory;
   envVar?: string;
+  apiProtocol?: ProviderProtocol;
+  headers?: Record<string, string>;
+  backendModels?: Array<{ id: string; name?: string }>;
   supportedAuthModes: ProviderAuthMode[];
   defaultAuthMode: ProviderAuthMode;
   supportsMultipleAccounts: boolean;
 };
 export type ProviderAccount = {
   id: string;
-  vendorId: ProviderType;
+  vendorId: ProviderType | (string & {});
   label: string;
   authMode: ProviderAuthMode;
   baseUrl?: string;
   apiProtocol?: ProviderProtocol;
   headers?: Record<string, string>;
-  model?: string;
+  model?: string | string[];
+  modelType?: ModelKind[];
+  modelParams?: Partial<Record<ModelKind, Record<string, string | number | boolean>>>;
   fallbackModels?: string[];
   fallbackAccountIds?: string[];
   enabled: boolean;
@@ -716,8 +904,22 @@ export type SessionLabelSummary = {
 export type SessionSummariesResult = HostSuccess & {
   summaries?: SessionLabelSummary[];
 };
-export type SessionDeletePayload = { id: string };
+export type SessionDeletePayload = { id: string; workflowRunIds?: string[] };
 export type SessionRenamePayload = { id: string; title: string };
+
+/** Which OpenClaw control-UI view to open. */
+export type GatewayControlUiPayload = { view?: 'dreams' };
+export type ChatMediaItem = { filePath: string; mimeType?: string; fileName?: string };
+export type ChatSendWithMediaPayload = {
+  sessionKey: string;
+  message?: string;
+  deliver?: boolean;
+  idempotencyKey: string;
+  media?: ChatMediaItem[];
+};
+export type ChatSendWithMediaResult = HostSuccess & {
+  result?: { runId?: string };
+};
 
 export type CronUpdatePayload = { id: string; input: CronJobUpdateInput };
 export type CronIdPayload = { id: string };
@@ -756,6 +958,28 @@ export type SkillUpdateConfigPayload = SkillKeyPayload & {
 export type SkillUpdateConfigsPayload = { updates: SkillUpdateConfigPayload[] };
 export type SkillUpdatePayload = SkillKeyPayload & { enabled?: boolean };
 export type SkillQuickAccessPayload = { workspace?: string };
+export type SkillMarketplaceFetchPayload = { query?: string; limit?: number; category?: string };
+export type SkillMarketplaceInstallPayload = {
+  slug?: string;
+  name?: string;
+  version?: string;
+  installedVersion?: string;
+  archiveHash?: string;
+  archive_hash?: string;
+  listingRevision?: string;
+  listing_revision?: string;
+  versionBase?: string;
+  version_base?: string;
+  category?: string;
+  baseDir?: string;
+  workspace?: string;
+  sessionAgentId?: string;
+  /** When true, overwrite same-name managed skills after UI confirm. */
+  overwriteSameName?: boolean;
+};
+export type SkillAgentsMappingBatchPayload = {
+  updates: Array<{ skillId: string; agentIds: string[] }>;
+};
 export type ClawHubInstalledSkill = {
   slug: string;
   version?: string;
@@ -770,7 +994,13 @@ export type ClawHubSearchPayload = { query?: string };
 export type ClawHubSearchResult = HostSuccess & {
   results?: MarketplaceSkill[];
 };
-export type ClawHubInstallPayload = { slug: string; version?: string };
+export type ClawHubInstallPayload = {
+  slug: string;
+  version?: string;
+  baseDir?: string;
+  workspace?: string;
+  sessionAgentId?: string;
+};
 export type ClawHubUninstallPayload = { slug: string };
 export type ClawHubOpenPayload = {
   skillKey?: string;
@@ -807,9 +1037,51 @@ export type DeliveryChannelGroup = {
 };
 export type DeliveryTargetsResult = HostSuccess & { targets: DeliveryChannelGroup[] };
 
+export type SkillUiSchemaPayload = { skillKey?: string; baseDir?: string };
+export type SkillUiActionPayload = { command: string; interceptOAuth?: boolean };
+export type SkillUiActionResult = { success: boolean; output?: string; error?: string };
+export type SkillUploadMarketplacePayload = {
+  filePath?: string;
+  confirmUnsafe?: boolean;
+  overwriteSameName?: boolean;
+  author?: string;
+  version?: string;
+  category?: string;
+};
+export type SkillPublishedMarketplaceResult = HostSuccess & { skills?: JsonRecord[] };
+export type SkillPublishMetaPayload = { filePath: string };
+export type SkillPublishMetaResult = HostSuccess & {
+  meta?: {
+    /** OS username of the current client, used as the default author. */
+    username?: string;
+    /** Skill name parsed from the zip's SKILL.md (best-effort). */
+    skillName?: string;
+    /** Current published version for this skill on the marketplace, if any. */
+    remoteVersion?: string;
+  };
+};
+export type SkillUploadMarketplaceResult = HostSuccess & {
+  result?: JsonRecord;
+  pickedPath?: string;
+  cancelled?: boolean;
+};
+export type SkillMarketplaceReviewRequestsResult = HostSuccess & { requests?: JsonRecord[] };
+export type SkillUnlistPayload = { skillId: string };
+export type SkillUnlistResult = HostSuccess & { result?: JsonRecord };
+export type SkillCancelReviewPayload = { requestId: number };
+export type SkillCancelReviewResult = HostSuccess & { result?: JsonRecord };
+export type FileSaveAsPayload = { filePath: string; defaultFileName?: string };
+export type FileSaveAsResult = HostSuccess & { savedPath?: string; cancelled?: boolean };
+export type SaveAttachmentAsPayload = { ref: AttachmentSourceRef; defaultFileName?: string };
+
 export type HostApiContract = {
   app: {
     openClawDoctor: (payload: OpenClawDoctorPayload) => Omit<OpenClawDoctorResult, 'mode'>;
+    sessionMaintenance: () => SessionMaintenanceConfig;
+    saveSessionMaintenance: (payload: SessionMaintenancePayload) => SessionMaintenanceConfig;
+    controlUiEnabled: () => boolean;
+    setControlUiEnabled: (payload: ControlUiEnabledPayload) => boolean;
+    openclawVersion: () => string;
   };
   openclaw: {
     status: () => OpenClawStatusResult;
@@ -818,8 +1090,10 @@ export type HostApiContract = {
   };
   shell: {
     openExternal: (payload: ShellOpenExternalPayload) => void;
+    openAuthWindow: (payload: ShellOpenAuthWindowPayload) => void;
     showItemInFolder: (payload: ShellPathPayload) => void;
     openPath: (payload: ShellPathPayload) => string;
+    readClipboardText: () => string;
   };
   webBrowser: {
     navigate: (payload: WebBrowserNavigatePayload) => void;
@@ -835,6 +1109,8 @@ export type HostApiContract = {
     maximize: () => void;
     close: () => void;
     isMaximized: () => boolean;
+    /** Win32: blur→focus when our window is already focused but document.hasFocus() is false. Returns false if skipped. */
+    ensureKeyboardFocus: () => boolean;
   };
   updates: {
     status: () => UpdateStatusSnapshot;
@@ -862,7 +1138,7 @@ export type HostApiContract = {
     stop: () => HostSuccess;
     restart: () => HostSuccess;
     health: (payload?: GatewayHealthPayload) => GatewayHealth;
-    controlUi: () => GatewayControlUiResult;
+    controlUi: (payload?: GatewayControlUiPayload) => GatewayControlUiResult;
     rpc: (payload: GatewayRpcPayload) => unknown;
   };
   logs: {
@@ -888,15 +1164,28 @@ export type HostApiContract = {
     deleteConfig: (payload: ChannelAccountPayload) => HostSuccess;
     startLogin: (payload: ChannelAccountPayload) => HostSuccess;
     cancelLogin: (payload: ChannelAccountPayload) => HostSuccess;
+    feishuCandidateIcons: () => FeishuCandidateIconsResult;
+    feishuMyApps: () => FeishuMyAppsResult;
+    feishuAppInfo: (payload: FeishuAppInfoPayload) => FeishuAppInfoResult;
+    feishuAutoCreate: (payload: FeishuAutoCreatePayload) => FeishuAutoCreateResult;
+    feishuUpdateApp: (payload: FeishuUpdateAppPayload) => FeishuUpdateAppResult;
+    feishuDeleteApp: (payload: FeishuDeleteAppPayload) => FeishuDeleteAppResult;
+    feishuRetryLarkCli: (payload: FeishuAppInfoPayload) => HostSuccess;
   };
   agents: {
-    list: () => AgentSnapshotResult;
+    list: (payload?: { reconcile?: boolean }) => AgentSnapshotResult;
     create: (payload: AgentCreatePayload) => AgentSnapshotResult;
     update: (payload: AgentUpdatePayload) => AgentSnapshotResult;
+    updateId: (payload: AgentUpdateIdPayload) => AgentSnapshotResult;
     updateModel: (payload: AgentUpdateModelPayload) => AgentSnapshotResult;
+    updateDefaultModels: (payload: AgentUpdateDefaultModelsPayload) => AgentSnapshotResult;
+    updateAutoSelect: (payload: AgentUpdateAutoSelectPayload) => AgentSnapshotResult;
+    setDefault: (payload: AgentIdPayload) => AgentSnapshotResult;
     delete: (payload: AgentIdPayload) => AgentSnapshotResult;
     assignChannel: (payload: AgentChannelPayload) => AgentSnapshotResult;
     removeChannel: (payload: AgentChannelPayload) => AgentSnapshotResult;
+    updateGlobalSkills: (payload: AgentUpdateGlobalSkillsPayload) => AgentSnapshotResult;
+    generateText: (payload: AgentGenerateTextPayload) => AgentGenerateTextResult;
   };
   diagnostics: {
     gatewaySnapshot: () => DiagnosticsGatewaySnapshotResult;
@@ -941,6 +1230,8 @@ export type HostApiContract = {
     stat: (payload: FilePathPayload) => StatFileResult;
     listDir: (payload: FilePathPayload) => FileListDirResult;
     listTree: (payload: FileListTreePayload) => FileListTreeResult;
+    saveAs: (payload: FileSaveAsPayload) => FileSaveAsResult;
+    saveAttachmentAs: (payload: SaveAttachmentAsPayload) => FileSaveAsResult;
     resolveWorkspaceContext: (input: WorkspaceContextInput) => Promise<{
       ok: boolean;
       workspaceRoot?: string;
@@ -977,6 +1268,7 @@ export type HostApiContract = {
     turnTimings: (payload: SessionTurnTimingsPayload) => SessionTurnTimingsResult;
   };
   chat: {
+    sendWithMedia: (payload: ChatSendWithMediaPayload) => ChatSendWithMediaResult;
     loadAcpSession: (payload: AcpChatLoadPayload) => AcpChatOperationResult;
     sendAcpPrompt: (payload: AcpChatPromptPayload) => AcpChatOperationResult;
     cancelAcpSession: (payload: AcpChatCancelPayload) => AcpChatOperationResult;
@@ -1009,9 +1301,86 @@ export type HostApiContract = {
     clawhubUninstall: (payload: ClawHubUninstallPayload) => HostSuccess;
     clawhubOpenSkillReadme: (payload: ClawHubOpenPayload) => HostSuccess;
     clawhubOpenSkillPath: (payload: ClawHubOpenPayload) => HostSuccess;
+    marketplaceList: (payload?: SkillMarketplaceFetchPayload) => HostSuccess & { results?: MarketplaceSkill[] };
+    marketplaceSearch: (payload: SkillMarketplaceFetchPayload) => HostSuccess & { results?: MarketplaceSkill[] };
+    marketplaceInstall: (payload: SkillMarketplaceInstallPayload) => HostSuccess;
+    marketplaceUninstall: (payload: SkillMarketplaceInstallPayload) => HostSuccess;
+    updateAgentsMappingBatch: (payload: SkillAgentsMappingBatchPayload) => HostSuccess;
+    getUiSchema: (payload: SkillUiSchemaPayload) => JsonRecord | null;
+    executeUiAction: (payload: SkillUiActionPayload) => SkillUiActionResult;
+    listPublishedMarketplace: () => SkillPublishedMarketplaceResult;
+    getPublishMeta: (payload: SkillPublishMetaPayload) => SkillPublishMetaResult;
+    uploadMarketplaceZip: (payload: SkillUploadMarketplacePayload) => SkillUploadMarketplaceResult;
+    listMarketplaceReviewRequests: () => SkillMarketplaceReviewRequestsResult;
+    requestMarketplaceUnlist: (payload: SkillUnlistPayload) => SkillUnlistResult;
+    cancelMarketplaceReviewRequest: (payload: SkillCancelReviewPayload) => SkillCancelReviewResult;
   };
   usage: {
     recentTokenHistory: (payload?: UsageHistoryPayload) => UsageHistoryEntry[];
+  };
+  adminConsole: {
+    sessionSendRemote: (payload: AdminConsoleSessionSendRemotePayload) => AdminConsoleRemoteResult;
+    sessionListRemote: (payload: AdminConsoleSessionListRemotePayload) => AdminConsoleRemoteResult;
+    sessionHistoryRemote: (payload: AdminConsoleSessionHistoryRemotePayload) => AdminConsoleRemoteResult;
+    sessionStatusRemote: (payload: AdminConsoleSessionStatusRemotePayload) => AdminConsoleRemoteResult;
+    sharedWorkspaceSync: (payload: AdminConsoleSharedWorkspaceSyncPayload) => AdminConsoleRemoteResult;
+  };
+  voice: {
+    configStatus: () => VoiceConfigStatusResult;
+    selections: () => VoiceSelectionsResult;
+    transcribe: (payload: VoiceTranscribePayload) => VoiceTranscribeResult;
+    ttsAudio: (payload: VoiceTtsAudioPayload) => VoiceTtsAudioResult;
+    setTtsAccount: (payload: VoiceAccountPayload) => HostSuccess;
+    clearTtsAccount: () => HostSuccess;
+    setTranscriptionAccount: (payload: VoiceAccountPayload) => HostSuccess;
+    clearTranscriptionAccount: () => HostSuccess;
+  };
+  workspace: {
+    agents: () => WorkspaceAgentsResult;
+    tree: (payload: WorkspaceTreePayload) => WorkspaceTreeResult;
+    rebuild: (payload: WorkspaceRebuildPayload) => WorkspaceRebuildResult;
+    deleteFile: (payload: WorkspaceFilePayload) => WorkspaceDeleteFileResult;
+  };
+  promptOptimization: {
+    activeRun: () => PromptOptimizationActiveRunResult;
+    registerRun: (payload: PromptOptimizationRegisterPayload) => HostSuccess;
+    record: (payload: PromptOptimizationRecordPayload) => HostSuccess;
+    summary: (payload: PromptOptimizationSummaryPayload) => PromptOptimizationSummaryResult;
+  };
+  workflow: {
+    list: () => WorkflowListResult;
+    start: (payload: WorkflowStartPayload) => WorkflowStartResult;
+    resume: (payload: WorkflowRunIdPayload) => WorkflowResumeResult;
+    retry: (payload: WorkflowRunIdPayload) => WorkflowRetryResult;
+    abort: (payload: WorkflowRunIdPayload) => WorkflowAbortResult;
+    status: (payload: WorkflowRunIdPayload) => WorkflowStatusResult;
+    startDynamic: (payload: WorkflowStartDynamicPayload) => WorkflowStartDynamicResult;
+  };
+  office: {
+    snapshot: () => OfficeSnapshotResult;
+    enableCollab: () => HostSuccess;
+    updateSettings: (payload: JsonRecord) => HostSuccess;
+    createRole: (payload: JsonRecord) => OfficeRoleResult;
+    updateRole: (payload: OfficeIdPayload & { patch: JsonRecord }) => OfficeRoleResult;
+    deleteRole: (payload: OfficeIdPayload) => HostSuccess;
+    createScenario: (payload: JsonRecord) => OfficeScenarioResult;
+    updateScenario: (payload: OfficeIdPayload & { patch: JsonRecord }) => HostSuccess;
+    deleteScenario: (payload: OfficeIdPayload) => OfficeScenarioResult;
+    reorderScenarios: (payload: OfficeReorderScenariosPayload) => HostSuccess;
+    createTask: (payload: JsonRecord) => OfficeTaskResult;
+    updateTask: (payload: OfficeTaskIdPayload & { patch: JsonRecord }) => OfficeTaskResult;
+    runTask: (payload: OfficeRunTaskPayload) => HostSuccess;
+    abortTask: (payload: OfficeTaskIdPayload) => HostSuccess;
+    deleteTask: (payload: OfficeTaskIdPayload) => HostSuccess;
+    roomMessages: (payload: OfficeTaskIdPayload & { urgent?: boolean }) => OfficeMessagesResult;
+    postRoomMessage: (payload: OfficeRoomMessagePayload) => HostSuccess & { pendingReplies?: boolean };
+    reconcileScenarioProgress: (payload: OfficeScenarioIdPayload) => HostSuccess & { reconciled?: number };
+    sendP2P: (payload: OfficeP2PPayload) => OfficeP2PResult;
+    executionSyncStatus: () => HostSuccess & { active?: boolean };
+    generateWorkflow: (payload: OfficeGenerateWorkflowPayload) => OfficeGenerateWorkflowResult;
+  };
+  legacy: {
+    fetch: (payload: LegacyFetchPayload) => LegacyFetchResult;
   };
 };
 

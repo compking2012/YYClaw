@@ -1,5 +1,5 @@
 import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
-import { groupAcpTimelineItems } from '@/lib/acp/timeline-groups';
+import { groupAcpTimelineItems, type AcpTimelineDisplayGroup } from '@/lib/acp/timeline-groups';
 import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
 import { AcpAssistantTurn } from './AcpAssistantTurn';
 import { AcpErrorBanner } from './AcpErrorBanner';
@@ -7,6 +7,67 @@ import { AcpMessageSegment } from './AcpMessageSegment';
 import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { AcpAttachmentPart } from './AcpAttachmentPart';
 import type { AcpTurnTiming } from '@/lib/acp/turn-timings';
+
+/**
+ * Render a single ACP display group (a user turn or an assistant turn). Exported
+ * so the Chat page can interleave workflow-card render blocks between groups
+ * without duplicating the group rendering — the interleave stays a render-only
+ * concern and never mutates the ACP timeline store.
+ */
+export function AcpTimelineGroup({
+  group,
+  streamingSegmentIds,
+  fileActivity,
+  workspaceRoot,
+  timing,
+  onPermissionSelect,
+}: {
+  group: AcpTimelineDisplayGroup;
+  /** Message-segment ids whose trailing markdown should animate while streaming. */
+  streamingSegmentIds: ReadonlySet<string>;
+  fileActivity?: AcpFileActivityProjection;
+  workspaceRoot?: string;
+  timing?: AcpTurnTiming;
+  onPermissionSelect?: (requestId: string, optionId: string) => void;
+}) {
+  if (group.kind === 'user') {
+    return (
+      <div data-acp-group-id={group.id} className="flex flex-col gap-3">
+        {group.items.map((item) => (
+          <div
+            key={item.id}
+            id={getAcpUserMessageAnchorId(item.id)}
+            data-acp-item-id={item.id}
+          >
+            <AcpMessageSegment item={item} />
+          </div>
+        ))}
+        {group.attachments.length > 0 && (
+          <div className="flex w-full justify-end">
+            <div className="flex w-full max-w-[50%] flex-col items-end gap-2">
+              {group.attachments.map((attachment) => (
+                <AcpAttachmentPart key={attachment.attachmentId} part={attachment} tone="user" />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div data-acp-group-id={group.id}>
+      <AcpAssistantTurn
+        group={group}
+        streamingSegmentIds={streamingSegmentIds}
+        fileSummaries={fileActivity?.turnSummariesByTurnId[group.id]}
+        workspaceRoot={workspaceRoot}
+        timing={timing}
+        onPermissionSelect={onPermissionSelect}
+      />
+    </div>
+  );
+}
 
 type AcpTimelineProps = {
   snapshot: AcpTimelineSnapshot;

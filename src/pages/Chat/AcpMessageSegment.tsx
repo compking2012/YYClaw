@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Check, Copy, Sparkles } from 'lucide-react';
+import { AlertCircle, Check, Copy, Loader2, Sparkles, Square, Volume2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Streamdown, type Components } from 'streamdown';
 import { BrowserLink } from '@/components/common/BrowserLink';
@@ -12,6 +12,9 @@ import {
 } from '@/components/markdown/streamdown-config';
 import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
 import { cn } from '@/lib/utils';
+import { synthesizeAndPlay, sanitizeForTts, type TtsPlaybackHandle } from '@/lib/voice/tts';
+import { toast } from '@/lib/toast';
+import { useSettingsStore } from '@/stores/settings';
 import { AcpImagePart, isSafeAcpImageSource } from './AcpImagePart';
 import { AcpAttachmentPart } from './AcpAttachmentPart';
 
@@ -153,7 +156,7 @@ export function AcpAssistantHoverBar({ text }: { text: string }) {
   const label = copied ? t('acp.copied') : t('acp.copy');
 
   return (
-    <div className="flex w-full justify-start px-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+    <div className="flex w-full items-center justify-start gap-1 px-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
       <button
         type="button"
         data-testid="acp-assistant-copy"
@@ -168,7 +171,72 @@ export function AcpAssistantHoverBar({ text }: { text: string }) {
           <Copy className="h-3.5 w-3.5" aria-hidden="true" />
         )}
       </button>
+      {text.trim() && <AcpTtsPlayButton text={text} />}
     </div>
+  );
+}
+
+function AcpTtsPlayButton({ text }: { text: string }) {
+  const { t } = useTranslation('chat');
+  const ttsConfigured = useSettingsStore((s) => s.voiceCaps?.tts ?? false);
+  const [state, setState] = useState<'idle' | 'loading' | 'playing'>('idle');
+  const handleRef = useRef<TtsPlaybackHandle | null>(null);
+
+  useEffect(() => {
+    return () => {
+      handleRef.current?.stop();
+      handleRef.current = null;
+    };
+  }, []);
+
+  const toggle = useCallback(async () => {
+    if (state === 'playing' || state === 'loading') {
+      handleRef.current?.stop();
+      handleRef.current = null;
+      setState('idle');
+      return;
+    }
+    const speakable = sanitizeForTts(text);
+    if (!speakable) return;
+    setState('loading');
+    try {
+      const handle = await synthesizeAndPlay({ text: speakable });
+      handleRef.current = handle;
+      setState('playing');
+      void handle.done.then(() => {
+        handleRef.current = null;
+        setState('idle');
+      });
+    } catch (error) {
+      setState('idle');
+      toast.error(t('voice.ttsFailed', { error: String(error) }));
+    }
+  }, [state, t, text]);
+
+  const label = !ttsConfigured
+    ? t('voice.ttsNotConfigured')
+    : state === 'playing'
+      ? t('voice.stopPlayback')
+      : t('voice.playReply');
+
+  return (
+    <button
+      type="button"
+      data-testid="acp-assistant-speak"
+      aria-label={label}
+      title={label}
+      onClick={() => void toggle()}
+      disabled={!ttsConfigured}
+      className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/10"
+    >
+      {state === 'loading' ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+      ) : state === 'playing' ? (
+        <Square className="h-3.5 w-3.5" fill="currentColor" aria-hidden="true" />
+      ) : (
+        <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />
+      )}
+    </button>
   );
 }
 
@@ -184,7 +252,7 @@ export const AcpRenderPart = memo(function AcpRenderPart({
   if (part.kind === 'markdown') {
     if (tone === 'user') {
       return (
-        <div className="rounded-2xl bg-brand px-4 py-3 text-white shadow-sm">
+        <div className="rounded-2xl bg-primary/10 px-4 py-3 text-foreground shadow-sm">
           <p className="whitespace-pre-wrap break-words">{part.text}</p>
         </div>
       );

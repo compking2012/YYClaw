@@ -10,6 +10,7 @@ import {
   syncOpenAiCompatibleImageRelay,
 } from './openclaw-auth';
 import { ensureClawXOpenAiImagePluginInstalled } from './plugin-install';
+import { syncRequiredClawXImagePluginsQuietly } from './clawx-image-plugin-sync';
 import {
   listAgentsSnapshot,
   listAgentsSnapshotFromConfig,
@@ -22,15 +23,33 @@ import {
 } from './openclaw-image-generation-runtime';
 import { OPENAI_CODEX_RUNTIME_PROVIDER_KEY } from './provider-keys';
 import {
+  CLAWX_GEMINI_IMAGE_PROVIDER_KEY,
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
 } from './openclaw-image-relay-constants';
+
+/** The two ClawX-managed image relays surfaced on the Models page. */
+const CLAWX_IMAGE_PROVIDER_KEYS = new Set<string>([
+  CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
+  CLAWX_GEMINI_IMAGE_PROVIDER_KEY,
+]);
 
 export interface ImageGenerationModelConfig {
   primary: string | null;
   fallbacks: string[];
   timeoutMs: number | null;
 }
+
+/**
+ * Floor for `agents.defaults.mediaMaxMb` applied when ClawX image generation is
+ * configured. The built-in `image_generate` tool caps each saved generated
+ * image at `mediaMaxMb` MB (default 6MB); a lossless 2K/4K PNG from the Gemini
+ * relay easily exceeds that, so `saveMediaBuffer` throws "Media exceeds 6MB
+ * limit" *after* a successful generation — which the model paraphrases as
+ * "image too large, retrying at a lower resolution". 32MB comfortably covers 2K
+ * and most 4K output. We only raise the value, never lower a user's higher one.
+ */
+const CLAWX_GENERATED_MEDIA_MIN_MAX_MB = 32;
 
 export interface ImageGenerationProviderRow {
   id: string;
@@ -77,7 +96,12 @@ export interface ImageGenerationTestResult {
   result?: unknown;
 }
 
-const DEFAULT_TEST_PROMPT = 'A small red circle on a white background, minimal flat illustration.';
+/**
+ * Deliberately descriptive: Gemini image models answer a terse geometric prompt
+ * ("a small red circle on a white background") with `finishReason:
+ * IMAGE_RECITATION` and no image, which would make a working relay look broken.
+ */
+const DEFAULT_TEST_PROMPT = 'A watercolour painting of an orange tabby cat sleeping on a windowsill in warm afternoon light.';
 /** Some relays (e.g. gpt-image-2) reject 512×512 as below minimum pixel budget. */
 const DEFAULT_TEST_IMAGE_SIZE = '1024x1024';
 const DEFAULT_TEST_TIMEOUT_MS = 120_000;
@@ -237,10 +261,29 @@ export async function setImageGenerationConfig(
     // minimax-portal/image-01 after the configured ClawX image provider.
     defaults.mediaGenerationAutoProviderFallback = false;
 
+    // Raise the generated-media save cap so high-resolution (2K/4K) images from
+    // the ClawX relays are not rejected by the built-in tool's 6MB default. Only
+    // bump it; never shrink a value the user set higher.
+    const configuredMediaMaxMb = defaults.mediaMaxMb;
+    if (
+      typeof configuredMediaMaxMb !== 'number'
+      || !Number.isFinite(configuredMediaMaxMb)
+      || configuredMediaMaxMb < CLAWX_GENERATED_MEDIA_MIN_MAX_MB
+    ) {
+      defaults.mediaMaxMb = CLAWX_GENERATED_MEDIA_MIN_MAX_MB;
+    }
+
     agents.defaults = defaults;
     config.agents = agents;
     savedConfig = parseImageGenerationModelConfig(defaults.imageGenerationModel);
   });
+
+  // Install + enable whichever ClawX image plugin the new ref needs, so a model
+  // switch made here does not have to wait for the next Gateway prelaunch pass
+  // to materialise the plugin mirror. Runs after the mutation because installing
+  // a mirror is an external write, and mutators may be replayed on CAS conflict.
+  await syncRequiredClawXImagePluginsQuietly();
+
   return savedConfig!;
 }
 
@@ -374,6 +417,14 @@ export async function applyOpenAiImageRelaySettings(params: {
     apiKey: params.apiKey,
     imageModelIds,
   });
+  if (params.enabled) {
+    // Unconditional on purpose: this is the "OpenAI-compatible relay" feature,
+    // whose provider entry (models.providers['clawx-openai-image'], written by
+    // syncOpenAiCompatibleImageRelay) always needs the mirror present. The
+    // model-family-driven install in clawx-image-plugin-sync covers the
+    // separate "which image model is selected" path.
+    void ensureClawXOpenAiImagePluginInstalled();
+  }
 }
 
 export async function listImageGenerationProvidersFromRuntime(): Promise<ImageGenerationProviderRow[]> {
@@ -383,7 +434,10 @@ export async function listImageGenerationProvidersFromRuntime(): Promise<ImageGe
     config: cfg,
     isProviderConfigured: (providerId) => isImageProviderAuthenticated(providerId, snapshot.defaultAgentId),
   });
-  return rows.filter((row) => row.id === CLAWX_OPENAI_IMAGE_PROVIDER_KEY);
+  // Only ClawX's own relays belong on the Models page; OpenClaw's native image
+  // providers are configured elsewhere. Both relays must be listed — filtering
+  // to the OpenAI key alone hides a working Gemini relay from the UI.
+  return rows.filter((row) => CLAWX_IMAGE_PROVIDER_KEYS.has(row.id));
 }
 
 function resolveAgentDirForTest(agentId: string, snapshot: AgentsSnapshot): string {

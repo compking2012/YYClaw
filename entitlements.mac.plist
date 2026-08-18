@@ -29,5 +29,9 @@
     <!-- Downloads folder access -->
     <key>com.apple.security.files.downloads.read-write</key>
     <true/>
+
+    <!-- Microphone access for voice (Talk / TTS) features -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
 </dict>
 </plist>

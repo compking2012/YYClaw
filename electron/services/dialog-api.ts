@@ -1,9 +1,11 @@
-import { dialog, type MessageBoxOptions, type OpenDialogOptions } from 'electron';
+import type { BrowserWindow } from 'electron';
+import type { MessageBoxOptions, OpenDialogOptions } from 'electron';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import { showMessageBoxWithParent, showOpenDialogWithParent } from '../utils/dialog-parent';
 
-export function createDialogApi(): CompleteHostServiceRegistry['dialog'] {
+export function createDialogApi(mainWindow: BrowserWindow): CompleteHostServiceRegistry['dialog'] {
   return {
-    open: (payload) => dialog.showOpenDialog(payload as OpenDialogOptions),
-    message: (payload) => dialog.showMessageBox(payload as MessageBoxOptions),
+    open: (payload) => showOpenDialogWithParent(mainWindow, payload as OpenDialogOptions),
+    message: (payload) => showMessageBoxWithParent(mainWindow, payload as MessageBoxOptions),
   };
 }

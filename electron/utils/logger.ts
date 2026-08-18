@@ -55,6 +55,71 @@ let flushing = false;
 const FLUSH_INTERVAL_MS = 500;
 const FLUSH_SIZE_THRESHOLD = 20;
 
+/** Log timestamps and log filename date use China Standard Time (Asia/Shanghai, UTC+8). */
+const LOG_TIME_ZONE = 'Asia/Shanghai';
+
+function intlDateTimePart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string {
+  return parts.find((p) => p.type === type)?.value ?? '';
+}
+
+/** `YYYY-MM-DD` in Shanghai (for `clawx-YYYY-MM-DD.log`). */
+function formatShanghaiDateYmd(d = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: LOG_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+  return `${intlDateTimePart(parts, 'year')}-${intlDateTimePart(parts, 'month')}-${intlDateTimePart(parts, 'day')}`;
+}
+
+/**
+ * ISO-like wall time in Shanghai with fixed `+08:00` suffix, e.g. `2026-05-13T22:30:45.123+08:00`.
+ * Uses fractional seconds when the runtime supports them; otherwise omits ms.
+ */
+function formatShanghaiLogTimestamp(d = new Date()): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: LOG_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      fractionalSecondDigits: 3,
+      hour12: false,
+    }).formatToParts(d);
+    const y = intlDateTimePart(parts, 'year');
+    const mo = intlDateTimePart(parts, 'month');
+    const da = intlDateTimePart(parts, 'day');
+    const h = intlDateTimePart(parts, 'hour');
+    const mi = intlDateTimePart(parts, 'minute');
+    const s = intlDateTimePart(parts, 'second');
+    const frac = intlDateTimePart(parts, 'fractionalSecond');
+    const sub = frac ? `.${frac}` : '';
+    return `${y}-${mo}-${da}T${h}:${mi}:${s}${sub}+08:00`;
+  } catch {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: LOG_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(d);
+    const y = intlDateTimePart(parts, 'year');
+    const mo = intlDateTimePart(parts, 'month');
+    const da = intlDateTimePart(parts, 'day');
+    const h = intlDateTimePart(parts, 'hour');
+    const mi = intlDateTimePart(parts, 'minute');
+    const s = intlDateTimePart(parts, 'second');
+    return `${y}-${mo}-${da}T${h}:${mi}:${s}+08:00`;
+  }
+}
+
 async function flushBuffer(): Promise<void> {
   if (flushing || writeBuffer.length === 0 || !logFilePath) return;
   flushing = true;
@@ -101,11 +166,11 @@ export function initLogger(): void {
       mkdirSync(logDir, { recursive: true });
     }
 
-    const timestamp = new Date().toISOString().split('T')[0];
+    const timestamp = formatShanghaiDateYmd();
     logFilePath = join(logDir, `clawx-${timestamp}.log`);
 
     // Write a separator for new session (sync is OK — happens once at startup)
-    const sessionHeader = `\n${'='.repeat(80)}\n[${new Date().toISOString()}] === ClawX Session Start (v${app.getVersion()}) ===\n${'='.repeat(80)}\n`;
+    const sessionHeader = `\n${'='.repeat(80)}\n[${formatShanghaiLogTimestamp()}] === YYClaw Session Start (v${app.getVersion()}) ===\n${'='.repeat(80)}\n`;
     appendFileSync(logFilePath, sessionHeader);
   } catch (error) {
     console.error('Failed to initialize logger:', error);
@@ -129,7 +194,7 @@ export function getLogFilePath(): string | null {
 // ── Formatting ───────────────────────────────────────────────────
 
 function formatMessage(level: string, message: string, ...args: unknown[]): string {
-  const timestamp = new Date().toISOString();
+  const timestamp = formatShanghaiLogTimestamp();
   const formattedArgs = args.length > 0 ? ' ' + args.map(arg => {
     if (arg instanceof Error) {
       return `${arg.message}\n${arg.stack || ''}`;
@@ -279,7 +344,7 @@ export async function listLogFiles(): Promise<Array<{ name: string; path: string
         name: f,
         path: fullPath,
         size: s.size,
-        modified: s.mtime.toISOString(),
+        modified: formatShanghaiLogTimestamp(s.mtime),
       });
     }
     return results.sort((a, b) => b.modified.localeCompare(a.modified));

@@ -1,6 +1,5 @@
 import type {
   ContentBlock,
-  PlanEntry,
   SessionConfigOption,
   SessionNotification,
   ToolCallContent,
@@ -11,7 +10,15 @@ import type {
 import { contentBlockToRenderPart, contentBlocksToRenderParts, toolContentToRenderPart, toolContentToRenderParts } from './content-blocks';
 import { dedupeTimelineAttachments } from './attachments';
 import { openClawPromptTextBlocks } from './openclaw-prompt-compat';
-import type { AcpTimelineSnapshot, AttachmentRenderPart, MessageSegmentItem, RenderPart, TimelineItem, ToolCallItem } from './timeline-types';
+import type {
+  AcpTimelineSnapshot,
+  AttachmentRenderPart,
+  MessageSegmentItem,
+  RenderPart,
+  TimelineItem,
+  TimelinePlanEntry,
+  ToolCallItem,
+} from './timeline-types';
 
 type UpdateRecord = Record<string, unknown> & {
   sessionUpdate?: unknown;
@@ -215,6 +222,20 @@ function findMessageSegmentId(state: AcpTimelineSnapshot, role: Role, messageId:
     const item = state.itemsById[itemId];
     return item?.kind === 'message-segment' && item.role === role && item.messageId === messageId;
   });
+}
+
+/**
+ * The id of the last assistant message-segment in the timeline. While a reply is
+ * in flight (`sending`), this is the segment currently receiving chunks, so it is
+ * the only one that should render with the smooth streaming reveal. Returns a
+ * primitive string so it can be used directly as a stable zustand selector value.
+ */
+export function getStreamingAssistantSegmentId(state: AcpTimelineSnapshot): string | null {
+  for (let i = state.itemOrder.length - 1; i >= 0; i -= 1) {
+    const item = state.itemsById[state.itemOrder[i]];
+    if (item?.kind === 'message-segment' && item.role === 'assistant') return item.id;
+  }
+  return null;
 }
 
 function appendMessageChunk(
@@ -566,7 +587,7 @@ export function applyAcpSessionUpdate(
       return appendItem(closeAllMessageSegments(snapshot), {
         kind: 'plan',
         id: 'plan:current',
-        entries: Array.isArray(update.entries) ? update.entries as PlanEntry[] : [],
+        entries: Array.isArray(update.entries) ? update.entries as TimelinePlanEntry[] : [],
       });
     case 'available_commands_update':
       return { ...snapshot, metadata: { ...snapshot.metadata, availableCommands: Array.isArray(update.availableCommands) ? update.availableCommands : [] } };

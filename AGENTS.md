@@ -4,7 +4,7 @@
 
 ### Overview
 
-ClawX is a cross-platform **Electron desktop app** (React 19 + Vite + TypeScript) providing a GUI for the OpenClaw AI agent runtime. It uses pnpm as its package manager (pinned version in `package.json`'s `packageManager` field).
+This is a cross-platform **Electron desktop app** (React 19 + Vite + TypeScript) providing a GUI for the OpenClaw AI agent runtime. It uses pnpm as its package manager (pinned version in `package.json`'s `packageManager` field).
 
 ### Quick reference
 
@@ -25,6 +25,27 @@ Standard dev commands are in `package.json` scripts and `README.md`. Key ones:
 | Electron Main inspector | `pnpm run profile:main` |
 | Build frontend only | `pnpm run build:vite` |
 
+## Language conventions
+
+- **Reply to the user in Chinese (简体中文)** by default — all conversational responses,
+  explanations, summaries, and feedback. Keep technical identifiers (code, file paths,
+  commands, API names) as-is.
+- **Write harness/config artifacts in English** — CLAUDE.md, AGENTS.md, slash-command
+  and subagent prompts, hook comments, and commit messages — because English yields
+  more reliable model execution. Exceptions: established Chinese domain terms that have
+  no clean English equivalent, and user-facing copy that is intentionally Chinese.
+
+## Startup Rules
+
+Before writing any code, complete these steps in order:
+
+1. **Read this file completely.** It defines the boundaries and conventions for this project.
+2. **Read `docs/ARCHITECTURE.md`** to understand the full Electron layer structure and data flow.
+3. **Read `docs/PRODUCT.md`** to understand the complete feature requirements.
+4. **Read `docs/RELIABILITY.md`** to understand logging, observability, and clean state requirements.
+5. **Run `bash init.sh`** to verify the project builds and initializes cleanly.
+6. **Read `docs/FEATURE_BUG_LIST.md`** to see how to retrieve the current state of all features and bugs to determine what to develop next.
+
 ### Non-obvious caveats
 
 - **pnpm version**: The exact pnpm version is pinned via `packageManager` in `package.json`. Use `corepack enable && corepack prepare` to activate the correct version before installing.
@@ -33,11 +54,12 @@ Standard dev commands are in `package.json` scripts and `README.md`. Key ones:
 - **E2E parallel isolation**: Functional Electron specs run concurrently with `CLAWX_E2E_WORKERS=2` by default. Keep tests parallel-safe and test-scoped; apply `E2E_EXCLUSIVE_TAG` from `tests/e2e/parallel-policy.ts` to tests that use the real clipboard or other OS-global state, and `E2E_PERFORMANCE_TAG` to host performance profiles. Extend `tests/unit/e2e-parallel-policy.test.ts` for recognizable new global APIs.
 - **`pnpm run lint` race condition**: If `pnpm run uv:download` was recently run, ESLint may fail with `ENOENT: no such file or directory, scandir '/workspace/temp_uv_extract'` because the temp directory was created and removed during download. Simply re-run lint after the download script finishes.
 - **Build scripts warning**: `pnpm install` may warn about ignored build scripts for `@discordjs/opus` and `koffi`. These are optional messaging-channel dependencies and the warnings are safe to ignore.
+- **macOS `.deb` toolchain**: Building the Linux `.deb` target on macOS needs GNU tar and GNU ar (`brew install gnu-tar binutils`). macOS ships only BSD `ar`/`tar`, which makes the bundled `fpm` silently produce a 96-byte empty `.deb` (just a `__.SYMDEF` ar symbol table, not a valid Debian package) while the build still exits 0. `scripts/electron-builder-env.mjs` now preflights this on `darwin` + `--linux`: it locates GNU `gtar`/`ar`, exposes them as `gtar`/`gar` in `.build-rel/deb-toolchain-bin/` (prepended to PATH so fpm's `ar_cmd` selects `["gar","-qcD"]`), and fails fast with a `brew install` hint if either is missing. AppImage is unaffected (self-contained in electron-builder).
 - **`pnpm run init`**: This is a convenience script that runs `pnpm install` followed by `pnpm run uv:download`. Either run `pnpm run init` or run the two steps separately.
 - **Gateway startup**: When running `pnpm dev`, the OpenClaw Gateway process starts automatically on port 18789. It takes ~10-30 seconds to become ready. Gateway readiness is not required for UI development—the app functions without it (shows "connecting" state).
 - **No database**: The app uses `electron-store` (JSON files) and OS keychain. No database setup is needed.
 - **AI Provider keys**: Actual AI chat requires at least one provider API key configured via Settings > AI Providers. The app is fully navigable and testable without keys.
-- **Token usage history implementation**: Dashboard token usage history is not parsed from console logs. It reads OpenClaw session transcript `.jsonl` files under the local OpenClaw config directory, scans both configured agents and any runtime agent directories found on disk, and treats normal, `.deleted.jsonl`, and `.jsonl.reset.*` transcripts as valid history sources. It extracts assistant/tool usage records with `message.usage` and aggregates fields such as input/output/cache/total tokens and cost from those structured records. Note: "Delete conversation" in the sidebar is a hard delete — the Main process unlinks `<id>.jsonl` plus any leftover `<id>.deleted.jsonl` and `<id>.jsonl.reset.*` siblings, *and* OpenClaw's trajectory artefacts (`<id>.trajectory.jsonl` flight recorder + `<id>.trajectory-path.json` pointer); when the pointer references a runtime file outside the agent's `sessions/` folder (the `OPENCLAW_TRAJECTORY_DIR` override), that off-disk file is unlinked too. Deleted conversations stop contributing to this chart — use a fresh session if you want history retained.
+- **Token usage history implementation**: Dashboard token usage history is not parsed from console logs. It reads OpenClaw session transcript `.jsonl` files under the local OpenClaw config directory, scans both configured agents and any runtime agent directories found on disk, and treats normal, `.deleted.jsonl`, and `.jsonl.reset.*` transcripts as valid history sources. It extracts assistant/tool usage records with `message.usage` and aggregates fields such as input/output/cache/total tokens and cost from those structured records.
 - **Models page aggregation**: The 7-day/30-day filters are relative rolling windows, not calendar-month buckets. When grouped by time, the chart should keep all day buckets in the selected window; only model grouping is intentionally capped to the top entries.
 - **OpenClaw Doctor in UI**: In Settings > Advanced > Developer, the app exposes both `Run Doctor` (`openclaw doctor --json`) and `Run Doctor Fix` (`openclaw doctor --fix --yes --non-interactive`) through the host-api. Renderer code should call the host route, not spawn CLI processes directly.
 - **UI change validation**: Any user-visible UI change should include or update an Electron E2E spec in the same PR so the interaction is covered by Playwright.

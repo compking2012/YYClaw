@@ -7,10 +7,10 @@
  * Port configuration
  */
 export const PORTS = {
-  /** ClawX GUI development server port */
+  /** GUI development server port */
   CLAWX_DEV: 5173,
   
-  /** ClawX GUI production port (for reference) */
+  /** GUI production port (for reference) */
   CLAWX_GUI: 23333,
 
   /** Local host API server port */

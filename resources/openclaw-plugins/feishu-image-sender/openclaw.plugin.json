@@ -1,0 +1,18 @@
+{
+  "id": "feishu-image-sender",
+  "name": "Feishu Image Sender",
+  "description": "Send a local image file to the current Feishu chat (uploads to image_key, then sends msg_type=image).",
+  "version": "0.1.2",
+  "entry": "index.mjs",
+  "enabledByDefault": true,
+  "contracts": {
+    "tools": [
+      "feishu_send_image"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

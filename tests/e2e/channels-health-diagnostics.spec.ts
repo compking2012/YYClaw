@@ -50,8 +50,9 @@ test.describe('Channels health diagnostics', () => {
     });
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
-    await expect(page.getByTestId('channels-page')).toBeVisible();
+    await page.getByTestId('sidebar-nav-settings').click();
+    await page.getByTestId('settings-tab-channels').click();
+    await expect(page.getByTestId('channels-tab')).toBeVisible();
     await expect(page.getByText('Feishu / Lark')).toBeVisible();
     await expect(page.getByTestId('channels-health-banner')).toHaveCount(0);
     await expect(page.getByText(/Gateway degraded|状态波动|ゲートウェイ劣化/)).toHaveCount(0);
@@ -156,8 +157,10 @@ test.describe('Channels health diagnostics', () => {
       });
     });
 
-    await page.getByTestId('sidebar-nav-channels').click();
-    await expect(page.getByTestId('channels-page')).toBeVisible();
+    await page.getByTestId('sidebar-nav-settings').click();
+
+    await page.getByTestId('settings-tab-channels').click();
+    await expect(page.getByTestId('channels-tab')).toBeVisible();
     await expect(page.getByTestId('channels-health-banner')).toBeVisible();
     await expect(page.getByText(/Gateway degraded|状态波动|ゲートウェイ劣化/)).toBeVisible();
     await expect(page.locator('div.rounded-2xl').getByText(/Degraded|状态波动|劣化中/).first()).toBeVisible();

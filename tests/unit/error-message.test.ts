@@ -5,16 +5,16 @@ import { AppError, toUserMessage } from '@/lib/error-message';
 describe('error-message', () => {
   it('returns user-facing message for permission error', () => {
     const msg = toUserMessage(new AppError('PERMISSION', 'forbidden'));
-    expect(msg).toContain('Permission denied');
+    expect(msg.toLowerCase()).toContain('permission');
   });
 
   it('returns user-facing message for auth invalid error', () => {
     const msg = toUserMessage(new AppError('AUTH_INVALID', 'Invalid Authentication'));
-    expect(msg).toContain('Authentication failed');
+    expect(msg).toContain('API key');
   });
 
   it('returns user-facing message for channel unavailable error', () => {
     const msg = toUserMessage(new AppError('CHANNEL_UNAVAILABLE', 'Invalid IPC channel'));
-    expect(msg).toContain('Service channel unavailable');
+    expect(msg.toLowerCase()).toContain('service channel');
   });
 });

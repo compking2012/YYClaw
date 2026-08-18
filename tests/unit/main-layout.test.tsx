@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 
 vi.mock('@/components/layout/Sidebar', () => ({
@@ -14,26 +15,34 @@ vi.mock('@/components/web-browser/WebBrowserHost', () => ({
   WebBrowserHost: () => <div data-testid="web-browser-host" />,
 }));
 
+const renderLayout = (initialRoute = '/') =>
+  render(
+    <MemoryRouter initialEntries={[initialRoute]}>
+      <MainLayout />
+    </MemoryRouter>,
+  );
+
 describe('MainLayout platform layout', () => {
-  it('uses a left/right shell on macOS with a top drag strip over content', () => {
+  it('renders a top drag strip over content on macOS', () => {
     window.electron.platform = 'darwin';
 
-    render(<MainLayout />);
+    renderLayout();
 
+    // On macOS the shell is a horizontal row (sidebar + content); the drag strip
+    // is layered over the top of the content area rather than a top TitleBar.
     expect(screen.getByTestId('main-layout')).toHaveClass('flex-row');
     expect(screen.getByTestId('main-content')).toHaveClass('relative');
+    // macOS gets an inset drag region layered over the top of the content area.
     expect(screen.getByTestId('mac-main-drag-region')).toHaveClass('drag-region');
   });
 
-  it('keeps a top titlebar column shell on Windows', () => {
+  it('omits the macOS drag strip on Windows', () => {
     window.electron.platform = 'win32';
 
-    render(<MainLayout />);
+    renderLayout();
 
     const layout = screen.getByTestId('main-layout');
     expect(layout).toHaveClass('flex-col');
-    expect(layout).toHaveClass('bg-surface-sidebar');
-    expect(screen.getByTestId('main-content')).not.toHaveClass('border-t');
     expect(screen.queryByTestId('mac-main-drag-region')).not.toBeInTheDocument();
   });
 

@@ -1,10 +1,6 @@
 import { getProviderConfig } from '../utils/provider-registry';
 import { getOpenClawProviderKeyForType, isOAuthProviderType } from '../utils/provider-keys';
 import type { ProviderConfig } from '../utils/secure-storage';
-import {
-  piAiModelsJsonModelEntry,
-  type PiAiModelCostRates,
-} from '../shared/pi-ai-model-cost';
 
 export interface AgentProviderUpdatePayload {
   providerKey: string;
@@ -12,7 +8,7 @@ export interface AgentProviderUpdatePayload {
     baseUrl: string;
     api: string;
     apiKey: string | undefined;
-    models: Array<{ id: string; name: string; cost: PiAiModelCostRates }>;
+    models: Array<{ id: string; name: string }>;
   };
 }
 
@@ -46,7 +42,7 @@ export function buildNonOAuthAgentProviderUpdate(
       baseUrl,
       api,
       apiKey: meta?.apiKeyEnv,
-      models: modelId ? [piAiModelsJsonModelEntry(modelId)] : [],
+      models: modelId ? [{ id: modelId, name: modelId }] : [],
     },
   };
 }

@@ -9,14 +9,18 @@ import { Toaster } from 'sonner';
 import i18n from './i18n';
 import { MainLayout } from './components/layout/MainLayout';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { Models } from './pages/Models';
 import { Chat } from './pages/Chat';
+import { UsageSettings } from './pages/Models';
 import { Agents } from './pages/Agents';
-import { Channels } from './pages/Channels';
-import { Skills } from './pages/Skills';
+import { ChannelsSettings } from './pages/Channels';
+import { SkillsSettings } from './pages/Skills';
 import { Cron } from './pages/Cron';
 import { ImageGenerationPage } from './pages/ImageGeneration';
-import { Settings } from './pages/Settings';
+import { MemorySettings } from './pages/Dreams';
+import { SystemSettingsTab } from './pages/Settings';
+import { Workflows } from './pages/Workflows';
+import { OfficeRouteGuard } from './pages/Office/OfficeRouteGuard';
+import { Login } from './pages/Login';
 import { Setup } from './pages/Setup';
 import { useSettingsStore } from './stores/settings';
 import { useUpdateStore } from './stores/update';
@@ -27,6 +31,7 @@ import { loadExternalRendererExtensions } from './extensions/_ext-bridge.generat
 import { UpdateNotifier } from './components/update/UpdateNotifier';
 import { useNewChatAction } from './components/layout/use-new-chat-action';
 import { hostEvents } from './lib/host-events';
+import { PortConflictDialog } from './components/gateway/PortConflictDialog';
 
 
 /**
@@ -200,17 +205,27 @@ function App() {
         <Routes>
           {/* Setup wizard (shown on first launch) */}
           <Route path="/setup/*" element={<Setup />} />
+          <Route path="/login" element={<Login />} />
 
           {/* Main application routes */}
           <Route element={<MainLayout />}>
             <Route path="/" element={<Chat />} />
-            <Route path="/models" element={<Models />} />
+            <Route path="/models" element={<UsageSettings />} />
             <Route path="/agents" element={<Agents />} />
-            <Route path="/channels" element={<Channels />} />
-            <Route path="/skills" element={<Skills />} />
+            <Route path="/channels" element={<ChannelsSettings />} />
+            <Route path="/skills" element={<SkillsSettings />} />
             <Route path="/cron" element={<Cron />} />
-            <Route path="/image-generation" element={devModeUnlocked ? <ImageGenerationPage /> : <Navigate to="/" replace />} />
-            <Route path="/settings/*" element={<Settings />} />
+            <Route
+              path="/image-generation"
+              element={devModeUnlocked ? <ImageGenerationPage /> : <Navigate to="/" replace />}
+            />
+            <Route
+              path="/dreams"
+              element={devModeUnlocked ? <MemorySettings /> : <Navigate to="/" replace />}
+            />
+            <Route path="/workflows" element={devModeUnlocked ? <Workflows /> : <Navigate to="/" replace />} />
+            <Route path="/office" element={<OfficeRouteGuard />} />
+            <Route path="/settings/*" element={<SystemSettingsTab />} />
             {extraRoutes.map((r) => (
               <Route key={r.path} path={r.path} element={<r.component />} />
             ))}
@@ -218,6 +233,7 @@ function App() {
         </Routes>
 
         <UpdateNotifier />
+        <PortConflictDialog />
 
         {/* Global toast notifications */}
         <Toaster

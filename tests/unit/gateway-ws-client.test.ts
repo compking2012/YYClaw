@@ -129,12 +129,14 @@ describe('connectGatewaySocket', () => {
     await flushMicrotasks();
 
     expect(socket.sentFrames).toHaveLength(1);
-    const connectFrame = JSON.parse(socket.sentFrames[0]) as { id: string; method: string };
+    const connectFrame = JSON.parse(socket.sentFrames[0]) as {
+      id: string;
+      method: string;
+      params?: { minProtocol?: number; maxProtocol?: number };
+    };
     expect(connectFrame.method).toBe('connect');
-    expect((connectFrame as { params?: { minProtocol?: number; maxProtocol?: number } }).params).toMatchObject({
-      minProtocol: 4,
-      maxProtocol: 4,
-    });
+    expect(connectFrame.params?.minProtocol).toBe(4);
+    expect(connectFrame.params?.maxProtocol).toBe(4);
     expect(pendingRequests.size).toBe(1);
 
     await vi.advanceTimersByTimeAsync(GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS - 1_000);
@@ -144,7 +146,7 @@ describe('connectGatewaySocket', () => {
       type: 'res',
       id: connectFrame.id,
       ok: true,
-      payload: { protocol: 3 },
+      payload: { protocol: 4 },
     });
 
     await expect(connectionPromise).resolves.toBe(socket);

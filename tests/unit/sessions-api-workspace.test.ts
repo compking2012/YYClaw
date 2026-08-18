@@ -13,6 +13,7 @@ vi.mock('@electron/utils/paths', () => ({
   getOpenClawConfigDir: () => testOpenClawDir,
   resolveOpenClawStateDir: () => testOpenClawDir,
   resolveOpenClawConfigDir: () => testOpenClawConfigDir,
+  getResourcesDir: () => `${process.cwd()}/resources`,
 }));
 
 function seedAcpCwd(sessionKey: string, cwd: string) {

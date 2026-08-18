@@ -1,3 +1,5 @@
+import type { ModelKind, ModelParamsByKind } from './model-kind';
+
 export const PROVIDER_TYPES = [
   'anthropic',
   'openai',
@@ -117,7 +119,13 @@ export interface ProviderConfig {
   baseUrl?: string;
   apiProtocol?: ProviderProtocol;
   headers?: Record<string, string>;
-  model?: string;
+  model?: string | string[];
+  /** Supported model kinds (text/image/…), persisted so the backend can resolve
+   * remote-catalog providers whose definition isn't in the bundled registry. */
+  modelType?: ModelKind[];
+  /** Per-kind extra params (voice kinds: voice/format/speed/language …), keyed by ModelKind. */
+  modelParams?: ModelParamsByKind;
+  supportsVision?: boolean;
   fallbackModels?: string[];
   fallbackProviderIds?: string[];
   enabled: boolean;
@@ -135,20 +143,27 @@ export interface ProviderTypeInfo {
   name: string;
   icon: string;
   placeholder: string;
-  model?: string;
+  model?: string | string[];
+  modelType?: ModelKind[];
   requiresApiKey: boolean;
   defaultBaseUrl?: string;
   showBaseUrl?: boolean;
   showModelId?: boolean;
   showModelIdInDevModeOnly?: boolean;
   modelIdPlaceholder?: string;
-  defaultModelId?: string;
+  defaultModelId?: string | string[];
   isOAuth?: boolean;
   supportsApiKey?: boolean;
   apiKeyUrl?: string;
   codePlanPresetBaseUrl?: string;
   codePlanPresetModelId?: string;
   codePlanDocsUrl?: string;
+  /** When true, OpenClaw provider HTTP fetch may access baseUrl when DNS resolves to private IPs. */
+  requestAllowPrivateNetwork?: boolean;
+  /** For voice-capable providers: the kernel-side provider id used in messages.tts / voice-call config keys. */
+  voiceRuntimeProviderId?: string;
+  /** Per-model enrichment metadata keyed by model id (from the enriched provider catalog). */
+  models?: Record<string, ModelMeta>;
 }
 
 export interface ProviderModelEntry extends Record<string, unknown> {
@@ -167,6 +182,9 @@ export interface ProviderBackendConfig {
 export interface ProviderDefinition extends ProviderTypeInfo {
   category: ProviderVendorCategory;
   envVar?: string;
+  apiProtocol?: ProviderProtocol;
+  headers?: Record<string, string>;
+  backendModels?: ProviderModelEntry[];
   providerConfig?: ProviderBackendConfig;
   supportedAuthModes: ProviderAuthMode[];
   defaultAuthMode: ProviderAuthMode;
@@ -181,7 +199,12 @@ export interface ProviderAccount {
   baseUrl?: string;
   apiProtocol?: ProviderProtocol;
   headers?: Record<string, string>;
-  model?: string;
+  model?: string | string[];
+  /** Supported model kinds (text/image/…), persisted so the backend can resolve
+   * remote-catalog providers whose definition isn't in the bundled registry. */
+  modelType?: ModelKind[];
+  /** Per-kind extra params (voice kinds: voice/format/speed/language …), keyed by ModelKind. */
+  modelParams?: ModelParamsByKind;
   fallbackModels?: string[];
   fallbackAccountIds?: string[];
   enabled: boolean;
@@ -233,4 +256,51 @@ export interface ModelSummary {
     cacheWrite?: number;
   };
   source: 'builtin' | 'remote' | 'gateway' | 'custom';
+}
+
+/** Task-relevant strength dimensions a model can be scored on (0..1). */
+export const MODEL_STRENGTH_KEYS = [
+  'coding',
+  'math',
+  'reasoning',
+  'longContext',
+  'vision',
+  'multilingual',
+  'creative',
+  'toolUse',
+  'agentic',
+  'instructionFollowing',
+] as const;
+export type ModelStrengthKey = (typeof MODEL_STRENGTH_KEYS)[number];
+
+/**
+ * Per-model enrichment metadata served by the Admin Console via
+ * `/api/v1/provider-catalog` (`provider.models[modelId]`). All fields optional
+ * and forward-compatible: consumers degrade gracefully on missing fields.
+ * Drives the Agent auto-select-model utility scoring. See the model-router plan.
+ */
+export interface ModelMeta {
+  pricing?: {
+    inputPerM?: number;
+    outputPerM?: number;
+    cacheReadPerM?: number;
+    cacheWritePerM?: number;
+    currency?: 'USD' | 'CNY';
+  };
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  inputModalities?: ModelKind[];
+  outputModalities?: ModelKind[];
+  speed?: { throughputTokPerSec?: number; ttftMs?: number };
+  /** Domain strength scores in 0..1 — the core signal for quality scoring. */
+  strengths?: Partial<Record<ModelStrengthKey, number>>;
+  toolUseReliability?: number;
+  reasoningSupport?: boolean;
+  knowledgeCutoff?: string;
+  benchmarks?: { arenaElo?: number; qualityIndex?: number; [key: string]: number | undefined };
+  /** Per-field source/time/confidence for display and confidence-weighted scoring. */
+  provenance?: Record<string, { source: string; updatedAt: string; confidence?: number }>;
+  status?: 'active' | 'deprecated';
+  /** Data-residency origin: self-hosted private > domestic (CN) > overseas. Drives sensitive-task routing. */
+  origin?: 'private' | 'domestic' | 'overseas';
 }

@@ -74,6 +74,31 @@ describe('parseUsageEntriesFromJsonl', () => {
     ]);
   });
 
+  it('computes total as input+output+cacheRead+cacheWrite when explicit total is absent (cache tokens are separate from input)', () => {
+    // Locks the invariant: OpenClaw normalizes usage so `input` excludes cache tokens.
+    // Mirrors a real anthropic-protocol transcript turn that warms then reads cache.
+    const jsonl = [
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-05-01T00:00:00.000Z',
+        message: {
+          role: 'assistant',
+          model: 'MiniMax-M2.7-highspeed',
+          provider: 'minimax-portal',
+          usage: { input: 162, output: 279, cacheRead: 39578, cacheWrite: 903 },
+        },
+      }),
+    ].join('\n');
+
+    const [entry] = parseUsageEntriesFromJsonl(jsonl, { sessionId: 'abc', agentId: 'default' });
+    expect(entry.inputTokens).toBe(162);
+    expect(entry.outputTokens).toBe(279);
+    expect(entry.cacheReadTokens).toBe(39578);
+    expect(entry.cacheWriteTokens).toBe(903);
+    // No explicit total in payload → derived sum must include cache tokens exactly once.
+    expect(entry.totalTokens).toBe(162 + 279 + 39578 + 903);
+  });
+
   it('skips lines without assistant usage', () => {
     const jsonl = [
       JSON.stringify({ type: 'message', timestamp: '2026-02-28T10:00:00.000Z', message: { role: 'assistant' } }),

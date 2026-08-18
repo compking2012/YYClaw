@@ -19,7 +19,8 @@
         "runNow": "Run Now",
         "deleteConfirm": "Are you sure you want to delete this task?",
         "last": "Last",
-        "next": "Next"
+        "next": "Next",
+        "windowRange": "Active {{start}} to {{end}}"
     },
     "dialog": {
         "createTitle": "Create Task",
@@ -31,6 +32,8 @@
         "messagePlaceholder": "What should the AI do? e.g., Give me a summary of today's news and weather",
         "pickSkill": "Insert a skill",
         "skillButton": "Skills",
+        "enhancePrompt": "Enhance prompt",
+        "enhancePromptFailed": "Failed to enhance prompt: {{error}}",
         "skillPickerTitle": "Quick skill access for {{agent}}",
         "skillSearchPlaceholder": "Search skills",
         "skillLoading": "Loading skills...",
@@ -42,24 +45,36 @@
             "once": "Once"
         },
         "recurrence": {
+            "minutely": "Every minute",
             "hourly": "Hourly",
             "daily": "Daily",
             "weekdays": "Weekdays",
             "weekly": "Weekly",
+            "monthly": "Monthly",
             "custom": "Custom"
         },
+        "minutelyHint": "The task will run once every minute.",
         "timeLabel": "Time",
         "hourColumn": "Hour",
         "minuteColumn": "Min",
         "dateLabel": "Date",
         "weekdayLabel": "Day of week",
+        "weekdaysLabel": "Days of week (multi-select)",
+        "dayOfMonthLabel": "Day of month",
+        "dayOfMonthOption": "Day {{day}}",
         "minuteLabel": "Minute of each hour",
         "cronPlaceholder": "Cron expression (e.g., 0 9 * * *)",
+        "cronFieldsHelp": "The 5 fields are: minute(0-59) hour(0-23) day-of-month(1-31) month(1-12) day-of-week(0-6, 0=Sunday).\nExamples: 0 9 * * * = daily at 9:00; 0 9 * * 1,3,5 = Mon/Wed/Fri at 9:00.",
+        "windowTitle": "Validity window",
+        "windowDesc": "Only run the task within this date range (either bound may be left blank). Enforced while the app is running.",
+        "windowStartLabel": "Start date",
+        "windowEndLabel": "End date",
+        "windowClear": "Clear date range",
         "usePresets": "Use presets",
         "useCustomCron": "Use custom cron",
         "deliveryTitle": "Delivery",
-        "deliveryDescription": "Choose whether this task stays in ClawX or is pushed to an external channel.",
-        "deliveryModeNone": "In ClawX only",
+        "deliveryDescription": "Choose whether this task stays in YYClaw or is pushed to an external channel.",
+        "deliveryModeNone": "In YYClaw only",
         "deliveryModeNoneDesc": "Run the task and keep the result in the app.",
         "deliveryModeAnnounce": "External channel",
         "deliveryModeAnnounceDesc": "Send the final result through a configured channel.",
@@ -83,7 +98,7 @@
         "deliveryTargetPlaceholderFeishu": "e.g., user:ou_xxx or chat:oc_xxx",
         "deliveryTargetDesc": "This maps to delivery.to in OpenClaw and is sent as-is.",
         "deliveryTargetDescFeishu": "Use a Feishu user target like user:ou_xxx or a chat target like chat:oc_xxx.",
-        "deliveryTargetDescAuto": "Select from targets discovered for the chosen channel account.",
+        "deliveryTargetDescAuto": "A recommended target was selected automatically; you can change it.",
         "deliveryTargetDescFeishuSelect": "Select a verified Feishu recipient from the available users or chats.",
         "deliveryTargetDescFeishuAccount": "Choose from the configured Feishu channel accounts, using the same account list as the Channels page.",
         "feishuMainTargetTitle": "Feishu main account",
@@ -129,7 +144,9 @@
         "failedResolveDeliveryTarget": "Failed to resolve the default delivery target",
         "discordIdRequired": "Please enter a Discord Channel ID",
         "scheduleRequired": "Please select or enter a schedule",
-        "schedulePast": "The selected time is in the past. Please choose a future time."
+        "schedulePast": "The selected time is in the past. Please choose a future time.",
+        "weekdayRequired": "Please select at least one day of the week",
+        "windowEndBeforeStart": "The end date cannot be earlier than the start date"
     },
     "schedule": {
         "everySeconds": "Every {{count}}s",
@@ -142,6 +159,8 @@
         "hourlyAt": "Hourly at :{{minute}}",
         "monthlyAtDay": "Monthly on day {{day}} at {{time}}",
         "dailyAt": "Daily at {{time}}",
+        "windowNotStarted": "Not started",
+        "windowEnded": "Ended",
         "unknown": "Unknown"
     },
     "weekdays": {

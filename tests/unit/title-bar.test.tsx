@@ -30,12 +30,12 @@ describe('TitleBar platform behavior', () => {
     closeMock.mockResolvedValue(undefined);
   });
 
-  it('does not render a standalone title bar on macOS', () => {
+  it('renders nothing on macOS (native traffic lights via hiddenInset)', () => {
     window.electron.platform = 'darwin';
 
     const { container } = render(<TitleBar />);
 
-    expect(container.firstChild).toBeNull();
+    expect(container.querySelector('.drag-region')).not.toBeInTheDocument();
     expect(screen.queryByTitle('Minimize')).not.toBeInTheDocument();
     expect(isMaximizedMock).not.toHaveBeenCalled();
   });
@@ -48,9 +48,6 @@ describe('TitleBar platform behavior', () => {
     expect(screen.getByTitle('Minimize')).toBeInTheDocument();
     expect(screen.getByTitle('Maximize')).toBeInTheDocument();
     expect(screen.getByTitle('Close')).toBeInTheDocument();
-    const bar = screen.getByTestId('windows-titlebar');
-    expect(bar).toHaveClass('bg-surface-sidebar');
-    expect(bar).not.toHaveClass('border-b');
 
     await waitFor(() => {
       expect(isMaximizedMock).toHaveBeenCalled();

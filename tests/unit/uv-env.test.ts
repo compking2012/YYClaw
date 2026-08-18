@@ -30,9 +30,21 @@ beforeEach(() => {
     },
   }));
 
-  vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(() => ({
-    resolvedOptions: () => ({ timeZone: 'Asia/Shanghai' }),
-  }) as Intl.DateTimeFormat);
+  const mockDateTimeFormat = function () {
+    return {
+      resolvedOptions: () => ({ timeZone: 'Asia/Shanghai' }),
+      formatToParts: () => [
+        { type: 'year', value: '2025' },
+        { type: 'month', value: '01' },
+        { type: 'day', value: '01' },
+        { type: 'hour', value: '00' },
+        { type: 'minute', value: '00' },
+        { type: 'second', value: '00' },
+        { type: 'fractionalSecond', value: '000' },
+      ],
+    };
+  } as unknown as typeof Intl.DateTimeFormat;
+  vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(mockDateTimeFormat);
 });
 
 afterEach(() => {

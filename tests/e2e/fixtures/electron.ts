@@ -9,6 +9,12 @@ import type { RawMessage } from '../../../shared/chat/types';
 
 export type LaunchElectronOptions = {
   skipSetup?: boolean;
+  /**
+   * Seed `devModeUnlocked: true` into the isolated profile's settings so tool
+   * call cards (developer-mode-only) render by default in chat specs. Defaults
+   * to true; pass false for specs that exercise the locked/unlock flow itself.
+   */
+  seedDevMode?: boolean;
   additionalArgs?: string[];
 };
 
@@ -17,6 +23,10 @@ type IpcMockConfig = {
   gatewayRpc?: Record<string, unknown>;
   hostApi?: Record<string, unknown>;
   hostApiErrors?: Record<string, string>;
+  // Per-key artificial latency (ms) applied to matching `hostApi` responses,
+  // keyed identically to `hostApi`. Lets specs observe transient in-flight UI
+  // (e.g. an optimistic "generating" workflow card) before the response lands.
+  hostApiDelayMs?: Record<string, number>;
   recordHostInvocations?: boolean;
   recordLegacyIpcInvocations?: boolean;
 };
@@ -209,7 +219,7 @@ async function closeElectronApp(app: ElectronApplication, timeoutMs = 5_000): Pr
   }
 }
 
-async function seedE2eSettings(userDataDir: string): Promise<void> {
+async function seedE2eSettings(userDataDir: string, seedDevMode: boolean): Promise<void> {
   const settingsPath = join(userDataDir, 'settings.json');
   try {
     await access(settingsPath);
@@ -219,7 +229,9 @@ async function seedE2eSettings(userDataDir: string): Promise<void> {
     // keep their persisted setting across relaunches in the same profile.
   }
 
-  await writeFile(settingsPath, JSON.stringify({ language: 'en' }, null, 2), 'utf-8');
+  const seeded: Record<string, unknown> = { language: 'en' };
+  if (seedDevMode) seeded.devModeUnlocked = true;
+  await writeFile(settingsPath, JSON.stringify(seeded, null, 2), 'utf-8');
 }
 
 async function launchClawXElectron(
@@ -230,22 +242,28 @@ async function launchClawXElectron(
   if (options.additionalArgs?.some((arg) => arg.startsWith('--use-fake-ui-for-media-stream'))) {
     throw new Error('Electron E2E must not bypass application media permission prompts');
   }
-  await seedE2eSettings(userDataDir);
-  const inheritedEnv = { ...process.env };
-  delete inheritedEnv.CLAWX_E2E_SKIP_SETUP;
-  delete inheritedEnv.CLAWX_REMOTE_DEBUGGING_PORT;
-  delete inheritedEnv.VITE_DEV_SERVER_URL;
+  await seedE2eSettings(userDataDir, options.seedDevMode ?? true);
+  const hostApiPort = await allocatePort();
   const electronEnv = process.platform === 'linux'
-    ? {
-      ELECTRON_DISABLE_SANDBOX: '1',
-      DISPLAY: process.env.DISPLAY || ':1',
-    }
+    ? { ELECTRON_DISABLE_SANDBOX: '1' }
     : {};
+  // Host shells (Cursor agent, CLI wrappers) may set ELECTRON_RUN_AS_NODE=1 so
+  // Electron behaves as plain Node. Playwright then passes --remote-debugging-port
+  // which Node rejects with "bad option" and the process exits immediately.
+  const {
+    ELECTRON_RUN_AS_NODE: _stripElectronRunAsNode,
+    ...launchEnv
+  } = process.env;
+  void _stripElectronRunAsNode;
+  delete launchEnv.CLAWX_E2E_SKIP_SETUP;
+  delete launchEnv.CLAWX_REMOTE_DEBUGGING_PORT;
+  delete launchEnv.VITE_DEV_SERVER_URL;
   return await electron.launch({
     executablePath: electronBinaryPath,
     args: ['--lang=en-US', ...(options.additionalArgs ?? []), electronEntry],
     env: {
-      ...inheritedEnv,
+      ...launchEnv,
+      CLAWX_PORT_CLAWX_HOST_API: String(hostApiPort),
       ...electronEnv,
       HOME: homeDir,
       USERPROFILE: homeDir,
@@ -553,6 +571,11 @@ export async function installIpcMocks(
             return [`/api/sessions/transcript?${params.toString()}`, 'GET'];
           }
           if (request.action === 'summaries') return ['/api/sessions/summaries', 'POST'];
+          if (request.action === 'delete') return ['/api/sessions/delete', 'POST'];
+        }
+        if (request.module === 'workflow') {
+          if (request.action === 'startDynamic') return ['/api/workflow/start-dynamic', 'POST'];
+          if (request.action === 'abort') return ['/api/workflow/abort', 'POST'];
         }
         return null;
       };
@@ -612,6 +635,10 @@ export async function installIpcMocks(
 
           if (mockConfig.hostApi) {
             if (typedKey in mockConfig.hostApi) {
+              const delayMs = mockConfig.hostApiDelayMs?.[typedKey];
+              if (typeof delayMs === 'number' && delayMs > 0) {
+                await new Promise((resolveDelay) => setTimeout(resolveDelay, delayMs));
+              }
               return respond(request.id, unwrapLegacyResponse(mockConfig.hostApi[typedKey]));
             }
 

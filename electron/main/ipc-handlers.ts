@@ -5,9 +5,11 @@
 import { ipcMain, BrowserWindow, shell, dialog, app, type Session } from 'electron';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { machineIdSync } from 'node-machine-id';
 import { join, extname, basename, resolve, sep, relative } from 'node:path';
 import { syncMacTrafficLightPosition } from './traffic-light-layout';
 import { GatewayManager } from '../gateway/manager';
+import { noteConfigWatcherRefresh } from '../gateway/config-refresh-scheduler';
 import { ClawHubService } from '../gateway/clawhub';
 import {
   type ProviderConfig,
@@ -21,9 +23,13 @@ import {
 } from '../utils/openclaw-auth';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
+import { readOpenClawVersion } from '../utils/channel-config';
+import { getAppDisplayVersion } from '../utils/app-display-version';
 import { resolveAgentIdFromChannel } from '../utils/agent-config';
 import { resolveAccountIdFromSessionHistory } from '../utils/session-util';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
+import { deviceOAuthManager } from '../utils/device-oauth';
+import { browserOAuthManager } from '../utils/browser-oauth';
 import { getProviderConfig } from '../utils/provider-registry';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
@@ -63,7 +69,20 @@ import { createMediaApi } from '../services/media-api';
 import { createProvidersApi } from '../services/providers-api';
 import { createSessionsApi } from '../services/sessions-api';
 import { createSkillsApi } from '../services/skills-api';
+import {
+  listMarketplaceSkillReviewRequests,
+  listPublishedMarketplaceSkills,
+  requestMarketplaceSkillUnlist,
+  uploadSkillZipViaFarmWs,
+} from '../services/skill-marketplace-upload-ws';
 import { createUsageApi } from '../services/usage-api';
+import { createLegacyApi } from '../services/legacy-api';
+import { createAdminConsoleApi } from '../services/admin-console-api';
+import { createVoiceApi } from '../services/voice-api';
+import { createWorkspaceApi } from '../services/workspace-api';
+import { createPromptOptimizationApi } from '../services/prompt-optimization-api';
+import { createWorkflowApi } from '../services/workflow-api';
+import { showOpenDialogWithParent, showMessageBoxWithParent } from '../utils/dialog-parent';
 import { createWebBrowserApi } from '../services/web-browser-api';
 import type { WebBrowserGuestRegistry } from './web-browser-policy';
 import {
@@ -105,6 +124,9 @@ export function registerIpcHandlers(
   // OpenClaw handlers
   registerOpenClawHandlers();
 
+  // Skill marketplace publish/unlist handlers (dedicated WebSocket upload)
+  registerSkillMarketplaceWsHandlers(mainWindow);
+
   // Provider handlers
   registerProviderHandlers(gatewayManager);
 
@@ -112,7 +134,7 @@ export function registerIpcHandlers(
   registerShellHandlers();
 
   // Dialog handlers
-  registerDialogHandlers();
+  registerDialogHandlers(mainWindow);
 
   // App handlers
   registerAppHandlers();
@@ -157,7 +179,7 @@ function registerTypedHostHandlers(
     openclaw: createOpenClawApi(),
     shell: createShellApi(),
     webBrowser: createWebBrowserApi({ browserSession, registry }),
-    dialog: createDialogApi(),
+    dialog: createDialogApi(mainWindow),
     window: createWindowApi(mainWindow),
     updates: createUpdatesApi(appUpdater),
     uv: createUvApi(),
@@ -173,11 +195,17 @@ function registerTypedHostHandlers(
       stagedAttachments,
     }),
     media: createMediaApi({ attachmentAccess }),
-    sessions: createSessionsApi(),
+    sessions: createSessionsApi({ gatewayManager }),
     chat: createChatApi({ gatewayManager, mainWindow, acpSessionAccessRegistry }),
     cron: createCronApi({ gatewayManager }),
-    skills: createSkillsApi({ clawHubService, gatewayManager }),
+    skills: createSkillsApi({ clawHubService, gatewayManager, mainWindow }),
     usage: createUsageApi(),
+    adminConsole: createAdminConsoleApi(),
+    voice: createVoiceApi({ gatewayManager }),
+    workspace: createWorkspaceApi(),
+    promptOptimization: createPromptOptimizationApi(),
+    workflow: createWorkflowApi({ gatewayManager }),
+    legacy: createLegacyApi({ gatewayManager, clawHubService, mainWindow }),
   });
   registerHostInvokeHandler(hostApiRegistry);
 }
@@ -206,7 +234,7 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
       let data: unknown;
       switch (request.module) {
         case 'app': {
-          if (request.action === 'version') data = app.getVersion();
+          if (request.action === 'version') data = getAppDisplayVersion();
           else if (request.action === 'name') data = app.getName();
           else if (request.action === 'platform') data = process.platform;
           else {
@@ -692,6 +720,15 @@ function registerGatewayHandlers(gatewayManager: GatewayManager): void {
     return gatewayManager.getStatus();
   });
 
+  ipcMain.handle('gateway:getPendingPortConflict', () => {
+    return gatewayManager.getPendingPortConflict();
+  });
+
+  ipcMain.handle('gateway:resolve-conflict', (_event, forceKill: boolean) => {
+    gatewayManager.resolvePortConflict(Boolean(forceKill));
+    return { success: true };
+  });
+
   // Gateway RPC call
   ipcMain.handle('gateway:rpc', async (_, method: string, params?: unknown, timeoutMs?: number) => {
     try {
@@ -783,6 +820,24 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       `[provider-migration] Legacy IPC channel "${channel}" is deprecated. Prefer app:request provider actions and account APIs.`,
     );
   };
+
+  // Listen for OAuth success so OpenClaw's config hot-apply can pick up the new
+  // provider tokens/configs. Keep a longer debounce (8s) so provider config
+  // writes and OAuth token persistence can settle before applying.
+  deviceOAuthManager.on('oauth:success', ({ provider, accountId }) => {
+    noteConfigWatcherRefresh(
+      gatewayManager,
+      `[IPC] OpenClaw config written after ${provider} OAuth success for ${accountId}`,
+      { delayMs: 8000, onlyIfRunning: true },
+    );
+  });
+  browserOAuthManager.on('oauth:success', ({ provider, accountId }) => {
+    noteConfigWatcherRefresh(
+      gatewayManager,
+      `[IPC] OpenClaw config written after ${provider} OAuth success for ${accountId}`,
+      { delayMs: 8000, onlyIfRunning: true },
+    );
+  });
 
   // Get all providers with key info
   ipcMain.handle('provider:list', async () => {
@@ -1039,17 +1094,15 @@ function registerShellHandlers(): void {
 /**
  * Dialog-related IPC handlers
  */
-function registerDialogHandlers(): void {
+function registerDialogHandlers(mainWindow: BrowserWindow): void {
   // Show open dialog
   ipcMain.handle('dialog:open', async (_, options: Electron.OpenDialogOptions) => {
-    const result = await dialog.showOpenDialog(options);
-    return result;
+    return showOpenDialogWithParent(mainWindow, options);
   });
 
   // Show message box
   ipcMain.handle('dialog:message', async (_, options: Electron.MessageBoxOptions) => {
-    const result = await dialog.showMessageBox(options);
-    return result;
+    return showMessageBoxWithParent(mainWindow, options);
   });
 }
 
@@ -1059,7 +1112,7 @@ function registerDialogHandlers(): void {
 function registerAppHandlers(): void {
   // Get app version
   ipcMain.handle('app:version', () => {
-    return app.getVersion();
+    return getAppDisplayVersion();
   });
 
   // Get app name
@@ -1070,6 +1123,10 @@ function registerAppHandlers(): void {
   // Get platform
   ipcMain.handle('app:platform', () => {
     return process.platform;
+  });
+
+  ipcMain.handle('app:openclawVersion', () => {
+    return readOpenClawVersion();
   });
 
 }
@@ -1346,7 +1403,21 @@ async function resolveSandboxedPath(
     real = resolve(expanded);
   }
   const writeRoots = getFilePreviewWriteRoots();
-  if (writeRoots.some((root) => isPathInside(real, root))) {
+  // Canonicalize each write root the same way `real` was resolved above.
+  // Without this, a symlinked root (e.g. `~/.openclaw` pointing at an external
+  // volume) never prefix-matches the realpath-resolved file, so legitimately
+  // writable persona/system docs are wrongly reported read-only and their
+  // edit/revert/save controls disappear.
+  const canonicalRoots = await Promise.all(
+    writeRoots.map(async (root) => {
+      try {
+        return await fsP.realpath(root);
+      } catch {
+        return root;
+      }
+    }),
+  );
+  if (canonicalRoots.some((root) => isPathInside(real, root))) {
     return { realPath: real, readOnly: false };
   }
   if (mode === 'write') {
@@ -1384,6 +1455,90 @@ function shouldSkipDirEntry(name: string, includeHidden: boolean): boolean {
 function shouldSkipFileEntry(name: string, includeHidden: boolean): boolean {
   if (!includeHidden && name.startsWith('.')) return true;
   return false;
+}
+
+type SkillUploadWsIpcPayload = {
+  confirmUnsafe?: boolean;
+  overwriteSameName?: boolean;
+  /** When set (e.g. tests), skips the file picker. */
+  filePath?: string;
+};
+
+async function getSkillUploadClientId(): Promise<string> {
+  let id = await getSetting('machineId');
+  if (!id) {
+    id = machineIdSync();
+    await setSetting('machineId', id);
+  }
+  return id;
+}
+
+/**
+ * Farm skill marketplace: upload zip via dedicated WebSocket (30s), same socket for server result.
+ */
+function registerSkillMarketplaceWsHandlers(mainWindow: BrowserWindow): void {
+  ipcMain.handle('skills:uploadMarketplaceZipWs', async (_, payload?: SkillUploadWsIpcPayload) => {
+    try {
+      const confirmUnsafe = !!(payload && payload.confirmUnsafe);
+      const overwriteSameName = !!(payload && payload.overwriteSameName);
+      let zipPath = payload?.filePath?.trim();
+      if (!zipPath) {
+        const picked = await showOpenDialogWithParent(mainWindow, {
+          title: 'Skill zip',
+          properties: ['openFile'],
+          filters: [{ name: 'ZIP', extensions: ['zip'] }],
+        });
+        if (picked.canceled || !picked.filePaths[0]) {
+          return { success: true, cancelled: true };
+        }
+        zipPath = picked.filePaths[0];
+      }
+      if (!existsSync(zipPath)) {
+        return { success: false, error: 'SKILL_UPLOAD_WS_FILE_NOT_FOUND' };
+      }
+      const clientId = await getSkillUploadClientId();
+      const result = await uploadSkillZipViaFarmWs({
+        zipFilePath: zipPath,
+        clientId,
+        confirmUnsafe,
+        overwriteSameName,
+      });
+      return { success: true, result, pickedPath: zipPath };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+  ipcMain.handle('skills:listPublishedMarketplaceSkills', async () => {
+    try {
+      const clientId = await getSkillUploadClientId();
+      const skills = await listPublishedMarketplaceSkills(clientId);
+      return { success: true, skills };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+  ipcMain.handle('skills:listMarketplaceReviewRequests', async () => {
+    try {
+      const clientId = await getSkillUploadClientId();
+      const requests = await listMarketplaceSkillReviewRequests(clientId, 100);
+      return { success: true, requests };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+  ipcMain.handle('skills:requestMarketplaceUnlist', async (_, payload?: { skillId?: string }) => {
+    try {
+      const skillId = String(payload?.skillId || '').trim();
+      if (!skillId) {
+        return { success: false, error: 'SKILL_ID_REQUIRED' };
+      }
+      const clientId = await getSkillUploadClientId();
+      const result = await requestMarketplaceSkillUnlist(clientId, skillId);
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
 }
 
 function registerFilePreviewHandlers(): void {

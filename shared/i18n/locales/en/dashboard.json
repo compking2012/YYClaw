@@ -19,7 +19,7 @@
         "addProvider": "Add Provider",
         "addChannel": "Add Channel",
         "createCron": "Create Cron",
-        "installSkill": "Install Skill",
+        "installSkill": "Install/Uninstall Skill",
         "openChat": "Open Chat",
         "settings": "Settings",
         "devConsole": "Dev Console"
@@ -34,6 +34,7 @@
     "recentTokenHistory": {
         "title": "Recent Token Usage",
         "description": "Recent assistant responses and tool results with model/provider usage data.",
+        "configuredOnlyHint": "Only models currently configured in your providers are counted. Removing a model hides its past usage; adding it back re-counts it.",
         "loading": "Loading token usage history...",
         "empty": "No token usage history yet",
         "groupByModel": "By model",
@@ -46,6 +47,9 @@
         "inputShort": "Input",
         "outputShort": "Output",
         "cacheShort": "Cache",
+        "cacheReadShort": "Cache read",
+        "cacheWriteShort": "Cache write",
+        "hitRate": "Hit {{value}}%",
         "page": "Page {{current}} / {{total}}",
         "prev": "Previous",
         "next": "Next",
@@ -83,7 +87,7 @@
         "clearConfirmTitle": "Clear image generation configuration?",
         "clearConfirmMessage": "This removes the custom image endpoint, model selection, and stored API key. Chat providers are not affected.",
         "clearConfirmAction": "Clear",
-        "testPrompt": "A small red circle on a white background, minimal flat illustration.",
+        "testPrompt": "A watercolour painting of an orange tabby cat sleeping on a windowsill in warm afternoon light.",
         "toast": {
             "saved": "Image generation settings saved",
             "cleared": "Image generation configuration cleared",
@@ -110,5 +114,33 @@
             "relayModelRequired": "Model name is required",
             "relayModelInvalid": "Enter only the model name, for example gpt-image-2. Do not include provider/model."
         }
+    },
+    "voiceModels": {
+        "title": "Voice Models",
+        "subtitle": "Configure speech-to-text, text-to-speech, and realtime voice providers.",
+        "loading": "Loading voice providers…",
+        "unavailable": "Voice providers are unavailable. Start the Gateway and try again.",
+        "noProviders": "No providers available for this capability.",
+        "provider": "Provider",
+        "providerPlaceholder": "Select a provider",
+        "model": "Model",
+        "modelPlaceholder": "Default",
+        "voice": "Voice",
+        "voicePlaceholder": "Voice ID or name",
+        "apiKey": "API Key",
+        "apiKeyPlaceholder": "Leave blank to reuse an existing key",
+        "apiKeyHint": "Stored in the OpenClaw config. Leave blank to reuse a configured provider's key.",
+        "save": "Save",
+        "saved": "Saved",
+        "saveFailed": "Failed to save: {{error}}",
+        "selectProviderFirst": "Select a provider first",
+        "ttsTitle": "Text to Speech (TTS)",
+        "ttsDescription": "Voice used to read replies aloud.",
+        "sttTitle": "Speech to Text (ASR)",
+        "sttDescription": "Transcription model for voice dictation.",
+        "realtimeTitle": "Realtime Conversation",
+        "realtimeDescription": "Provider for continuous voice conversation.",
+        "baseUrl": "Base URL",
+        "baseUrlPlaceholder": "https://api.openai.com/v1"
     }
 }

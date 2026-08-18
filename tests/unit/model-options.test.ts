@@ -69,7 +69,7 @@ describe('model option helpers', () => {
     const vendorMap = new Map(vendors.map((vendor) => [vendor.id, vendor]));
     expect(formatProviderDisplayName(account({ vendorId: 'custom', label: 'Alpha' }), vendorMap)).toBe('Alpha');
     expect(formatProviderDisplayName(account({ vendorId: 'openai', label: 'OpenAI' }), vendorMap)).toBe('OpenAI');
-    expect(formatConfiguredModelLabel('gpt-5.5', account({ vendorId: 'openai', label: 'OpenAI' }), vendorMap)).toBe('gpt-5.5 (OpenAI)');
+    expect(formatConfiguredModelLabel('gpt-5.5', account({ vendorId: 'openai', label: 'OpenAI' }), vendorMap)).toBe('OpenAI');
   });
 
   it('builds one configured custom model option per account', () => {
@@ -86,13 +86,13 @@ describe('model option helpers', () => {
     expect(options).toEqual([
       {
         modelRef: 'custom-alpha123/model-alpha',
-        label: 'model-alpha (Alpha)',
+        label: 'Alpha',
         runtimeProviderKey: 'custom-alpha123',
         accountId: 'alpha1234',
       },
       {
         modelRef: 'custom-beta5678/provider/model-beta',
-        label: 'provider/model-beta (Beta)',
+        label: 'Beta',
         runtimeProviderKey: 'custom-beta5678',
         accountId: 'beta5678',
       },
@@ -113,7 +113,7 @@ describe('model option helpers', () => {
 
     expect(options).toHaveLength(1);
     expect(options[0].modelRef).toBe('custom-gamma901/model-gamma');
-    expect(options[0].label).toBe('model-gamma (Alpha)');
+    expect(options[0].label).toBe('Alpha');
   });
 
   it('builds multiple configured model options from account metadata custom models', () => {
@@ -136,13 +136,13 @@ describe('model option helpers', () => {
     expect(options).toEqual([
       {
         modelRef: `${runtimeKey}/gpt-5.4`,
-        label: 'gpt-5.4 (Model Hub)',
+        label: 'Model Hub · gpt-5.4',
         runtimeProviderKey: runtimeKey,
         accountId,
       },
       {
         modelRef: `${runtimeKey}/claude-sonnet-4`,
-        label: 'claude-sonnet-4 (Model Hub)',
+        label: 'Model Hub · claude-sonnet-4',
         runtimeProviderKey: runtimeKey,
         accountId,
       },
@@ -173,7 +173,7 @@ describe('model option helpers', () => {
     expect(options).toEqual([
       {
         modelRef: 'openai/gpt-5.6',
-        label: 'gpt-5.6 (OpenAI)',
+        label: 'OpenAI',
         runtimeProviderKey: 'openai',
         accountId: id,
       },
@@ -208,17 +208,98 @@ describe('model option helpers', () => {
     expect(options).toEqual([
       {
         modelRef: 'custom-enterpri/gpt-5.4',
-        label: 'gpt-5.4 (Enterprise)',
+        label: 'Enterprise · gpt-5.4',
         runtimeProviderKey: 'custom-enterpri',
         accountId: 'custom-enterpri',
       },
       {
         modelRef: 'custom-enterpri/gpt-5.5',
-        label: 'gpt-5.5 (Enterprise)',
+        label: 'Enterprise · gpt-5.5',
         runtimeProviderKey: 'custom-enterpri',
         accountId: 'custom-enterpri',
       },
     ]);
+  });
+
+  it('keeps vision-capable chat models in a text-only picker', () => {
+    const visionAccount = account({
+      id: 'gpt55-c88ce7d8',
+      vendorId: 'openai',
+      label: 'GPT-5.5',
+      // A vision-capable chat model declares both kinds, and the positional
+      // model string repeats the same id once per kind.
+      modelType: ['text', 'image'],
+      model: 'gpt-5.5,gpt-5.5',
+      metadata: { customModels: ['gpt-5.5'] },
+    });
+    const imageOnlyAccount = account({
+      id: 'gptimage2-4d16b51b',
+      vendorId: 'openai',
+      label: 'GPT Image 2',
+      modelType: ['image_generate'],
+      model: 'gpt-image-2',
+    });
+
+    const options = buildConfiguredModelOptions(
+      [visionAccount, imageOnlyAccount],
+      [status('gpt55-c88ce7d8'), status('gptimage2-4d16b51b')],
+      vendors,
+      null,
+      { includeKinds: ['text'] },
+    );
+
+    // The vision model survives the text filter; the image-generation-only
+    // account does not. The comma-joined positional string is split, so the
+    // ref is `openai/gpt-5.5` and not `openai/gpt-5.5,gpt-5.5`.
+    expect(options).toEqual([
+      {
+        modelRef: 'openai/gpt-5.5',
+        label: 'GPT-5.5',
+        runtimeProviderKey: 'openai',
+        accountId: 'gpt55-c88ce7d8',
+      },
+    ]);
+  });
+
+  it('picks the positional model id belonging to the requested kind', () => {
+    const voiceAccount = account({
+      id: 'openai-voice-a8a1ab8b',
+      vendorId: 'openai',
+      label: 'OpenAI Voice',
+      modelType: ['tts', 'transcription', 'realtime'],
+      model: 'gpt-4o-mini-tts,gpt-4o-transcribe,gpt-realtime-2',
+    });
+
+    expect(
+      buildConfiguredModelOptions([voiceAccount], [status('openai-voice-a8a1ab8b')], vendors, null, {
+        includeKinds: ['text'],
+      }),
+    ).toEqual([]);
+
+    // Asking for transcription yields that kind's slot, not index 0's TTS model.
+    expect(
+      buildConfiguredModelOptions([voiceAccount], [status('openai-voice-a8a1ab8b')], vendors, null, {
+        includeKinds: ['transcription'],
+      }).map((option) => option.modelRef),
+    ).toEqual(['openai/gpt-4o-transcribe']);
+  });
+
+  it('never fans a multi-kind account out into non-text models', () => {
+    // MiniMax stores only its chat model positionally, but carries every
+    // kind's catalog default in `customModels`.
+    const miniMax = account({
+      id: 'minimax-portal-cn-c202e44f',
+      vendorId: 'minimax-portal-cn',
+      label: 'MiniMax',
+      authMode: 'oauth_device',
+      modelType: ['text', 'image_generate', 'music_generate', 'video_generate'],
+      model: 'minimax-portal/MiniMax-M3',
+      metadata: { customModels: ['MiniMax-M3', 'image-01', 'music-2.6', 'MiniMax-Hailuo-2.3'] },
+    });
+
+    const options = buildConfiguredModelOptions([miniMax], [], vendors, null, { includeKinds: ['text'] });
+
+    expect(options.map((option) => option.modelRef)).toEqual(['minimax-portal/MiniMax-M3']);
   });
 
   it('treats malformed provider snapshots as empty options', () => {

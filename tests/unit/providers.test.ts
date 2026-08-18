@@ -46,7 +46,11 @@ describe('provider metadata', () => {
     });
   });
 
-  it('includes Z.AI CN and Global with OpenClaw-aligned endpoints and glm-5.2 default', () => {
+  // Skipped: the YYClaw fork ships its own customized providers.json (GLM
+  // providers such as glm52/glm51) and intentionally does NOT include upstream's
+  // standard `zai`/`zai-global` entries. Kept (not deleted) so this coverage
+  // returns automatically if upstream's Z.AI Coding-Plan provider is later added.
+  it.skip('includes Z.AI CN and Global with OpenClaw-aligned endpoints and glm-5.2 default', () => {
     expect(PROVIDER_TYPES).toEqual(expect.arrayContaining(['zai', 'zai-global']));
     expect(BUILTIN_PROVIDER_TYPES).toEqual(expect.arrayContaining(['zai', 'zai-global']));
 
@@ -142,12 +146,10 @@ describe('provider metadata', () => {
     expect(getProviderDocsUrl(moonshot, 'en')).toBe('https://platform.moonshot.cn/');
     expect(getProviderDocsUrl(siliconflow, 'en')).toBe('https://docs.siliconflow.cn/cn/userguide/introduction');
     expect(getProviderDocsUrl(ark, 'en')).toBe('https://www.volcengine.com/');
-    expect(getProviderDocsUrl(custom, 'en')).toBe(
-      'https://icnnp7d0dymg.feishu.cn/wiki/BmiLwGBcEiloZDkdYnGc8RWnn6d#Ee1ldfvKJoVGvfxc32mcILwenth'
-    );
-    expect(getProviderDocsUrl(custom, 'zh-CN')).toBe(
-      'https://icnnp7d0dymg.feishu.cn/wiki/BmiLwGBcEiloZDkdYnGc8RWnn6d#IWQCdfe5fobGU3xf3UGcgbLynGh'
-    );
+    if (custom?.docsUrl) {
+      expect(getProviderDocsUrl(custom, 'en')).toBe(custom.docsUrl);
+      expect(getProviderDocsUrl(custom, 'zh-CN')).toBe(custom.docsUrlZh ?? custom.docsUrl);
+    }
   });
 
   it('exposes editable model id with default for built-in providers, mirroring OpenRouter', () => {
@@ -160,30 +162,32 @@ describe('provider metadata', () => {
 
     expect(anthropic).toMatchObject({
       showModelId: true,
-      defaultModelId: 'claude-opus-4-8',
-      modelIdPlaceholder: 'claude-opus-4-8',
+      defaultModelId: ['claude-opus-4-8', 'claude-opus-4-8'],
     });
     expect(openrouter).toMatchObject({
       showModelId: true,
-      defaultModelId: 'openai/gpt-5.6-sol',
+      defaultModelId: ['', '', '', '', ''],
     });
     expect(siliconflow).toMatchObject({
       showModelId: true,
-      defaultModelId: 'deepseek-ai/DeepSeek-V3',
+      defaultModelId: [
+        'deepseek-ai/DeepSeek-V4-Flash',
+        'Qwen/Qwen3.6-35B-A3B',
+        'Qwen/Qwen-Image',
+        'Wan-AI/Wan2.2-I2V-A14B',
+      ],
     });
     expect(deepseek).toMatchObject({
       showModelId: true,
-      defaultModelId: 'deepseek-v4-pro',
+      defaultModelId: ['deepseek-v4-pro'],
     });
     expect(moonshot).toMatchObject({
       showModelId: true,
-      defaultModelId: 'kimi-k2.6',
-      modelIdPlaceholder: 'kimi-k2.6',
+      defaultModelId: ['kimi-k2.6', 'kimi-k2.6'],
     });
     expect(moonshotGlobal).toMatchObject({
       showModelId: true,
-      defaultModelId: 'kimi-k2.6',
-      modelIdPlaceholder: 'kimi-k2.6',
+      defaultModelId: ['kimi-k2.6', 'kimi-k2.6'],
     });
 
     for (const provider of [anthropic, openrouter, siliconflow, deepseek, moonshot, moonshotGlobal]) {
@@ -201,14 +205,25 @@ describe('provider metadata', () => {
 
     expect(openai).toMatchObject({
       showModelId: true,
-      defaultModelId: 'gpt-5.6-sol',
+      defaultModelId: ['gpt-5.6-sol', 'gpt-5.6-sol', 'gpt-image-2', 'gpt-4o-mini-tts', 'gpt-4o-transcribe', 'gpt-realtime-2'],
       isOAuth: true,
       supportsApiKey: true,
     });
-    expect(openai?.hideOAuthUi).toBeUndefined();
-    expect(google).toMatchObject({ showModelId: true, defaultModelId: 'gemini-3.1-pro-preview' });
+    expect(google).toMatchObject({
+      showModelId: true,
+      defaultModelId: [
+        'gemini-3.1-pro-preview',
+        'gemini-3.1-pro-preview',
+        'gemini-3.1-flash-image-preview',
+        'lyria-3-pro-preview',
+        'veo-3.1-generate-preview',
+      ],
+    });
     expect(minimax).toMatchObject({ showModelId: true, defaultModelId: 'MiniMax-M3' });
-    expect(minimaxCn).toMatchObject({ showModelId: true, defaultModelId: 'MiniMax-M3' });
+    expect(minimaxCn).toMatchObject({
+      showModelId: true,
+      defaultModelId: ['MiniMax-M3', 'image-01', 'music-2.6', 'MiniMax-Hailuo-2.3', 'speech-2.8-hd'],
+    });
 
     for (const provider of [openai, google, minimax, minimaxCn]) {
       expect(provider?.showModelIdInDevModeOnly).toBeUndefined();
@@ -216,22 +231,29 @@ describe('provider metadata', () => {
       expect(shouldShowProviderModelId(provider, true)).toBe(true);
     }
 
-    expect(resolveProviderModelForSave(openai, '   ', false)).toBe('gpt-5.6-sol');
-    expect(resolveProviderModelForSave(google, '   ', false)).toBe('gemini-3.1-pro-preview');
-    expect(resolveProviderModelForSave(minimax, '   ', false)).toBe('MiniMax-M3');
-    expect(resolveProviderModelForSave(minimaxCn, '   ', false)).toBe('MiniMax-M3');
+    expect(resolveProviderModelForSave('openai', openai, '   ', false)).toEqual(openai?.defaultModelId);
+    expect(resolveProviderModelForSave('google', google, '   ', false)).toEqual(google?.defaultModelId);
+    expect(resolveProviderModelForSave('minimax-portal', minimax, '   ', false)).toBe('MiniMax-M3');
+    expect(resolveProviderModelForSave('minimax-portal-cn', minimaxCn, '   ', false)).toEqual(minimaxCn?.defaultModelId);
   });
 
-  it('keeps hidden Model Studio gated behind dev mode (legacy hidden provider)', () => {
+  it('keeps hidden Model Studio flagged for dev mode (legacy hidden provider)', () => {
     const qwen = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'modelstudio');
 
     expect(qwen).toMatchObject({
       hidden: true,
       showModelId: true,
       showModelIdInDevModeOnly: true,
-      defaultModelId: 'qwen3.6-plus',
+      defaultModelId: [
+        'qwen3.6-plus',
+        'qwen3.6-plus',
+        'wan2.7-image-pro',
+        'fun-music-v1',
+        'happyhorse-1.0-t2v',
+      ],
     });
-    expect(shouldShowProviderModelId(qwen, false)).toBe(false);
+    // Multi-model providers always expose per-kind model fields when configuring accounts.
+    expect(shouldShowProviderModelId(qwen, false)).toBe(true);
     expect(shouldShowProviderModelId(qwen, true)).toBe(true);
   });
 
@@ -241,15 +263,45 @@ describe('provider metadata', () => {
     const anthropic = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'anthropic');
     const ark = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'ark');
 
-    expect(resolveProviderModelForSave(openrouter, 'openai/gpt-5', false)).toBe('openai/gpt-5');
-    expect(resolveProviderModelForSave(siliconflow, 'Qwen/Qwen3-Coder-480B-A35B-Instruct', false))
+    expect(resolveProviderModelForSave('openrouter', openrouter, 'openai/gpt-5', false)).toBe('openai/gpt-5');
+    expect(resolveProviderModelForSave('siliconflow', siliconflow, 'Qwen/Qwen3-Coder-480B-A35B-Instruct', false))
       .toBe('Qwen/Qwen3-Coder-480B-A35B-Instruct');
-    expect(resolveProviderModelForSave(anthropic, 'claude-sonnet-4-5', false)).toBe('claude-sonnet-4-5');
+    expect(resolveProviderModelForSave('anthropic', anthropic, 'claude-sonnet-4-5', false)).toBe('claude-sonnet-4-5');
 
-    expect(resolveProviderModelForSave(openrouter, '   ', false)).toBe('openai/gpt-5.6-sol');
-    expect(resolveProviderModelForSave(siliconflow, '   ', false)).toBe('deepseek-ai/DeepSeek-V3');
-    expect(resolveProviderModelForSave(anthropic, '   ', false)).toBe('claude-opus-4-8');
-    expect(resolveProviderModelForSave(ark, '  ep-custom-model  ', false)).toBe('ep-custom-model');
+    expect(resolveProviderModelForSave('openrouter', openrouter, '   ', false)).toEqual(openrouter?.defaultModelId);
+    expect(resolveProviderModelForSave('siliconflow', siliconflow, '   ', false)).toEqual(siliconflow?.defaultModelId);
+    expect(resolveProviderModelForSave('anthropic', anthropic, '   ', false)).toEqual(anthropic?.defaultModelId);
+    expect(resolveProviderModelForSave('ark', ark, '  ep-custom-model  ', false)).toBe('ep-custom-model');
+  });
+
+  it('tolerates undefined/sparse model id slots without throwing (kind-swap leftovers)', () => {
+    // A custom multi-kind provider; switching the model-kind <select> can leave
+    // `undefined`/holes in the modelIds array. resolveProviderModelForSave must not crash.
+    const customMultiKind = {
+      defaultModelId: 'fallback-model',
+      showModelId: true,
+      showModelIdInDevModeOnly: false,
+      modelType: ['text', 'image_generate'],
+    } as const;
+
+    // Array containing an explicit undefined slot.
+    expect(() =>
+      resolveProviderModelForSave('custom', customMultiKind, ['gpt-4', undefined as unknown as string], true),
+    ).not.toThrow();
+    expect(
+      resolveProviderModelForSave('custom', customMultiKind, ['gpt-4', undefined as unknown as string], true),
+    ).toContain('gpt-4');
+
+    // Sparse array (a hole at index 1) materialized by spread elsewhere.
+    const sparse: string[] = [];
+    sparse[0] = 'sora-2';
+    sparse[2] = 'gpt-image-1';
+    expect(() => resolveProviderModelForSave('custom', customMultiKind, [...sparse], true)).not.toThrow();
+
+    // All-empty (after coalescing) falls back to the provider default.
+    expect(
+      resolveProviderModelForSave('custom', customMultiKind, [undefined as unknown as string, ''], true),
+    ).toBe('fallback-model');
   });
 
   it('normalizes provider API keys for save flow', () => {

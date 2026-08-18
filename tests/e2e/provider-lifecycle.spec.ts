@@ -54,7 +54,9 @@ test.describe('ClawX provider lifecycle', () => {
       await window.electron.ipcRenderer.invoke('provider:setDefault', providers[0].id);
     });
 
-    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('sidebar-nav-settings').click();
+
+    await page.getByTestId('settings-tab-models').click();
     await expect(page.getByTestId('provider-card-moonshot-default-e2e')).toContainText('Default');
     await expect(page.getByTestId('provider-card-deepseek-replacement-e2e')).toBeVisible();
 
@@ -66,11 +68,65 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('provider-set-default-deepseek-replacement-e2e')).toHaveCount(0);
   });
 
+  test('orders providers by add order and hides the set-default button', async ({ page }) => {
+    await completeSetup(page);
+
+    await page.evaluate(async () => {
+      const base = Date.now();
+      const providers = [
+        {
+          id: 'first-added-e2e',
+          name: 'First Added E2E',
+          type: 'moonshot',
+          baseUrl: 'https://api.moonshot.cn/v1',
+          model: 'kimi-k2.6',
+          enabled: true,
+          createdAt: new Date(base).toISOString(),
+          updatedAt: new Date(base).toISOString(),
+        },
+        {
+          id: 'second-added-e2e',
+          name: 'Second Added E2E',
+          type: 'deepseek',
+          baseUrl: 'https://api.deepseek.com/v1',
+          model: 'deepseek-v4-pro',
+          enabled: true,
+          createdAt: new Date(base + 1_000).toISOString(),
+          updatedAt: new Date(base + 1_000).toISOString(),
+        },
+      ];
+      for (const provider of providers) {
+        await window.electron.ipcRenderer.invoke('provider:save', provider);
+      }
+      // Make the LATER-added provider the default; the list order must NOT follow it.
+      await window.electron.ipcRenderer.invoke('provider:setDefault', 'second-added-e2e');
+    });
+
+    await page.getByTestId('sidebar-nav-settings').click();
+    await page.getByTestId('settings-tab-models').click();
+    await expect(page.getByTestId('providers-settings')).toBeVisible();
+
+    // Order is add order (createdAt asc): first-added stays before second-added
+    // even though second-added is the default.
+    const cards = page.locator('[data-testid^="provider-card-"]');
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0)).toHaveAttribute('data-testid', 'provider-card-first-added-e2e');
+    await expect(cards.nth(1)).toHaveAttribute('data-testid', 'provider-card-second-added-e2e');
+
+    // The default badge still marks the default provider...
+    await expect(page.getByTestId('provider-card-second-added-e2e')).toContainText('Default');
+    // ...but the "set as default" button is hidden on every card (default and non-default).
+    await expect(page.getByTestId('provider-set-default-first-added-e2e')).toHaveCount(0);
+    await expect(page.getByTestId('provider-set-default-second-added-e2e')).toHaveCount(0);
+  });
+
   test('shows a saved provider and removes it cleanly after deletion', async ({ page }) => {
     await completeSetup(page);
     await seedTestProvider(page);
 
-    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('sidebar-nav-settings').click();
+
+    await page.getByTestId('settings-tab-models').click();
     await expect(page.getByTestId('providers-settings')).toBeVisible();
     await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toContainText(TEST_PROVIDER_LABEL);
 
@@ -85,7 +141,9 @@ test.describe('ClawX provider lifecycle', () => {
     await completeSetup(page);
     await seedTestProvider(page);
 
-    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('sidebar-nav-settings').click();
+
+    await page.getByTestId('settings-tab-models').click();
     await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toContainText(TEST_PROVIDER_LABEL);
 
     await page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`).hover();
@@ -100,7 +158,9 @@ test.describe('ClawX provider lifecycle', () => {
       await relaunchedPage.waitForLoadState('domcontentloaded');
       await expect(relaunchedPage.getByTestId('main-layout')).toBeVisible();
 
-      await relaunchedPage.getByTestId('sidebar-nav-models').click();
+      await relaunchedPage.getByTestId('sidebar-nav-settings').click();
+
+      await relaunchedPage.getByTestId('settings-tab-models').click();
       await expect(relaunchedPage.getByTestId('providers-settings')).toBeVisible();
       await expect(relaunchedPage.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toHaveCount(0);
       await expect(relaunchedPage.getByText(TEST_PROVIDER_LABEL)).toHaveCount(0);
@@ -112,7 +172,9 @@ test.describe('ClawX provider lifecycle', () => {
   test('shows OpenAI OAuth and API key auth mode toggle in add-provider dialog', async ({ page }) => {
     await completeSetup(page);
 
-    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('sidebar-nav-settings').click();
+
+    await page.getByTestId('settings-tab-models').click();
     await expect(page.getByTestId('providers-settings')).toBeVisible();
 
     await page.getByTestId('providers-add-button').click();
@@ -211,7 +273,9 @@ test.describe('ClawX provider lifecycle', () => {
       });
     });
 
-    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('sidebar-nav-settings').click();
+
+    await page.getByTestId('settings-tab-models').click();
     await expect(page.getByTestId('providers-settings')).toBeVisible();
 
     await page.getByTestId('providers-add-button').click();
@@ -304,7 +368,9 @@ test.describe('ClawX provider lifecycle', () => {
       });
     });
 
-    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('sidebar-nav-settings').click();
+
+    await page.getByTestId('settings-tab-models').click();
     await expect(page.getByTestId('providers-settings')).toBeVisible();
     await expect(page.getByTestId('provider-card-moonshot-edit')).toBeVisible();
 
@@ -328,33 +394,74 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('provider-edit-save-moonshot-edit')).toHaveCount(0);
   });
 
-  test('shows Z.AI CN/Global options and Code Plan endpoint toggle', async ({ page }) => {
+  test('renames a provider via the edit form and reflects the new label on the card', async ({ page }) => {
     await completeSetup(page);
+    await seedTestProvider(page);
 
-    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('sidebar-nav-settings').click();
+    await page.getByTestId('settings-tab-models').click();
     await expect(page.getByTestId('providers-settings')).toBeVisible();
 
-    await page.getByTestId('providers-add-button').click();
-    await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
-    await expect(page.getByTestId('add-provider-type-zai')).toBeVisible();
-    await expect(page.getByTestId('add-provider-type-zai-global')).toBeVisible();
+    const card = page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`);
+    await expect(card).toContainText(TEST_PROVIDER_LABEL);
 
-    await page.getByTestId('add-provider-type-zai').click();
-    await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://open.bigmodel.cn/api/paas/v4');
-    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('glm-5.2');
-    await expect(page.getByTestId('add-provider-codeplan-mode-tab')).toBeVisible();
+    await card.hover();
+    await page.getByTestId(`provider-edit-${TEST_PROVIDER_ID}`).click();
 
-    await page.getByTestId('add-provider-codeplan-mode-tab').click();
-    await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://open.bigmodel.cn/api/coding/paas/v4');
-    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('glm-5.2');
+    const nameInput = page.getByTestId(`provider-name-input-${TEST_PROVIDER_ID}`);
+    await expect(nameInput).toHaveValue(TEST_PROVIDER_LABEL);
 
-    await page.getByTestId('add-provider-codeplan-apikey-tab').click();
-    await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://open.bigmodel.cn/api/paas/v4');
+    const RENAMED_LABEL = 'Moonshot Renamed E2E';
+    await nameInput.fill(RENAMED_LABEL);
+    await page.getByTestId(`provider-edit-save-${TEST_PROVIDER_ID}`).click();
 
-    await page.getByTestId('add-provider-change-type').click();
-    await page.getByTestId('add-provider-type-zai-global').click();
-    await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://api.z.ai/api/paas/v4');
-    await page.getByTestId('add-provider-codeplan-mode-tab').click();
-    await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://api.z.ai/api/coding/paas/v4');
+    // The edit form closes and the card header shows the new label; the old one is gone.
+    await expect(page.getByTestId(`provider-name-input-${TEST_PROVIDER_ID}`)).toHaveCount(0);
+    await expect(card).toContainText(RENAMED_LABEL);
+    await expect(page.getByText(TEST_PROVIDER_LABEL, { exact: true })).toHaveCount(0);
+  });
+
+  test('keeps the title and add button fixed while only the model list scrolls', async ({ page }) => {
+    await completeSetup(page);
+
+    // Seed enough providers that the list overflows the modal height and scrolls.
+    await page.evaluate(async () => {
+      const base = Date.now();
+      for (let i = 0; i < 15; i += 1) {
+        const now = new Date(base + i * 1_000).toISOString();
+        await window.electron.ipcRenderer.invoke('provider:save', {
+          id: `scroll-provider-${i}-e2e`,
+          name: `Scroll Provider ${i} E2E`,
+          type: 'moonshot',
+          baseUrl: 'https://api.moonshot.cn/v1',
+          model: 'kimi-k2.6',
+          enabled: true,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+
+    await page.getByTestId('sidebar-nav-settings').click();
+    await page.getByTestId('settings-tab-models').click();
+    await expect(page.getByTestId('providers-settings')).toBeVisible();
+
+    const title = page.getByTestId('providers-settings-title');
+    const addButton = page.getByTestId('providers-add-button');
+    await expect(title).toBeVisible();
+    await expect(addButton).toBeVisible();
+
+    const titleBoxBefore = await title.boundingBox();
+    expect(titleBoxBefore).not.toBeNull();
+
+    // Scrolling the last card into view forces the (only) scrollable region — the
+    // model list — to scroll. The pinned header must not move.
+    await page.getByTestId('provider-card-scroll-provider-14-e2e').scrollIntoViewIfNeeded();
+
+    const titleBoxAfter = await title.boundingBox();
+    expect(titleBoxAfter).not.toBeNull();
+    expect(titleBoxAfter!.y).toBeCloseTo(titleBoxBefore!.y, 0);
+    await expect(title).toBeVisible();
+    await expect(addButton).toBeVisible();
   });
 });

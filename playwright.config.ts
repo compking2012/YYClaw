@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
 import {
   DEFAULT_E2E_WORKERS,
@@ -19,6 +21,36 @@ function e2eWorkers(): number {
 const exclusivePattern = new RegExp(E2E_EXCLUSIVE_TAG);
 const performancePattern = new RegExp(E2E_PERFORMANCE_TAG);
 const nonParallelPattern = new RegExp(`${E2E_EXCLUSIVE_TAG}|${E2E_PERFORMANCE_TAG}`);
+
+/** Inline office.env LangGraph flag load (avoid importing .mjs via Playwright's CJS transform). */
+function loadLangGraphEnvFromOfficeFile() {
+  const flag = 'VITE_ENABLE_LANGGRAPH';
+  if (process.env[flag] != null && process.env[flag] !== '') return;
+  try {
+    const path = join(process.cwd(), 'office.env');
+    if (!existsSync(path)) {
+      process.env[flag] = 'false';
+      return;
+    }
+    const text = readFileSync(path, 'utf8');
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq === -1) continue;
+      const key = trimmed.slice(0, eq).trim();
+      if (key !== flag) continue;
+      const raw = trimmed.slice(eq + 1).trim().replace(/^['"]|['"]$/g, '');
+      process.env[flag] = raw || 'false';
+      return;
+    }
+  } catch {
+    // fall through
+  }
+  process.env[flag] = process.env[flag] ?? 'false';
+}
+
+loadLangGraphEnvFromOfficeFile();
 
 export default defineConfig({
   testDir: './tests/e2e',

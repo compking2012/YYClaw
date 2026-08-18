@@ -69,6 +69,12 @@ vi.mock('@/lib/host-api', () => ({
   },
 }));
 
+// Stub the lazily-loaded Monaco editor so entering edit mode does not pull the
+// real editor into jsdom; we only assert the surrounding header controls.
+vi.mock('@/components/file-preview/MonacoViewer', () => ({
+  default: () => <div data-testid="monaco-editor" />,
+}));
+
 function makePreviewTarget(overrides: Partial<FilePreviewTarget> = {}): FilePreviewTarget {
   return {
     filePath: '/tmp/large-report.pdf',
@@ -509,6 +515,73 @@ describe('FilePreviewBody', () => {
     expect(dialogMessageMock).not.toHaveBeenCalled();
     expect(shellOpenPathMock).not.toHaveBeenCalled();
     expect(shellShowItemInFolderMock).not.toHaveBeenCalled();
+  });
+
+  it('shows the Edit toggle plus enabled Save/Revert for an editable markdown document in preview mode', async () => {
+    readTextFile.mockResolvedValueOnce({
+      ok: true,
+      content: '# Persona',
+      size: 9,
+      readOnly: false,
+    });
+
+    render(
+      <FilePreviewBody
+        file={makePreviewTarget({
+          filePath: '/ws/SOUL.md',
+          fileName: 'SOUL.md',
+          ext: '.md',
+          mimeType: 'text/markdown',
+          contentType: 'document',
+          size: 20,
+        })}
+        documentEditable
+      />,
+    );
+
+    // The Edit toggle proves `isEditableDocument === true` — i.e. the
+    // `supportsInlineDocumentPreview` import is bound and the component renders
+    // without crashing (regression guard for the persona preview crash).
+    expect(await screen.findByRole('button', { name: 'Edit' })).toBeVisible();
+    // Save/Revert stay visible AND enabled in preview mode too (not just edit).
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Revert' })).toBeEnabled();
+  });
+
+  it('retains and enables Save/Revert once editing an editable markdown document', async () => {
+    readTextFile.mockResolvedValueOnce({
+      ok: true,
+      content: '# Persona',
+      size: 9,
+      readOnly: false,
+    });
+    writeTextFile.mockResolvedValueOnce({ ok: true });
+
+    render(
+      <FilePreviewBody
+        file={makePreviewTarget({
+          filePath: '/ws/SOUL.md',
+          fileName: 'SOUL.md',
+          ext: '.md',
+          mimeType: 'text/markdown',
+          contentType: 'document',
+          size: 20,
+        })}
+        documentEditable
+      />,
+    );
+
+    // Enter edit mode via the toggle; Save/Revert must be present AND enabled
+    // even before any change (the persona editor keeps them clickable).
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    const save = await screen.findByRole('button', { name: 'Save' });
+    const revert = screen.getByRole('button', { name: 'Revert' });
+    expect(save).toBeEnabled();
+    expect(revert).toBeEnabled();
+
+    // An unchanged save still writes the current draft (idempotent re-save).
+    fireEvent.click(save);
+    await waitFor(() => expect(writeTextFile).toHaveBeenCalledWith('/ws/SOUL.md', '# Persona'));
   });
 
   it('does not keep text from another workspace current while the replacement read is pending', async () => {

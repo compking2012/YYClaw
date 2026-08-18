@@ -1424,6 +1424,140 @@ describe('ACP Chat store', () => {
     expect(useAcpChatSessionStore.getState().cancelling).toBe(false);
   });
 
+  it('does not revive in_progress plan/tool UI after cancel when a late update arrives', async () => {
+    // Suspect: cancel settles live timeline, but applyUpdateEnvelope still accepts
+    // buffered plan/tool updates and can rewrite statuses back to running forever.
+    const prompt = createDeferred<{ success: boolean; generation?: number }>();
+    hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1',
+      workspaceRoot: '/repo',
+      cwd: '/repo',
+    });
+
+    const sendPromise = useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1',
+      cwd: '/repo',
+      message: 'plan a trip',
+    });
+
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'plan',
+          entries: [
+            { content: '理解需求', status: 'completed' },
+            { content: '执行搜索与收集证据', status: 'in_progress' },
+          ],
+        },
+      },
+    });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'fetch-1',
+          title: 'web_fetch',
+          status: 'in_progress',
+        },
+      },
+    });
+
+    await useAcpChatSessionStore.getState().cancel();
+    expect(useAcpChatSessionStore.getState().cancelling).toBe(false);
+
+    // Late/buffered updates after cancel RPC already returned.
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'plan',
+          entries: [
+            { content: '理解需求', status: 'completed' },
+            { content: '执行搜索与收集证据', status: 'in_progress' },
+          ],
+        },
+      },
+    });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'fetch-1',
+          status: 'in_progress',
+        },
+      },
+    });
+
+    const timeline = useAcpChatSessionStore.getState().timeline;
+    const plan = Object.values(timeline.itemsById).find((item) => item?.kind === 'plan');
+    const tool = Object.values(timeline.itemsById).find((item) => item?.kind === 'tool-call');
+    expect(plan).toMatchObject({ kind: 'plan' });
+    if (plan?.kind === 'plan') {
+      expect((plan.entries[0] as { status: string }).status).toBe('completed');
+      expect((plan.entries[1] as { status: string }).status).toBe('cancelled');
+    }
+    expect(tool).toMatchObject({ kind: 'tool-call', status: 'failed' });
+
+    prompt.resolve({ success: true, generation: 1 });
+    await sendPromise;
+  });
+
+  it('allows in_progress plan updates again on the next prompt after cancel', async () => {
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1',
+      workspaceRoot: '/repo',
+      cwd: '/repo',
+    });
+
+    await useAcpChatSessionStore.getState().cancel();
+
+    const prompt = createDeferred<{ success: boolean; generation?: number }>();
+    hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
+    const sendPromise = useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1',
+      cwd: '/repo',
+      message: 'retry',
+    });
+
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'plan',
+          entries: [{ content: '新一步', status: 'in_progress' }],
+        },
+      },
+    });
+
+    const plan = Object.values(useAcpChatSessionStore.getState().timeline.itemsById)
+      .find((item) => item?.kind === 'plan');
+    expect(plan).toMatchObject({ kind: 'plan' });
+    if (plan?.kind === 'plan') {
+      expect((plan.entries[0] as { status: string }).status).toBe('in_progress');
+    }
+
+    prompt.resolve({ success: true, generation: 1 });
+    await sendPromise;
+  });
+
   it('adds an optimistic user segment immediately before ACP echoes a user update', async () => {
     const prompt = createDeferred<{ success: boolean; error?: string; generation?: number }>();
     hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);

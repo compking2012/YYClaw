@@ -2,7 +2,7 @@ import { DEFAULT_WORKSPACE_CWD } from '@shared/workspace';
 
 export { DEFAULT_WORKSPACE_CWD };
 
-export type WorkspaceResolutionSource = 'session' | 'global' | 'default';
+export type WorkspaceResolutionSource = 'session' | 'agent' | 'global' | 'default' | 'explicit';
 
 export type WorkspaceResolution = {
   cwd: string;
@@ -131,7 +131,9 @@ export function getWorkspaceDisplayLabel(
 
 export function resolveEffectiveWorkspace(input: {
   session?: WorkspaceSessionLike | null;
+  agentWorkspace?: string | null;
   globalWorkspace?: string | null;
+  explicitWorkspace?: string | null;
   defaultWorkspace?: string;
 }): WorkspaceResolution {
   const defaultWorkspace = normalizeWorkspacePath(input.defaultWorkspace) ?? DEFAULT_WORKSPACE_CWD;
@@ -140,8 +142,18 @@ export function resolveEffectiveWorkspace(input: {
     return { cwd: sessionWorkspace, source: 'session', readOnly: true };
   }
 
+  const agentWorkspace = normalizeWorkspacePath(input.agentWorkspace);
   const globalWorkspace = normalizeWorkspacePath(input.globalWorkspace);
+  const explicitWorkspace = normalizeWorkspacePath(input.explicitWorkspace);
   if (!input.session || input.session.createdLocally) {
+    // The user's explicit pick for this not-yet-bound session outranks the
+    // agent's default workspace; only applies until the session binds (branch 1).
+    if (explicitWorkspace) {
+      return { cwd: explicitWorkspace, source: 'explicit', readOnly: false };
+    }
+    if (agentWorkspace) {
+      return { cwd: agentWorkspace, source: 'agent', readOnly: false };
+    }
     return {
       cwd: globalWorkspace ?? defaultWorkspace,
       source: globalWorkspace ? 'global' : 'default',
@@ -149,7 +161,7 @@ export function resolveEffectiveWorkspace(input: {
     };
   }
 
-  return { cwd: defaultWorkspace, source: 'default', readOnly: true };
+  return { cwd: agentWorkspace ?? defaultWorkspace, source: agentWorkspace ? 'agent' : 'default', readOnly: true };
 }
 
 export function getSessionWorkspaceForGrouping(

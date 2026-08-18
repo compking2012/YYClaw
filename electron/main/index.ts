@@ -48,12 +48,16 @@ import {
 } from './quit-lifecycle';
 import { createSignalQuitHandler } from './signal-quit';
 import { acquireProcessInstanceFileLock } from './process-instance-lock';
-import { ensureBuiltinSkillsInstalled, ensurePreinstalledSkillsInstalled, trimBundledOpenClawSkillsAndConfigs } from '../utils/skill-config';
+import { ensureBuiltinSkillsInstalled, ensureBundledLarkCliInstalled, ensurePreinstalledSkillsInstalled, trimBundledOpenClawSkillsAndConfigs } from '../utils/skill-config';
+import { isCiSmokeMode, runCiSmokeProviderSetup } from './ci-smoke';
+import { sendToMainWindow } from '../utils/broadcast-renderer';
+import { getWorkflowEngine } from '../workflow';
 
 import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { syncAllProviderAuthToRuntime } from '../services/providers/provider-runtime-sync';
+import { adminConsoleClient } from '../services/admin-console/centrifuge-client';
 
 const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
 const isE2EMode = process.env.CLAWX_E2E === '1';
@@ -84,7 +88,7 @@ if (process.platform === 'linux') {
 // The losing process must exit immediately so it never reaches Gateway startup.
 const gotElectronLock = isE2EMode ? true : app.requestSingleInstanceLock();
 if (!gotElectronLock) {
-  console.info('[ClawX] Another instance already holds the single-instance lock; exiting duplicate process');
+  console.info('[YYClaw] Another instance already holds the single-instance lock; exiting duplicate process');
   app.exit(0);
 }
 let releaseProcessInstanceFileLock: () => void = () => {};
@@ -105,12 +109,12 @@ if (gotElectronLock && !isE2EMode) {
           ? 'unknown lock format/content'
           : 'unknown owner';
       console.info(
-        `[ClawX] Another instance already holds process lock (${fileLock.lockPath}, ${ownerDescriptor}); exiting duplicate process`,
+        `[YYClaw] Another instance already holds process lock (${fileLock.lockPath}, ${ownerDescriptor}); exiting duplicate process`,
       );
       app.exit(0);
     }
   } catch (error) {
-    console.warn('[ClawX] Failed to acquire process instance file lock; continuing with Electron single-instance lock only', error);
+    console.warn('[YYClaw] Failed to acquire process instance file lock; continuing with Electron single-instance lock only', error);
   }
 }
 const gotTheLock = gotElectronLock && gotFileLock;
@@ -126,9 +130,7 @@ const mainWindowFocusState = createMainWindowFocusState();
 const quitLifecycleState = createQuitLifecycleState();
 
 function sendMainWindowEvent(channel: string, payload: unknown): void {
-  const win = mainWindow;
-  if (!win || win.isDestroyed()) return;
-  win.webContents.send(channel, payload);
+  sendToMainWindow(mainWindow, channel, payload);
 }
 
 /**
@@ -301,7 +303,7 @@ function createMainWindow(): BrowserWindow {
 async function initialize(): Promise<void> {
   // Initialize logger first
   logger.init();
-  logger.info('=== ClawX Application Starting ===');
+  logger.info('=== YYClaw Application Starting ===');
   logger.debug(
     `Runtime: platform=${process.platform}/${process.arch}, electron=${process.versions.electron}, node=${process.versions.node}, packaged=${app.isPackaged}, pid=${process.pid}, ppid=${process.ppid}`
   );
@@ -387,6 +389,13 @@ async function initialize(): Promise<void> {
   if (marketplaceProvider) {
     clawHubService.setMarketplaceProvider(marketplaceProvider);
   }
+  adminConsoleClient.setClawHubService(clawHubService);
+
+  if (!isE2EMode) {
+    void adminConsoleClient.start().catch((error) => {
+      logger.warn('Admin Console realtime start failed:', error);
+    });
+  }
 
   // Register update handlers
   registerUpdateHandlers(appUpdater, window);
@@ -398,7 +407,7 @@ async function initialize(): Promise<void> {
   // workspace so ClawX desktop sessions skip OpenClaw's chat-first bootstrap.
   if (!isE2EMode) {
     void ensureClawXDefaultIdentity().catch((error) => {
-      logger.warn('Failed to seed default ClawX identity:', error);
+      logger.warn('Failed to seed default YYClaw identity:', error);
     });
   }
 
@@ -443,6 +452,14 @@ async function initialize(): Promise<void> {
     });
   }
 
+  // Deploy Lark and other skills bundled in resources/skills-bundled/ and tag them
+  // as built-in via .clawx-preinstalled.json so the Skills page counts them correctly.
+  if (!isE2EMode) {
+    void ensureBundledLarkCliInstalled().catch((error) => {
+      logger.warn('Failed to install bundled Lark skills:', error);
+    });
+  }
+
   // Plugin installation is now configuration-driven:
   // - When a channel is added via UI: ensureXxxPluginInstalled() in IPC handlers
   // - When Gateway starts: ensureConfiguredPluginsUpgraded() in config-sync.ts
@@ -454,13 +471,16 @@ async function initialize(): Promise<void> {
     sendMainWindowEvent('gateway:status-changed', status);
     if (status.state === 'running' && !isE2EMode) {
       void ensureClawXContext().catch((error) => {
-        logger.warn('Failed to re-merge ClawX context after gateway reconnect:', error);
+        logger.warn('Failed to re-merge YYClaw context after gateway reconnect:', error);
       });
     }
   });
 
   gatewayManager.on('error', (error) => {
-    sendMainWindowEvent('gateway:error', { message: error.message });
+    sendMainWindowEvent('gateway:error', {
+      message: error.message,
+      code: (error as Error & { code?: string }).code,
+    });
   });
 
   gatewayManager.on('notification', (notification) => {
@@ -480,15 +500,50 @@ async function initialize(): Promise<void> {
   });
 
   gatewayManager.on('chat:runtime-event', (data) => {
+    void import('../utils/workspace-agent-skills-chat-hook').then(({
+      handleChatRuntimeEventForWorkspaceSkillSync,
+      skillInstallToolMayMutateWorkspace,
+    }) => {
+      handleChatRuntimeEventForWorkspaceSkillSync(data);
+      const runtimeEvent = data as { type?: string; name?: unknown };
+      if (
+        runtimeEvent.type === 'tool.completed'
+        && skillInstallToolMayMutateWorkspace(
+          typeof runtimeEvent.name === 'string' ? runtimeEvent.name : '',
+        )
+      ) {
+        void import('../services/skills/managed-skill-winner').then(({ scheduleManagedSkillWinnerReconcile }) => {
+          scheduleManagedSkillWinnerReconcile(gatewayManager);
+        });
+      }
+    });
     sendMainWindowEvent('chat:runtime-event', data);
+  });
+
+  gatewayManager.on('talk:event', (data) => {
+    sendMainWindowEvent('gateway:talk-event', data);
   });
 
   gatewayManager.on('channel:status', (data) => {
     sendMainWindowEvent('gateway:channel-status', data);
   });
 
+  gatewayManager.on('port-conflict', (data) => {
+    sendMainWindowEvent('gateway:port-conflict', data);
+  });
+
   gatewayManager.on('exit', (code) => {
     sendMainWindowEvent('gateway:exit', { code });
+  });
+
+  // Start the app-side cron validity-window reconciler once the gateway is ready
+  // for RPC. Idempotent: safe to fire on every 'gateway:ready' (e.g. reconnects).
+  gatewayManager.on('gateway:ready', () => {
+    void import('../services/cron-window-manager').then(({ startCronWindowManager }) => {
+      startCronWindowManager(gatewayManager);
+    }).catch((error) => {
+      logger.warn('Failed to start cron window manager:', error);
+    });
   });
 
   deviceOAuthManager.on('oauth:code', (payload) => {
@@ -527,17 +582,37 @@ async function initialize(): Promise<void> {
     sendMainWindowEvent('channel:whatsapp-error', error);
   });
 
+  // Bridge deterministic single-agent workflow progress to the renderer.
+  // The engine is a process-wide singleton; passing gatewayManager keeps the
+  // GatewayBackedAdapter so `agent` steps drive a real chat.send loop. This
+  // must run after gatewayManager is initialized (satisfied here). Without this
+  // bridge, `workflow:progress` events never reach the renderer and the
+  // workflow card stays stuck on "running".
+  const workflowEngine = getWorkflowEngine(gatewayManager);
+  workflowEngine.on('workflow:progress', (record) => {
+    sendMainWindowEvent('workflow:progress', record);
+  });
+  // Resume any run that was still in-flight when the app last closed.
+  workflowEngine.rehydrate();
+
+  // Packaged CI smoke: configure provider from SMOKE_* env before Gateway starts.
+  if (isCiSmokeMode()) {
+    await runCiSmokeProviderSetup(gatewayManager);
+  }
+
   // Start Gateway automatically (this seeds missing bootstrap files with full templates)
   const gatewayAutoStart = await getSetting('gatewayAutoStart');
   if (!isE2EMode && gatewayAutoStart) {
     try {
-      await syncAllProviderAuthToRuntime();
+      if (!isCiSmokeMode()) {
+        await syncAllProviderAuthToRuntime();
+      }
       logger.debug('Auto-starting Gateway...');
       await gatewayManager.start();
       logger.info('Gateway auto-start succeeded');
     } catch (error) {
       logger.error('Gateway auto-start failed:', error);
-      mainWindow?.webContents.send('gateway:error', String(error));
+      sendToMainWindow(mainWindow, 'gateway:error', String(error));
     }
   } else if (isE2EMode) {
     logger.info('Gateway auto-start skipped in E2E mode');
@@ -550,14 +625,14 @@ async function initialize(): Promise<void> {
   // is ready, so ensureClawXContext will retry until the target files appear.
   if (!isE2EMode) {
     void ensureClawXContext().catch((error) => {
-      logger.warn('Failed to merge ClawX context into workspace:', error);
+      logger.warn('Failed to merge YYClaw context into workspace:', error);
     });
   }
 
   // Auto-install openclaw CLI and shell completions (non-blocking).
   if (!isE2EMode) {
     void autoInstallCliIfNeeded((installedPath) => {
-      mainWindow?.webContents.send('openclaw:cli-installed', installedPath);
+      sendToMainWindow(mainWindow, 'openclaw:cli-installed', installedPath);
     }).then(() => {
       generateCompletionCache();
       installCompletionToProfile();
@@ -591,6 +666,13 @@ if (gotTheLock) {
   gatewayManager = new GatewayManager();
   registerOpenClawConfigCoordinator(gatewayManager);
   clawHubService = new ClawHubService();
+  adminConsoleClient.setGatewayManager(gatewayManager);
+  adminConsoleClient.setClawHubService(clawHubService);
+  void import('../services/office/office-sync-runtime').then(({ onOfficeExecutionQuiesced }) => {
+    onOfficeExecutionQuiesced(() => {
+      gatewayManager.tryFlushDeferredRestart('office-execution-quiesced');
+    });
+  });
 
   // Register builtin extensions and load manifest
   registerAllBuiltinExtensions();
@@ -601,7 +683,7 @@ if (gotTheLock) {
 
   // When a second instance is launched, focus the existing window instead.
   app.on('second-instance', () => {
-    logger.info('Second ClawX instance detected; redirecting to the existing window');
+    logger.info('Second YYClaw instance detected; redirecting to the existing window');
 
     const focusRequest = requestSecondInstanceFocus(
       mainWindowFocusState,
@@ -658,6 +740,7 @@ if (gotTheLock) {
     }
 
     void extensionRegistry.teardownAll();
+    adminConsoleClient.stop();
 
     const stopPromise = gatewayManager.stop().catch((err) => {
       logger.warn('gatewayManager.stop() error during quit:', err);

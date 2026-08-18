@@ -14,7 +14,7 @@ export type { GatewayRuntimePayload } from '../types/gateway';
 
 export type JsonRecord = Record<string, unknown>;
 
-export type GatewayErrorEvent = string | { message?: string };
+export type GatewayErrorEvent = string | { message?: string; code?: string };
 export type GatewayChatMessageEvent = GatewayRuntimeRecord & {
   message?: GatewayRuntimePayload;
   runId?: GatewayRuntimePayload;

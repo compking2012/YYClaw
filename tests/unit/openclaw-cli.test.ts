@@ -11,13 +11,23 @@ const mockedEntryPath = 'C:\\Program Files\\ClawX\\resources\\openclaw\\openclaw
 const {
   mockExistsSync,
   mockIsPackagedGetter,
+  mockSpawnSync,
 } = vi.hoisted(() => ({
   mockExistsSync: vi.fn<(path: string) => boolean>(),
   mockIsPackagedGetter: { value: false },
+  mockSpawnSync: vi.fn(),
 }));
 
 function setPlatform(platform: string) {
   Object.defineProperty(process, 'platform', { value: platform, writable: true });
+}
+
+function mockNodeVersionProbe(versionByExecPath: Record<string, string>) {
+  mockSpawnSync.mockImplementation((execPath: string) => {
+    const version = versionByExecPath[execPath];
+    if (!version) return { status: 1, stdout: '', stderr: 'missing' };
+    return { status: 0, stdout: version, stderr: '' };
+  });
 }
 
 vi.mock('node:fs', async () => {
@@ -28,6 +38,18 @@ vi.mock('node:fs', async () => {
     default: {
       ...actual,
       existsSync: mockExistsSync,
+    },
+  };
+});
+
+vi.mock('node:child_process', async () => {
+  const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  return {
+    ...actual,
+    spawnSync: mockSpawnSync,
+    default: {
+      ...actual,
+      spawnSync: mockSpawnSync,
     },
   };
 });
@@ -65,6 +87,7 @@ function setExecPath(execPath: string) {
 function resetOpenClawCliMocks() {
   vi.resetModules();
   mockExistsSync.mockReset();
+  mockSpawnSync.mockReset();
   mockIsPackagedGetter.value = false;
   setPlatform(originalPlatform);
   setResourcesPath(originalResourcesPath);
@@ -262,6 +285,7 @@ describe('getOpenClawEmbeddedForkSpec', () => {
     process.env.PATH = '/opt/node/bin:/usr/bin';
     process.env.ELECTRON_RUN_AS_NODE = '1';
     mockExistsSync.mockImplementation((p: string) => p === '/opt/node/bin/node');
+    mockNodeVersionProbe({ '/opt/node/bin/node': '24.15.0' });
 
     const { getOpenClawEmbeddedForkSpec } = await import('@electron/utils/openclaw-cli');
     const spec = getOpenClawEmbeddedForkSpec(['acp']);
@@ -269,6 +293,35 @@ describe('getOpenClawEmbeddedForkSpec', () => {
     expect(spec.options.execPath).toBe('/opt/node/bin/node');
     expect(spec.options.execPath).not.toBe(execPath);
     expect(spec.options.env).not.toMatchObject({ ELECTRON_RUN_AS_NODE: '1' });
+  });
+
+  it('falls back to Electron Helper when PATH Node is below OpenClaw engines', async () => {
+    const execPath = '/Users/zhuoxu/workspace/ClawX/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron';
+    const helperPath = '/Users/zhuoxu/workspace/ClawX/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper';
+    const previousElectronVersion = process.versions.electron;
+    setPlatform('darwin');
+    setExecPath(execPath);
+    Object.defineProperty(process.versions, 'electron', {
+      value: '40.10.6',
+      configurable: true,
+    });
+    process.env.PATH = '/opt/node/bin:/usr/bin';
+    mockExistsSync.mockImplementation((p: string) => p === '/opt/node/bin/node' || p === helperPath);
+    mockNodeVersionProbe({ '/opt/node/bin/node': '22.19.0' });
+
+    try {
+      const { getOpenClawEmbeddedForkSpec } = await import('@electron/utils/openclaw-cli');
+      const spec = getOpenClawEmbeddedForkSpec(['acp']);
+
+      expect(spec.options.execPath).toBe(helperPath);
+      expect(spec.options.execPath).not.toBe(execPath);
+      expect(spec.options.env).toMatchObject({ ELECTRON_RUN_AS_NODE: '1' });
+    } finally {
+      Object.defineProperty(process.versions, 'electron', {
+        value: previousElectronVersion,
+        configurable: true,
+      });
+    }
   });
 
   it('fails packaged macOS embedded launch when the Helper executable is missing', async () => {
@@ -282,5 +335,24 @@ describe('getOpenClawEmbeddedForkSpec', () => {
     const { getOpenClawEmbeddedForkSpec } = await import('@electron/utils/openclaw-cli');
 
     expect(() => getOpenClawEmbeddedForkSpec(['acp'])).toThrow('ClawX Helper executable not found');
+  });
+});
+
+describe('isSupportedOpenClawNodeVersion', () => {
+  beforeEach(() => {
+    resetOpenClawCliMocks();
+  });
+
+  afterEach(() => {
+    resetOpenClawCliMocks();
+  });
+
+  it('accepts OpenClaw engine ranges and rejects older 22.x', async () => {
+    const { isSupportedOpenClawNodeVersion } = await import('@electron/utils/openclaw-cli');
+    expect(isSupportedOpenClawNodeVersion('22.22.3')).toBe(true);
+    expect(isSupportedOpenClawNodeVersion('24.15.0')).toBe(true);
+    expect(isSupportedOpenClawNodeVersion('25.9.0')).toBe(true);
+    expect(isSupportedOpenClawNodeVersion('22.19.0')).toBe(false);
+    expect(isSupportedOpenClawNodeVersion('24.14.9')).toBe(false);
   });
 });

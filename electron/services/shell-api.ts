@@ -1,6 +1,7 @@
-import { shell } from 'electron';
+import { shell, clipboard } from 'electron';
 import { homedir } from 'node:os';
 import { join, sep } from 'node:path';
+import { openAuthWindow as openAuthWindowImpl } from '../utils/auth-window';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 
 function expandShellPath(input: string): string {
@@ -30,9 +31,17 @@ export function createShellApi(): CompleteHostServiceRegistry['shell'] {
     openExternal: async (payload) => {
       await shell.openExternal(requireUrl(payload.url));
     },
+    openAuthWindow: (payload) => {
+      openAuthWindowImpl({
+        url: requireUrl(payload.url),
+        title: payload.title,
+        intent: payload.intent,
+      });
+    },
     showItemInFolder: (payload) => {
       shell.showItemInFolder(expandShellPath(requirePath(payload.path)));
     },
     openPath: (payload) => shell.openPath(expandShellPath(requirePath(payload.path))),
+    readClipboardText: () => clipboard.readText(),
   };
 }

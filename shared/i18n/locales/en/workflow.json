@@ -1,0 +1,19 @@
+{
+  "title": "Workflows",
+  "subtitle": "Deterministic, step-by-step task orchestration. Control flow is 100% fixed; only nodes marked as model steps carry — and constrain — non-determinism.",
+  "definitions": "Definitions",
+  "runs": "Runs",
+  "run": "Run",
+  "noDefinitions": "No workflow definitions registered.",
+  "noRuns": "No runs yet. Start a workflow above.",
+  "stepKind": {
+    "deterministic": "Deterministic",
+    "model": "Model",
+    "agent": "Agent"
+  },
+  "status": {
+    "running": "Running",
+    "done": "Done",
+    "failed": "Failed"
+  }
+}

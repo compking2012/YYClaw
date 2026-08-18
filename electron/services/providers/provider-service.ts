@@ -214,7 +214,16 @@ export class ProviderService {
           }
         }
 
-        result.push(kept);
+        // A single store account can surface under two active openclaw keys
+        // (e.g. catalog id "minimaxm25" + runtime custom key "custom-minimaxm25").
+        // The store-backed account is authoritative, so replace any seeded
+        // duplicate already emitted for the same account id.
+        const existingIdx = result.findIndex((a) => a.id === kept.id);
+        if (existingIdx >= 0) {
+          result[existingIdx] = kept;
+        } else {
+          result.push(kept);
+        }
       } else {
         // No store account for this key — create a seed from openclaw.json.
         const entry = openClawProviders[key];
@@ -226,6 +235,11 @@ export class ProviderService {
             defaultModel,
           );
           for (const account of seeded) {
+            // Skip if this account is already represented (e.g. surfaced under
+            // another active runtime key) to avoid duplicate list entries.
+            if (result.some((a) => a.id === account.id)) {
+              continue;
+            }
             await saveProviderAccount(account);
             result.push(account);
             logger.info(`[provider-sync] Seeded provider account "${account.id}" from openclaw.json`);
@@ -308,8 +322,20 @@ export class ProviderService {
           .filter(Boolean)))
         : undefined;
 
+      // Skip phantom accounts synthesized purely from a leftover auth-profile
+      // credential. Such a key has no `models.providers` entry (the config is an
+      // empty object synthesized by getOpenClawProvidersConfig) AND no catalog
+      // definition (vendorId falls back to 'custom'). Real custom providers carry
+      // a baseUrl/models; legit external providers (OAuth/env-key) resolve to a
+      // known catalog vendorId — both pass. Only orphaned, removed-but-not-cleaned
+      // credentials (e.g. a stale "glm51-…" auth profile) get dropped here.
+      const hasRealConfig = Boolean(baseUrl) || (customModels?.length ?? 0) > 0;
+      if (vendorId === 'custom' && !definition && !hasRealConfig) {
+        continue;
+      }
+
       // Infer model from the default model if it belongs to this provider
-      let model: string | undefined;
+      let model: string | string[] | undefined;
       if (defaultModelProvider === key && defaultModel) {
         model = defaultModel;
       } else if (definition?.defaultModelId) {

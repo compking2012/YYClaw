@@ -4,17 +4,17 @@
  * All file I/O is async (fs/promises) to avoid blocking the Electron
  * main thread.
  */
-import { access, mkdir, readFile, writeFile, readdir, unlink } from 'fs/promises';
+import { access, readFile, writeFile, readdir, mkdir, unlink } from 'fs/promises';
 import { constants } from 'fs';
-import { join, resolve, sep } from 'path';
+import { createHash } from 'crypto';
+import { join, resolve } from 'path';
 import { homedir } from 'os';
 import { logger } from './logger';
-import { getResourcesDir } from './paths';
+import { expandPath, getResourcesDir, resolveOpenClawConfigPath, resolveOpenClawStateDir } from './paths';
+import { execOpenclaw } from './openclaw-cli';
 
 const CLAWX_BEGIN = '<!-- clawx:begin -->';
 const CLAWX_END = '<!-- clawx:end -->';
-const DEFAULT_BOOTSTRAP_FILENAME = 'BOOTSTRAP.md';
-const DEFAULT_IDENTITY_FILENAME = 'IDENTITY.md';
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -22,97 +22,9 @@ async function fileExists(p: string): Promise<boolean> {
   try { await access(p, constants.F_OK); return true; } catch { return false; }
 }
 
-function isCurrentOpenClawPath(p: string): boolean {
-  const openclawDir = resolve(join(homedir(), '.openclaw'));
-  const workspaceDir = resolve(p);
-  return workspaceDir === openclawDir || workspaceDir.startsWith(openclawDir + sep);
-}
-
-export function buildDefaultClawXIdentityContent(): string {
-  return [
-    '# IDENTITY.md - ClawX',
-    '',
-    '- **Name:** ClawX',
-    '- **Creature:** desktop AI assistant',
-    '- **Vibe:** concise, capable, and practical',
-    '- **Emoji:** 🐾',
-    '- **Avatar:**',
-    '',
-    'ClawX uses a default desktop identity instead of chat-first bootstrap.',
-    '',
-  ].join('\n');
-}
-
-export function isOpenClawIdentityTemplate(content: string): boolean {
-  const normalized = content.replace(/\r\n/g, '\n');
-  return normalized.includes('# IDENTITY.md - Who Am I?')
-    && normalized.includes('_(pick something you like)_')
-    && normalized.includes('- **Name:**')
-    && normalized.includes('- **Emoji:**');
-}
-
-async function writeFileIfMissing(path: string, content: string): Promise<boolean> {
-  try {
-    await writeFile(path, content, { encoding: 'utf-8', flag: 'wx' });
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      return false;
-    }
-    throw error;
-  }
-}
-
-/**
- * Ensure ClawX-managed workspaces have a non-template IDENTITY.md before the
- * Gateway initializes them. Existing custom identities are preserved.
- */
-export async function ensureClawXIdentityFile(
-  workspaceDir: string,
-  options: { createDir?: boolean } = {},
-): Promise<void> {
-  const resolvedWorkspaceDir = resolve(workspaceDir);
-  if (options.createDir) {
-    await mkdir(resolvedWorkspaceDir, { recursive: true });
-  } else if (!(await fileExists(resolvedWorkspaceDir))) {
-    return;
-  }
-
-  const identityPath = join(resolvedWorkspaceDir, DEFAULT_IDENTITY_FILENAME);
-  const defaultIdentity = buildDefaultClawXIdentityContent();
-  let wroteIdentity = await writeFileIfMissing(identityPath, defaultIdentity);
-
-  if (!wroteIdentity) {
-    let existing: string;
-    try {
-      existing = await readFile(identityPath, 'utf-8');
-    } catch {
-      return;
-    }
-
-    if (isOpenClawIdentityTemplate(existing) && existing !== defaultIdentity) {
-      await writeFile(identityPath, defaultIdentity, 'utf-8');
-      wroteIdentity = true;
-    }
-  }
-
-  const bootstrapPath = join(resolvedWorkspaceDir, DEFAULT_BOOTSTRAP_FILENAME);
-  if (await fileExists(bootstrapPath)) {
-    try {
-      await unlink(bootstrapPath);
-      logger.info(`Removed chat-first bootstrap file from ClawX workspace (${resolvedWorkspaceDir})`);
-    } catch {
-      logger.warn(`Failed to remove chat-first bootstrap file: ${bootstrapPath}`);
-    }
-  } else if (wroteIdentity) {
-    logger.info(`Seeded default ClawX identity for workspace (${resolvedWorkspaceDir})`);
-  }
-}
-
-export async function ensureClawXDefaultIdentity(): Promise<void> {
-  const workspaceDirs = await resolveAllWorkspaceDirs();
-  for (const { dir: workspaceDir, waitForGatewaySeed } of workspaceDirs) {
-    await ensureClawXIdentityFile(workspaceDir, { createDir: waitForGatewaySeed });
+async function ensureDir(dir: string): Promise<void> {
+  if (!(await fileExists(dir))) {
+    await mkdir(dir, { recursive: true });
   }
 }
 
@@ -195,50 +107,39 @@ export function stripFirstRunSection(content: string): string {
 
 // ── Workspace directory resolution ───────────────────────────────
 
-type WorkspaceDir = {
-  dir: string;
-  /**
-   * Only the default workspace is expected to be seeded during Gateway startup.
-   * Other agent workspaces may remain empty until that agent is actually used,
-   * so missing bootstrap files there should not keep a startup retry loop alive.
-   */
-  waitForGatewaySeed: boolean;
-};
-
 /**
- * Collect all unique workspace directories from the openclaw config.
+ * Collect unique workspace directories declared in openclaw.json: each
+ * agent's workspace under `agents.list`, plus `agents.defaults.workspace`
+ * (only when the agent list is non-empty). Returns an empty array when no
+ * agents are configured — workspaces are created on demand when an agent is
+ * created, not eagerly on startup.
  */
-async function resolveAllWorkspaceDirs(): Promise<WorkspaceDir[]> {
+async function resolveAllWorkspaceDirs(): Promise<string[]> {
   const openclawDir = join(homedir(), '.openclaw');
-  const dirs = new Map<string, WorkspaceDir>();
-  const addDir = (dir: string, waitForGatewaySeed: boolean) => {
-    const existing = dirs.get(dir);
-    dirs.set(dir, {
-      dir,
-      waitForGatewaySeed: waitForGatewaySeed || existing?.waitForGatewaySeed === true,
-    });
-  };
+  const dirs = new Set<string>();
 
   const configPath = join(openclawDir, 'openclaw.json');
   try {
     if (await fileExists(configPath)) {
       const config = JSON.parse(await readFile(configPath, 'utf-8'));
 
-      const defaultWs = config?.agents?.defaults?.workspace;
-      let hasDefaultWorkspace = false;
-      if (typeof defaultWs === 'string' && defaultWs.trim()) {
-        addDir(defaultWs.replace(/^~/, homedir()), true);
-        hasDefaultWorkspace = true;
-      }
-
       const agents = config?.agents?.list;
       if (Array.isArray(agents)) {
         for (const agent of agents) {
           const ws = agent?.workspace;
           if (typeof ws === 'string' && ws.trim()) {
-            const isMainDefault =
-              agent?.default === true || (agent?.id === 'main' && !hasDefaultWorkspace);
-            addDir(ws.replace(/^~/, homedir()), isMainDefault);
+            dirs.add(ws.replace(/^~/, homedir()));
+          }
+        }
+
+        // Only seed defaults.workspace when at least one agent exists.
+        // deleteAgentConfig does not clear defaults.workspace, so collecting
+        // it unconditionally would recreate a deleted agent's workspace dir
+        // on the next startup via the context merge's ensureDir.
+        if (agents.length > 0) {
+          const defaultWs = config?.agents?.defaults?.workspace;
+          if (typeof defaultWs === 'string' && defaultWs.trim()) {
+            dirs.add(defaultWs.replace(/^~/, homedir()));
           }
         }
       }
@@ -253,14 +154,146 @@ async function resolveAllWorkspaceDirs(): Promise<WorkspaceDir[]> {
   // the context merge routine before its deletion finishes. Only workspaces
   // explicitly declared in openclaw.json should be seeded.
 
-  if (dirs.size === 0) {
-    addDir(join(openclawDir, 'workspace'), true);
+  return [...dirs];
+}
+
+/**
+ * Raw `agents.defaults.workspace` from openclaw.json (unexpanded, may be
+ * `~`-prefixed), or null when unset / unreadable.
+ */
+async function readDefaultAgentWorkspace(): Promise<string | null> {
+  try {
+    const raw = await readFile(resolveOpenClawConfigPath(), 'utf-8');
+    const config = JSON.parse(raw);
+    const ws = config?.agents?.defaults?.workspace;
+    return typeof ws === 'string' && ws.trim() ? ws : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Seed OpenClaw's canonical bootstrap files (AGENTS.md, TOOLS.md, and the
+ * optional IDENTITY.md / USER.md / SOUL.md / HEARTBEAT.md set) into `workspace`
+ * without the interactive onboarding wizard.
+ *
+ * `openclaw setup` is an alias for `openclaw onboard`, whose default path is a
+ * conversational wizard that aborts with "Onboarding needs an interactive TTY"
+ * when spawned from the main process (we never allocate a TTY). `--baseline`
+ * runs the minimal, prompt-free path: it ensures config/workspace/session
+ * directories and seeds bootstrap files, nothing else.
+ *
+ * Baseline setup repoints `agents.defaults.workspace` at the target dir as a
+ * side effect, so we capture and restore the original default. Without this,
+ * seeding a secondary agent's workspace (new-agent provisioning) or rebuilding
+ * a non-default agent's persona would silently move the default agent to the
+ * wrong workspace.
+ */
+export async function seedWorkspaceBootstrapFiles(workspace: string): Promise<void> {
+  const originalDefaultWorkspace = await readDefaultAgentWorkspace();
+  await execOpenclaw(['setup', '--baseline', '--workspace', workspace]);
+  if (
+    originalDefaultWorkspace &&
+    resolve(expandPath(originalDefaultWorkspace)) !== resolve(workspace)
+  ) {
+    try {
+      await execOpenclaw(['config', 'set', 'agents.defaults.workspace', originalDefaultWorkspace]);
+    } catch (error) {
+      logger.warn('Failed to restore agents.defaults.workspace after baseline setup', {
+        error: String(error),
+      });
+    }
+  }
+}
+
+/**
+ * Clear the `setupCompletedAt` marker in a workspace's OpenClaw state file so a
+ * subsequent `openclaw setup` re-seeds the OPTIONAL bootstrap files
+ * (IDENTITY.md, USER.md, SOUL.md, HEARTBEAT.md) instead of only the required
+ * AGENTS.md / TOOLS.md.
+ *
+ * OpenClaw's ensureAgentWorkspace() adds every optional bootstrap file to its
+ * skip set once `isWorkspaceSetupCompleted(dir)` is true, so a "rebuild" on an
+ * already-completed workspace never restores missing optional files. Clearing
+ * only `setupCompletedAt` (and keeping `bootstrapSeededAt`) lets setup re-seed
+ * the optional files; OpenClaw's own reconcile step then re-marks the workspace
+ * completed without re-creating BOOTSTRAP.md.
+ */
+export async function resetWorkspaceSetupCompletion(workspaceDir: string): Promise<void> {
+  const statePath = join(workspaceDir, 'openclaw-workspace-state.json');
+  let raw: string;
+  try {
+    raw = await readFile(statePath, 'utf-8');
+  } catch {
+    // No state file yet → setup already treats the workspace as not completed.
+    return;
   }
 
-  return [...dirs.values()];
+  let state: Record<string, unknown>;
+  try {
+    state = JSON.parse(raw);
+  } catch {
+    logger.warn(`Workspace state file is not valid JSON, skipping reset: ${statePath}`);
+    return;
+  }
+
+  if (typeof state.setupCompletedAt !== 'string') return;
+
+  delete state.setupCompletedAt;
+  try {
+    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf-8');
+    logger.info(`Reset workspace setup-completed marker for rebuild: ${statePath}`);
+  } catch (err) {
+    logger.warn(`Failed to reset workspace setup state ${statePath}: ${String(err)}`);
+  }
 }
 
 // ── Bootstrap file repair ────────────────────────────────────────
+
+/**
+ * Remove OpenClaw's "recent workspace attestation" markers for a workspace so
+ * `openclaw setup` will re-seed missing bootstrap files instead of throwing
+ * WorkspaceVanishedError.
+ *
+ * ClawX intentionally deletes BOOTSTRAP.md after the gateway seeds a workspace
+ * (see removeChatFirstBootstrapFiles). On a re-`setup`, OpenClaw sees a recent
+ * attestation but a missing BOOTSTRAP.md and concludes the workspace
+ * "disappeared", refusing to reseed. Clearing the attestation is exactly what
+ * OpenClaw's own error message prescribes for an intentional reset, which is
+ * what rebuilding the persona templates is.
+ *
+ * Mirrors OpenClaw's resolveWorkspaceAttestationPaths(): a hashed marker under
+ * each state dir's `workspace-attestations/`, plus a legacy sibling `.attested`
+ * file next to the workspace.
+ */
+export async function clearWorkspaceAttestation(workspaceDir: string): Promise<void> {
+  const resolved = resolve(workspaceDir);
+  const key = createHash('sha256').update(resolved).digest('hex');
+
+  // State dirs OpenClaw scans: the configured/default (~/.openclaw) plus the
+  // legacy ~/.clawdbot. Clear the hashed marker in each, then the legacy sibling.
+  const stateDirs = new Set<string>([
+    resolveOpenClawStateDir(),
+    join(homedir(), '.clawdbot'),
+  ]);
+
+  const candidates = [
+    ...[...stateDirs].map((dir) => join(dir, 'workspace-attestations', `${key}.attested`)),
+    `${resolved}.attested`,
+  ];
+
+  for (const path of candidates) {
+    try {
+      await unlink(path);
+      logger.info(`Cleared OpenClaw workspace attestation for rebuild: ${path}`);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn(`Failed to clear workspace attestation ${path}: ${String(err)}`);
+      }
+    }
+  }
+}
+
 
 /**
  * Detect and remove bootstrap .md files that contain only ClawX markers
@@ -268,7 +301,7 @@ async function resolveAllWorkspaceDirs(): Promise<WorkspaceDir[]> {
  */
 export async function repairClawXOnlyBootstrapFiles(): Promise<void> {
   const workspaceDirs = await resolveAllWorkspaceDirs();
-  for (const { dir: workspaceDir } of workspaceDirs) {
+  for (const workspaceDir of workspaceDirs) {
     if (!(await fileExists(workspaceDir))) continue;
 
     let entries: string[];
@@ -295,11 +328,31 @@ export async function repairClawXOnlyBootstrapFiles(): Promise<void> {
       if (before === '' && after === '') {
         try {
           await unlink(filePath);
-          logger.info(`Removed ClawX-only bootstrap file for re-seeding: ${file} (${workspaceDir})`);
+          logger.info(`Removed YYClaw-only bootstrap file for re-seeding: ${file} (${workspaceDir})`);
         } catch {
-          logger.warn(`Failed to remove ClawX-only bootstrap file: ${filePath}`);
+          logger.warn(`Failed to remove YYClaw-only bootstrap file: ${filePath}`);
         }
       }
+    }
+  }
+}
+
+/**
+ * ClawX ships a default desktop identity and does not need OpenClaw's
+ * chat-first personalization script. Once the Gateway has seeded the regular
+ * workspace files, remove BOOTSTRAP.md so sessions start normally.
+ */
+export async function removeChatFirstBootstrapFiles(): Promise<void> {
+  const workspaceDirs = await resolveAllWorkspaceDirs();
+  for (const workspaceDir of workspaceDirs) {
+    const bootstrapPath = join(workspaceDir, 'BOOTSTRAP.md');
+    if (!(await fileExists(bootstrapPath))) continue;
+
+    try {
+      await unlink(bootstrapPath);
+      logger.info(`Removed chat-first bootstrap file from YYClaw workspace (${workspaceDir})`);
+    } catch {
+      logger.warn(`Failed to remove chat-first bootstrap file: ${bootstrapPath}`);
     }
   }
 }
@@ -307,64 +360,37 @@ export async function repairClawXOnlyBootstrapFiles(): Promise<void> {
 // ── Context merging ──────────────────────────────────────────────
 
 /**
- * Merge ClawX context snippets into workspace bootstrap files that already
- * exist on disk. Missing files are only retryable for startup-owned workspaces.
+ * Merge ClawX context snippets into workspace bootstrap files that
+ * already exist on disk.  Returns the number of target files that were
+ * skipped because they don't exist yet.
  */
-type MergeResult = {
-  missing: number;
-  retryableMissing: number;
-};
-
-type EnsureClawXContextOptions = {
-  /**
-   * Startup should only wait for the default workspace. Explicit provisioning
-   * flows can opt in so a freshly-created agent workspace gets patched after
-   * the Gateway seeds it.
-   */
-  waitForAllConfiguredWorkspaces?: boolean;
-};
-
-async function mergeClawXContextOnce(options: EnsureClawXContextOptions = {}): Promise<MergeResult> {
+async function mergeClawXContextOnce(): Promise<number> {
   const contextDir = join(getResourcesDir(), 'context');
   if (!(await fileExists(contextDir))) {
-    logger.debug('ClawX context directory not found, skipping context merge');
-    return { missing: 0, retryableMissing: 0 };
+    logger.debug('YYClaw context directory not found, skipping context merge');
+    return 0;
   }
 
   let files: string[];
   try {
     files = (await readdir(contextDir)).filter((f) => f.endsWith('.clawx.md'));
   } catch {
-    return { missing: 0, retryableMissing: 0 };
+    return 0;
   }
 
   const workspaceDirs = await resolveAllWorkspaceDirs();
-  let missing = 0;
-  let retryableMissing = 0;
+  let skipped = 0;
 
-  for (const { dir: workspaceDir, waitForGatewaySeed } of workspaceDirs) {
-    const workspaceExists = await fileExists(workspaceDir);
-    const shouldWaitForSeed =
-      (waitForGatewaySeed || options.waitForAllConfiguredWorkspaces === true)
-      && (workspaceExists || isCurrentOpenClawPath(workspaceDir));
-
-    if (!workspaceExists) {
-      if (shouldWaitForSeed) {
-        retryableMissing += files.length;
-      }
-      missing += files.length;
-      continue;
-    }
+  for (const workspaceDir of workspaceDirs) {
+    await ensureDir(workspaceDir);
 
     for (const file of files) {
       const targetName = file.replace('.clawx.md', '.md');
       const targetPath = join(workspaceDir, targetName);
 
       if (!(await fileExists(targetPath))) {
-        missing++;
-        if (shouldWaitForSeed) {
-          retryableMissing++;
-        }
+        logger.debug(`Skipping ${targetName} in ${workspaceDir} (file does not exist yet, will be seeded by gateway)`);
+        skipped++;
         continue;
       }
 
@@ -386,57 +412,79 @@ async function mergeClawXContextOnce(options: EnsureClawXContextOptions = {}): P
       // First Run stripping happened and the ClawX section stayed identical.
       if (merged !== originalExisting) {
         await writeFile(targetPath, merged, 'utf-8');
-        logger.info(`Merged ClawX context into ${targetName} (${workspaceDir})`);
+        logger.info(`Merged YYClaw context into ${targetName} (${workspaceDir})`);
       }
     }
   }
 
-  return { missing, retryableMissing };
+  return skipped;
+}
+
+export async function ensureClawXIdentityFile(
+  workspaceDir: string,
+  options?: { createDir?: boolean },
+): Promise<void> {
+  const contextDir = join(getResourcesDir(), 'context');
+  if (!(await fileExists(contextDir))) {
+    logger.debug('YYClaw context directory not found, skipping identity merge');
+    return;
+  }
+
+  if (options?.createDir) {
+    await ensureDir(workspaceDir);
+  }
+
+  let files: string[];
+  try {
+    files = (await readdir(contextDir)).filter((f) => f.endsWith('.clawx.md'));
+  } catch {
+    return;
+  }
+
+  for (const file of files) {
+    const targetName = file.replace('.clawx.md', '.md');
+    const targetPath = join(workspaceDir, targetName);
+    if (!(await fileExists(targetPath))) {
+      await writeFile(targetPath, '', 'utf-8');
+    }
+    const section = await readFile(join(contextDir, file), 'utf-8');
+    const existing = await readFile(targetPath, 'utf-8');
+    const merged = mergeClawXSection(existing, section);
+    if (merged !== existing) {
+      await writeFile(targetPath, merged, 'utf-8');
+    }
+  }
 }
 
 const RETRY_INTERVAL_MS = 2000;
-const MAX_RETRIES = 5;
-let ensureClawXContextPromise: Promise<void> | null = null;
-let ensureClawXContextWaitsForAll = false;
+const MAX_RETRIES = 15;
 
 /**
  * Ensure ClawX context snippets are merged into the openclaw workspace
  * bootstrap files.
  */
-export async function ensureClawXContext(options: EnsureClawXContextOptions = {}): Promise<void> {
-  if (ensureClawXContextPromise) {
-    if (options.waitForAllConfiguredWorkspaces && !ensureClawXContextWaitsForAll) {
-      return ensureClawXContextPromise.then(() => ensureClawXContext(options));
-    }
-    return ensureClawXContextPromise;
-  }
-
-  ensureClawXContextWaitsForAll = options.waitForAllConfiguredWorkspaces === true;
-  ensureClawXContextPromise = runEnsureClawXContext(options).finally(() => {
-    ensureClawXContextPromise = null;
-    ensureClawXContextWaitsForAll = false;
-  });
-  return ensureClawXContextPromise;
-}
-
-async function runEnsureClawXContext(options: EnsureClawXContextOptions): Promise<void> {
-  let result = await mergeClawXContextOnce(options);
-  if (result.retryableMissing === 0) {
-    if (result.missing > 0) {
-      logger.debug(`ClawX context merge skipped ${result.missing} non-ready file(s)`);
-    }
+export async function ensureClawXContext(..._args: unknown[]): Promise<void> {
+  let skipped = await mergeClawXContextOnce();
+  if (skipped === 0) {
+    await removeChatFirstBootstrapFiles();
     return;
   }
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     await new Promise((r) => setTimeout(r, RETRY_INTERVAL_MS));
-    result = await mergeClawXContextOnce(options);
-    if (result.retryableMissing === 0) {
-      logger.info(`ClawX context merge completed after ${attempt} retry(ies)`);
+    skipped = await mergeClawXContextOnce();
+    if (skipped === 0) {
+      await removeChatFirstBootstrapFiles();
+      logger.info(`YYClaw context merge completed after ${attempt} retry(ies)`);
       return;
     }
-    logger.debug(`ClawX context merge: ${result.retryableMissing} startup file(s) still missing (retry ${attempt}/${MAX_RETRIES})`);
+    logger.debug(`YYClaw context merge: ${skipped} file(s) still missing (retry ${attempt}/${MAX_RETRIES})`);
   }
 
-  logger.warn(`ClawX context merge: ${result.retryableMissing} startup file(s) still missing after ${MAX_RETRIES} retries`);
+  logger.warn(`YYClaw context merge: ${skipped} file(s) still missing after ${MAX_RETRIES} retries`);
+  await removeChatFirstBootstrapFiles();
+}
+
+export async function ensureClawXDefaultIdentity(): Promise<void> {
+  await ensureClawXContext();
 }

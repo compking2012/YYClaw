@@ -61,6 +61,52 @@ async function expectSubtleDialogAnimation(locator: Locator): Promise<void> {
   expect(Math.abs(firstFrameOffset!.y)).toBeLessThan(12);
 }
 
+async function expectCleanDialogClose(locator: Locator): Promise<void> {
+  // Inspect the dialog mid-close. Radix unmounts the node on `animationend`, so
+  // we wait for `data-state='closed'`, let the exit animation register, then
+  // freeze it (pause) to keep the node mounted long enough to read its styles.
+  const closing = await locator.evaluate(async (element) => {
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    const deadline = performance.now() + 1000;
+    while (element.getAttribute('data-state') !== 'closed' && performance.now() < deadline) {
+      await nextFrame();
+    }
+    await nextFrame();
+    const overlay = element.parentElement?.querySelector('.clawx-dialog-overlay') ?? null;
+    element.getAnimations().forEach((animation) => animation.pause());
+    overlay?.getAnimations().forEach((animation) => animation.pause());
+    const contentStyle = window.getComputedStyle(element);
+    const overlayStyle = overlay ? window.getComputedStyle(overlay) : null;
+    return {
+      state: element.getAttribute('data-state'),
+      visibility: contentStyle.visibility,
+      pointerEvents: contentStyle.pointerEvents,
+      contentDuration: contentStyle.animationDuration,
+      overlayDuration: overlayStyle ? overlayStyle.animationDuration : null,
+    };
+  });
+
+  expect(closing.state).toBe('closed');
+  // A `visibility: hidden` snapshot on the closing content used to make inner
+  // components vanish before the fade finished; the content must stay visible
+  // and only fade via opacity so it tears down together with the overlay.
+  expect(closing.visibility).not.toBe('hidden');
+  // pointer-events:none must remain so the closing dialog can't swallow clicks
+  // over the page underneath (regression guard for the click-through fix).
+  expect(closing.pointerEvents).toBe('none');
+  // Overlay and content must share one close clock, so neither lingers behind.
+  if (closing.overlayDuration) {
+    expect(closing.contentDuration).toBe(closing.overlayDuration);
+  }
+
+  // Release the frozen animations so Radix can complete its unmount.
+  await locator.evaluate((element) => {
+    const overlay = element.parentElement?.querySelector('.clawx-dialog-overlay') ?? null;
+    element.getAnimations().forEach((animation) => animation.finish());
+    overlay?.getAnimations().forEach((animation) => animation.finish());
+  }).catch(() => {});
+}
+
 test.describe('dialog transitions', () => {
   test('uses the shared subtle transition for core modal dialogs', async ({ electronApp, page }) => {
     await installIpcMocks(electronApp, {
@@ -123,13 +169,15 @@ test.describe('dialog transitions', () => {
 
     await completeSetup(page);
 
-    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('sidebar-nav-settings').click();
+
+    await page.getByTestId('settings-tab-models').click();
     await page.getByTestId('providers-add-button').click();
     const providerDialog = page.getByTestId('add-provider-dialog');
     await expectSubtleDialogAnimation(providerDialog);
 
     await page.getByTestId('add-provider-close-button').click();
-    await expect(providerDialog).toHaveAttribute('data-state', 'closed');
+    await expectCleanDialogClose(providerDialog);
     await expect(providerDialog).toHaveCount(0);
 
     await page.getByTestId('sidebar-nav-agents').click();

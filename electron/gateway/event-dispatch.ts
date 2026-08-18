@@ -37,6 +37,12 @@ export function dispatchProtocolEvent(
     case 'ready':
       emitter.emit('gateway:ready', payload);
       break;
+    case 'talk.event':
+      // Voice (Talk/realtime) events: transcript deltas, output audio chunks,
+      // turn lifecycle. Routed to a dedicated channel rather than the generic
+      // notification path because realtime audio deltas are high-frequency.
+      emitter.emit('talk:event', payload);
+      break;
     case 'health':
       emitter.emit('gateway:health', payload as GatewayRuntimePayload);
       break;
@@ -70,8 +76,12 @@ export function dispatchJsonRpcNotification(
       emitter.emit('chat:message', notification.params as GatewayChatMessageEvent);
       break;
     case GatewayEventType.ERROR: {
-      const errorData = notification.params as { message?: string };
-      emitter.emit('error', new Error(errorData.message || 'Gateway error'));
+      const errorData = notification.params as { message?: string; code?: string | number };
+      const err = new Error(errorData.message || 'Gateway error') as Error & { code?: string };
+      if (errorData.code !== undefined && errorData.code !== null) {
+        err.code = String(errorData.code);
+      }
+      emitter.emit('error', err);
       break;
     }
     default:

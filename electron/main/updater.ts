@@ -5,15 +5,21 @@
  * Update providers are configured in electron-builder.yml (OSS primary, GitHub fallback).
  * For prerelease channels (alpha, beta), the feed URL is overridden at runtime
  * to point at the channel-specific OSS directory (e.g. /alpha/, /beta/).
+ *
+ * CDN YAML (generic provider): electron-updater parses the full YAML document; put
+ * `forceUpdate: true` at the **root** of `latest-mac.yml` (or `{channel}-mac.yml`) so
+ * the renderer can show ForceUpdateModal. The feed directory must match `detectChannel`
+ * (stable → `/latest/`, prerelease tag → `/alpha/` etc.) or the wrong yml is fetched.
  */
 import { autoUpdater, UpdateInfo, ProgressInfo, UpdateDownloadedEvent } from 'electron-updater';
+import { getAppDisplayVersion } from '../utils/app-display-version';
 import { BrowserWindow, app, ipcMain } from 'electron';
 import { logger } from '../utils/logger';
 import { EventEmitter } from 'events';
-import { setQuitting } from './app-state';
+import { setPendingUpdateInstallQuit, setQuitting } from './app-state';
 
 /** Base CDN URL (without trailing channel path) */
-const OSS_BASE_URL = 'https://oss.intelli-spectrum.com';
+const OSS_BASE_URL = 'https://claw-x.com';
 
 export interface UpdateStatus {
   status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
@@ -60,7 +66,7 @@ export class AppUpdater extends EventEmitter {
     });
     
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = false;
+    autoUpdater.autoInstallOnAppQuit = true;
     
     autoUpdater.logger = {
       info: (msg: string) => logger.info('[Updater]', msg),
@@ -71,8 +77,18 @@ export class AppUpdater extends EventEmitter {
 
     // Override feed URL for prerelease channels so that
     // alpha -> /alpha/alpha-mac.yml, beta -> /beta/beta-mac.yml, etc.
+    const realVersion = app.getVersion();
+    
+    // In dev mode, pretend we have an old version so updates trigger
+    if (!app.isPackaged) {
+      // Override electron-updater currentVersion internally instead of app
+      // Because electron-updater parses version in constructor
+      const { parse } = require('semver');
+      (autoUpdater as unknown as { currentVersion: unknown }).currentVersion = parse('0.0.1');
+    }
+
     const version = app.getVersion();
-    const channel = detectChannel(version);
+    const channel = detectChannel(realVersion); // Use real version to determine channel
     const feedUrl = `${OSS_BASE_URL}/${channel}`;
 
     logger.info(`[Updater] Version: ${version}, channel: ${channel}, feedUrl: ${feedUrl}`);
@@ -81,6 +97,13 @@ export class AppUpdater extends EventEmitter {
     // e.g. channel "alpha" → requests alpha-mac.yml, channel "latest" → requests latest-mac.yml
     autoUpdater.channel = channel;
 
+    // By default, electron-updater skips checking in dev mode. We force it to check.
+    if (!app.isPackaged) {
+      autoUpdater.forceDevUpdateConfig = true;
+    }
+
+    // Set feed URL directly. This tells electron-updater exactly where to look
+    // and works in both dev (overriding dev-app-update.yml) and packaged mode.
     autoUpdater.setFeedURL({
       provider: 'generic',
       url: feedUrl,
@@ -114,11 +137,20 @@ export class AppUpdater extends EventEmitter {
     });
 
     autoUpdater.on('update-available', (info: UpdateInfo) => {
+      // Dump raw update info to debug custom fields
+      // logger.info(`[Updater] Update available raw info: ${JSON.stringify(info, null, 2)}`);
+      
+      // In dev mode, we might need to cast or ensure forceUpdate is passed explicitly if it exists
+      if (info && (info as any).forceUpdate !== undefined) {
+          logger.info(`[Updater] explicitly found forceUpdate: ${(info as any).forceUpdate}`);
+      }
+      
       this.updateStatus({ status: 'available', info });
       this.emit('update-available', info);
     });
 
     autoUpdater.on('update-not-available', (info: UpdateInfo) => {
+      logger.info(`[Updater] Update not available. Current app version: ${app.getVersion()}, Latest remote version: ${info?.version}, Raw info: ${JSON.stringify(info, null, 2)}`);
       this.updateStatus({ status: 'not-available', info });
       this.emit('update-not-available', info);
     });
@@ -131,6 +163,10 @@ export class AppUpdater extends EventEmitter {
     autoUpdater.on('update-downloaded', (event: UpdateDownloadedEvent) => {
       this.updateStatus({ status: 'downloaded', info: event });
       this.emit('update-downloaded', event);
+
+      if (autoUpdater.autoDownload) {
+        this.startAutoInstallCountdown();
+      }
     });
 
     autoUpdater.on('error', (error: Error) => {
@@ -140,14 +176,15 @@ export class AppUpdater extends EventEmitter {
   }
 
   /**
-   * Update status and notify renderer
+   * Update status and notify renderer.
+   * Merge partial updates so e.g. `download-progress` does not wipe `info` (needed for force-update UI).
    */
   private updateStatus(newStatus: Partial<UpdateStatus>): void {
     this.status = {
       status: newStatus.status ?? this.status.status,
-      info: newStatus.info,
-      progress: newStatus.progress,
-      error: newStatus.error,
+      info: 'info' in newStatus ? newStatus.info : this.status.info,
+      progress: 'progress' in newStatus ? newStatus.progress : this.status.progress,
+      error: 'error' in newStatus ? newStatus.error : this.status.error,
     };
     this.sendToRenderer('update:status-changed', this.status);
   }
@@ -171,12 +208,31 @@ export class AppUpdater extends EventEmitter {
    */
   async checkForUpdates(): Promise<UpdateInfo | null> {
     try {
+      logger.info(`[Updater] checkForUpdates called. Status before: ${this.status.status}, isPackaged: ${app.isPackaged}`);
+      // By default, electron-updater skips checking in dev mode. We force it to check.
+      if (!app.isPackaged) {
+        autoUpdater.forceDevUpdateConfig = true;
+      }
+      
+      logger.info(`[Updater] About to call autoUpdater.checkForUpdates()`);
+      
+      // Before check, override electron-updater currentVersion internally 
+      // Because electron-updater checks this right before download
+      if (!app.isPackaged) {
+        const { parse } = require('semver');
+        (autoUpdater as unknown as { currentVersion: unknown }).currentVersion = parse('0.0.1');
+      }
+      
       const result = await autoUpdater.checkForUpdates();
+      
+      // 添加详细日志来追踪 checkForUpdates 的返回值
+      // logger.info(`[Updater] checkForUpdates() result: ${JSON.stringify(result, null, 2)}`);
 
       // In dev mode (app not packaged), autoUpdater silently returns null
       // without emitting ANY events (not even checking-for-update).
       // Detect this and force an error so the UI never stays silent.
       if (result == null) {
+        logger.info(`[Updater] result is null`);
         this.updateStatus({
           status: 'error',
           error: 'Update check skipped (dev mode – app is not packaged)',
@@ -186,6 +242,7 @@ export class AppUpdater extends EventEmitter {
 
       // Safety net: if events somehow didn't fire, force a final state.
       if (this.status.status === 'checking' || this.status.status === 'idle') {
+        logger.info(`[Updater] Safety net triggered, forcing 'not-available' status. Current status: ${this.status.status}`);
         this.updateStatus({ status: 'not-available' });
       }
 
@@ -202,6 +259,14 @@ export class AppUpdater extends EventEmitter {
    */
   async downloadUpdate(): Promise<void> {
     try {
+      if (!app.isPackaged) {
+        logger.info('[Updater] Simulated download in dev mode');
+        this.updateStatus({ status: 'downloading', progress: { percent: 50, transferred: 50, total: 100, bytesPerSecond: 1000, delta: 50 } });
+        setTimeout(() => {
+          this.updateStatus({ status: 'downloaded' });
+        }, 2000);
+        return;
+      }
       await autoUpdater.downloadUpdate();
     } catch (error) {
       logger.error('[Updater] Download update failed:', error);
@@ -222,7 +287,20 @@ export class AppUpdater extends EventEmitter {
    */
   quitAndInstall(): void {
     logger.info('[Updater] quitAndInstall called');
+    
+    if (!app.isPackaged) {
+      logger.info('[Updater] Cannot actually install update in dev mode, simulating restart...');
+      setTimeout(() => {
+        app.quit();
+      }, 1000);
+      return;
+    }
+
     setQuitting();
+    if (process.platform === 'darwin') {
+      setPendingUpdateInstallQuit();
+      logger.info('[Updater] macOS: set pending update-install quit so before-quit will not preventDefault');
+    }
     autoUpdater.quitAndInstall();
   }
 
@@ -266,22 +344,17 @@ export class AppUpdater extends EventEmitter {
   }
 
   /**
-   * Set auto-download preference.
-   *
-   * ClawX uses a prompt-first update flow: finding an update shows a UI prompt,
-   * and downloads/installations only start after the user chooses an action.
-   * Keep this legacy IPC method as a no-op-compatible setter so stale renderer
-   * settings cannot re-enable electron-updater's implicit auto-download path.
+   * Set auto-download preference
    */
-  setAutoDownload(_enable: boolean): void {
-    autoUpdater.autoDownload = false;
+  setAutoDownload(enable: boolean): void {
+    autoUpdater.autoDownload = enable;
   }
 
   /**
-   * Get current version
+   * Get current version (CI display stamp when present; else semver).
    */
   getCurrentVersion(): string {
-    return app.getVersion();
+    return getAppDisplayVersion();
   }
 }
 
@@ -307,10 +380,12 @@ export function registerUpdateHandlers(
   // Check for updates – always return final status so the renderer
   // never gets stuck in 'checking' waiting for a push event.
   ipcMain.handle('update:check', async () => {
+    logger.info(`[Updater] IPC 'update:check' received from renderer.`);
     try {
       await updater.checkForUpdates();
       return { success: true, status: updater.getStatus() };
     } catch (error) {
+      logger.error(`[Updater] IPC 'update:check' failed:`, error);
       return { success: false, error: String(error), status: updater.getStatus() };
     }
   });

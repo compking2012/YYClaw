@@ -181,7 +181,10 @@ async function validateKey(payload: ProviderPayload<'validateKey'>): Promise<{ v
     const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
     const resolvedBaseUrl = options?.baseUrl || account?.baseUrl || legacyProvider?.baseUrl || registryBaseUrl;
     const resolvedProtocol = options?.apiProtocol || account?.apiProtocol || legacyProvider?.apiProtocol;
-    const resolvedModelId = options?.modelId || account?.model || legacyProvider?.model;
+    const resolvedModelCandidate = options?.modelId || account?.model || legacyProvider?.model;
+    const resolvedModelId = Array.isArray(resolvedModelCandidate)
+      ? resolvedModelCandidate[0]
+      : resolvedModelCandidate;
     return await validateApiKeyWithProvider(providerType, apiKey, {
       baseUrl: resolvedBaseUrl,
       apiProtocol: resolvedProtocol,

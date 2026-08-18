@@ -19,6 +19,7 @@
 import 'zx/globals';
 import { ELECTRON_MAIN_RUNTIME_PACKAGES, EXTRA_BUNDLED_PACKAGES } from './openclaw-bundle-config.mjs';
 import { patchExtensionOpenClawSelfImports } from './openclaw-self-import-patch.mjs';
+import { patchSkillsManagedOnly } from './patch-skills-managed-only.mjs';
 
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'build', 'openclaw');
@@ -996,10 +997,71 @@ function patchBundledRuntime(outputDir) {
 patchBrokenModules(outputNodeModules);
 patchBundledRuntime(OUTPUT);
 
+// Restrict skill discovery to P1–P4 sources (managed, bundled, extension/
+// plugin-contributed) when the gateway runtime sets
+// CLAWX_SKILLS_MANAGED_ONLY. Strict: fail the build if the upstream loader
+// changed shape so the guard can never be silently dropped.
+const managedOnlyPatch = patchSkillsManagedOnly(path.join(OUTPUT, 'dist'), {
+  strict: true,
+  log: (msg) => echo`   🩹 ${msg}`,
+});
+if (managedOnlyPatch.patchesApplied > 0) {
+  echo`   🩹 Restricted skill discovery to P1–P4 dirs (${managedOnlyPatch.patchesApplied} patch(es))`;
+}
+
 const openclawSelfImportPatch = patchExtensionOpenClawSelfImports(OUTPUT);
 if (openclawSelfImportPatch.specifiersPatched > 0) {
   echo`   🩹 Rewrote ${openclawSelfImportPatch.specifiersPatched} OpenClaw plugin-sdk self-import(s) in ${openclawSelfImportPatch.filesPatched} extension file(s)`;
 }
+
+// 7b. Backfill missing OpenClaw plugin-sdk export subpaths.
+//
+// OpenClaw's package.json `exports` map omits some subpaths that its own
+// runtime imports when certain features are active (e.g. the browser/SSRF
+// runtime imports `openclaw/plugin-sdk/browser-security-runtime` once browser
+// automation is enabled). Because `exports` is declared, Node ENFORCES it:
+// importing an unlisted subpath throws ERR_PACKAGE_PATH_NOT_EXPORTED — even if
+// the file exists — and OpenClaw's optional-import guards only swallow
+// ERR_MODULE_NOT_FOUND, so the un-tolerated error propagates and crashes
+// channel startup (surfaces as a misleading Feishu
+// "Cannot access FEISHU_STARTUP_BOT_INFO_TIMEOUT_MS before initialization" TDZ
+// on Windows). Adding the export turns that fatal error into a tolerated
+// ERR_MODULE_NOT_FOUND (when the file is absent) or resolves it (when present).
+//
+// Idempotent + version/hash-agnostic so it survives openclaw upgrades and
+// upstream syncs (upstream ClawX does not carry this fix).
+const MISSING_OPENCLAW_PLUGIN_SDK_EXPORTS = ['./plugin-sdk/browser-security-runtime'];
+function backfillOpenClawPluginSdkExports(outputDir, subpaths) {
+  const pkgPath = path.join(outputDir, 'package.json');
+  if (!fs.existsSync(pkgPath)) return 0;
+  let pkg;
+  try {
+    pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  } catch {
+    return 0;
+  }
+  if (!pkg.exports || typeof pkg.exports !== 'object') return 0;
+  let added = 0;
+  for (const subpath of subpaths) {
+    if (pkg.exports[subpath]) continue;
+    const base = subpath.replace(/^\.\//, '');
+    pkg.exports[subpath] = {
+      types: `./dist/${base}.d.ts`,
+      default: `./dist/${base}.js`,
+    };
+    added += 1;
+  }
+  if (added > 0) {
+    fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
+  }
+  return added;
+}
+
+const backfilledExports = backfillOpenClawPluginSdkExports(OUTPUT, MISSING_OPENCLAW_PLUGIN_SDK_EXPORTS);
+if (backfilledExports > 0) {
+  echo`   🩹 Backfilled ${backfilledExports} missing OpenClaw plugin-sdk export(s) in package.json`;
+}
+
 
 // 8. Verify the bundle
 const entryExists = fs.existsSync(path.join(OUTPUT, 'openclaw.mjs'));

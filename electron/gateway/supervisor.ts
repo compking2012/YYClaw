@@ -6,7 +6,9 @@ import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
+import { PortConflictError } from './startup-orchestrator';
 import { probeGatewayReady } from './ws-client';
+import WebSocket from 'ws';
 
 export function warmupManagedPythonReadiness(): void {
   void isPythonReady().then((pythonReady) => {
@@ -22,6 +24,9 @@ export function warmupManagedPythonReadiness(): void {
 }
 
 export async function terminateOwnedGatewayProcess(child: Electron.UtilityProcess): Promise<void> {
+  const pid = child.pid;
+  const treePids = pid ? await getProcessTreeIds(pid) : new Set<string>();
+
   const terminateWindowsProcessTree = async (pid: number): Promise<void> => {
     const cp = await import('child_process');
     await new Promise<void>((resolve) => {
@@ -53,6 +58,15 @@ export async function terminateOwnedGatewayProcess(child: Electron.UtilityProces
       } catch {
         // ignore if already exited
       }
+      for (const treePid of treePids) {
+        if (treePid !== String(pid)) {
+          try {
+            process.kill(Number(treePid), 'SIGTERM');
+          } catch {
+            // ignore
+          }
+        }
+      }
     }
 
     const timeout = setTimeout(() => {
@@ -68,6 +82,15 @@ export async function terminateOwnedGatewayProcess(child: Electron.UtilityProces
               process.kill(pid, 'SIGKILL');
             } catch {
               // ignore
+            }
+            for (const treePid of treePids) {
+              if (treePid !== String(pid)) {
+                try {
+                  process.kill(Number(treePid), 'SIGKILL');
+                } catch {
+                  // ignore
+                }
+              }
             }
           }
         }
@@ -194,7 +217,88 @@ async function getListeningProcessIds(port: number): Promise<string[]> {
   return [...new Set(stdout.trim().split(/\r?\n/).map((value) => value.trim()).filter(Boolean))];
 }
 
-async function terminateOrphanedProcessIds(port: number, pids: string[]): Promise<void> {
+async function getProcessTreeIds(rootPid: number): Promise<Set<string>> {
+  const tree = new Set<string>([String(rootPid)]);
+  const cp = await import('child_process');
+
+  if (process.platform === 'win32') {
+    try {
+      const { stdout } = await new Promise<{ stdout: string }>((resolve) => {
+        cp.exec('wmic process get processid,parentprocessid', { timeout: 5000, windowsHide: true }, (_err, stdout) => {
+          resolve({ stdout: stdout || '' });
+        });
+      });
+      const lines = stdout.trim().split(/\r?\n/);
+      if (lines.length > 0) {
+        const header = lines[0].trim().split(/\s+/).map(s => s.toLowerCase());
+        const parentIdx = header.indexOf('parentprocessid');
+        const childIdx = header.indexOf('processid');
+        
+        if (parentIdx !== -1 && childIdx !== -1) {
+          const parentToChildren = new Map<string, string[]>();
+          for (const line of lines.slice(1)) {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length > Math.max(parentIdx, childIdx)) {
+              const parent = parts[parentIdx];
+              const child = parts[childIdx];
+              if (!parentToChildren.has(parent)) parentToChildren.set(parent, []);
+              parentToChildren.get(parent)!.push(child);
+            }
+          }
+          const queue = [String(rootPid)];
+          while (queue.length > 0) {
+            const current = queue.shift()!;
+            const children = parentToChildren.get(current) || [];
+            for (const child of children) {
+              if (!tree.has(child)) {
+                tree.add(child);
+                queue.push(child);
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  } else {
+    try {
+      const { stdout } = await new Promise<{ stdout: string }>((resolve) => {
+        cp.exec('ps -ax -o ppid= -o pid=', { timeout: 5000 }, (_err, stdout) => {
+          resolve({ stdout: stdout || '' });
+        });
+      });
+      const lines = stdout.trim().split(/\r?\n/);
+      const parentToChildren = new Map<string, string[]>();
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 2) {
+          const parent = parts[0];
+          const child = parts[1];
+          if (!parentToChildren.has(parent)) parentToChildren.set(parent, []);
+          parentToChildren.get(parent)!.push(child);
+        }
+      }
+      const queue = [String(rootPid)];
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+        const children = parentToChildren.get(current) || [];
+        for (const child of children) {
+          if (!tree.has(child)) {
+            tree.add(child);
+            queue.push(child);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return tree;
+}
+
+export async function forceKillGatewayProcesses(port: number, pids: string[]): Promise<void> {
   logger.info(`Found orphaned process listening on port ${port} (PIDs: ${pids.join(', ')}), attempting to kill...`);
 
   if (process.platform === 'darwin') {
@@ -242,24 +346,56 @@ export async function findExistingGatewayProcess(options: {
   const { port, ownedPid } = options;
 
   try {
-    try {
-      const pids = await getListeningProcessIds(port);
-      if (pids.length > 0 && (!ownedPid || !pids.includes(String(ownedPid)))) {
-        await terminateOrphanedProcessIds(port, pids);
-        if (process.platform === 'win32') {
-          await waitForPortFree(port, 10000);
-        }
-        return null;
-      }
-    } catch (err) {
-      logger.warn('Error checking for existing process on port:', err);
+    const pids = await getListeningProcessIds(port);
+    const ownedTreePids = ownedPid ? await getProcessTreeIds(ownedPid) : new Set<string>();
+    const externalPids = pids.filter(pid => !ownedTreePids.has(pid));
+    
+    if (externalPids.length > 0) {
+      throw new PortConflictError(port, externalPids);
     }
-
     const ready = await probeGatewayReady(port, 5000);
-    return ready ? { port } : null;
-  } catch {
-    return null;
+    if (ready) {
+      return { port };
+    }
+  } catch (err) {
+    if (err instanceof PortConflictError) {
+      throw err;
+    }
+    logger.warn('Error checking for existing process on port:', err);
   }
+
+  const testResult = await new Promise<{ port: number; externalToken?: string } | null>((resolve) => {
+    const testWs = new WebSocket(`ws://localhost:${port}/ws`);
+    const terminateAndResolve = (result: { port: number; externalToken?: string } | null) => {
+      // terminate() avoids TIME_WAIT on Windows (vs close() which does WS handshake)
+      try { testWs.terminate(); } catch { /* ignore */ }
+      resolve(result);
+    };
+    const timeout = setTimeout(() => {
+      terminateAndResolve(null);
+    }, 2000);
+
+    testWs.on('open', () => {
+      clearTimeout(timeout);
+      terminateAndResolve({ port });
+    });
+
+    testWs.on('error', () => {
+      clearTimeout(timeout);
+      resolve(null);
+    });
+  });
+
+  if (testResult) {
+    if (ownedPid) {
+      return testResult;
+    } else {
+      // It's possible the process check failed but port is still open
+      throw new PortConflictError(port, []);
+    }
+  }
+
+  return null;
 }
 
 export async function runOpenClawDoctorRepair(): Promise<boolean> {

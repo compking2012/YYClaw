@@ -2140,6 +2140,86 @@ describe('anthropic-messages maxTokens', () => {
   });
 });
 
+describe('request.allowPrivateNetwork', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('does not write request.allowPrivateNetwork for public baseUrl', async () => {
+    await writeOpenClawJson({ models: { providers: {} } });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await syncProviderConfigToOpenClaw('openai', 'gpt-5.5', {
+      baseUrl: 'https://api.openai.com/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'OPENAI_API_KEY',
+    });
+
+    const result = await readOpenClawJson();
+    const entry = ((result.models as Record<string, unknown>).providers as Record<string, unknown>).openai as Record<string, unknown>;
+
+    expect(entry.request).toBeUndefined();
+  });
+
+  it('respects explicit request.allowPrivateNetwork=false', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'glm51-glm51b03': {
+            baseUrl: 'https://claw-x.com/v1',
+            api: 'openai-completions',
+            request: { allowPrivateNetwork: false },
+            models: [{ id: 'GLM51', name: 'GLM51' }],
+          },
+        },
+      },
+    });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await syncProviderConfigToOpenClaw('glm51-glm51b03', 'GLM51', {
+      baseUrl: 'https://claw-x.com/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'GLM51_API_KEY',
+    });
+
+    const result = await readOpenClawJson();
+    const entry = ((result.models as Record<string, unknown>).providers as Record<string, unknown>)['glm51-glm51b03'] as Record<string, unknown>;
+    const request = entry.request as Record<string, unknown>;
+
+    expect(request.allowPrivateNetwork).toBe(false);
+  });
+
+  it('heals legacy private deployment entries missing request.allowPrivateNetwork', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'glm51-glm51b03': {
+            baseUrl: 'https://claw-x.com/v1',
+            api: 'openai-completions',
+            models: [{ id: 'GLM51', name: 'GLM51' }],
+          },
+        },
+      },
+    });
+
+    const { ensureOpenClawProviderAllowPrivateNetwork } = await import('@electron/utils/openclaw-auth');
+    const healed = await ensureOpenClawProviderAllowPrivateNetwork();
+
+    expect(healed).toEqual(['glm51-glm51b03']);
+
+    const result = await readOpenClawJson();
+    const entry = ((result.models as Record<string, unknown>).providers as Record<string, unknown>)['glm51-glm51b03'] as Record<string, unknown>;
+    const request = entry.request as Record<string, unknown>;
+
+    expect(request.allowPrivateNetwork).toBe(true);
+  });
+});
+
 describe('pruneInvalidApiProviderEntries', () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -2626,6 +2706,7 @@ describe('ensureOpenClawProviderAgentRuntimePins', () => {
     expect(after).toEqual(before);
   });
 });
+
 
 describe('batchSyncConfigFields', () => {
   beforeEach(async () => {

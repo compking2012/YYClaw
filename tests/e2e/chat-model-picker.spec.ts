@@ -3,7 +3,7 @@ import { closeElectronApp, expect, getStableWindow, test } from './fixtures/elec
 const alphaModelRef = 'custom-alpha123/model-alpha';
 const betaModelRef = 'custom-beta5678/provider/model-beta';
 
-test.describe('ClawX chat model picker', () => {
+test.describe('ClawX agent model picker', () => {
   test('switches the current agent model without requesting a gateway refresh', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
@@ -11,7 +11,7 @@ test.describe('ClawX chat model picker', () => {
       await app.evaluate(async ({ app: _app }, refs) => {
         const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
 
-        let currentModelRef = refs.alphaModelRef;
+        let currentModelRef: string | null = refs.alphaModelRef;
         const hostRequests: Array<{ path: string; method: string; body: unknown }> = [];
         const now = new Date().toISOString();
         let releaseProviderAccounts: (() => void) | undefined;
@@ -34,8 +34,8 @@ test.describe('ClawX chat model picker', () => {
             id: 'main',
             name: 'Main',
             isDefault: true,
-            modelDisplay: currentModelRef.split('/').slice(1).join('/'),
-            modelRef: currentModelRef,
+            modelDisplay: (currentModelRef ?? refs.alphaModelRef).split('/').slice(1).join('/'),
+            modelRef: currentModelRef ?? refs.alphaModelRef,
             overrideModelRef: currentModelRef,
             inheritedModel: false,
             workspace: workspacePath,
@@ -111,7 +111,7 @@ test.describe('ClawX chat model picker', () => {
             return makeResponse(request.id, agentsSnapshot());
           }
           if (request?.module === 'agents' && request.action === 'updateModel') {
-            currentModelRef = typeof body?.modelRef === 'string' ? body.modelRef : refs.alphaModelRef;
+            currentModelRef = typeof body?.modelRef === 'string' ? body.modelRef : null;
             hostRequests.push({
               path: '/api/agents/main/model',
               method: 'PUT',
@@ -158,18 +158,6 @@ test.describe('ClawX chat model picker', () => {
                 createdAt: now,
                 updatedAt: now,
               },
-              {
-                id: 'moonshot-api-key',
-                vendorId: 'moonshot',
-                label: 'Moonshot',
-                authMode: 'api_key',
-                model: 'moonshot/kimi-k2.7',
-                metadata: { customModels: ['kimi-k2.6', 'moonshot/kimi-k2.7'] },
-                enabled: true,
-                isDefault: false,
-                createdAt: now,
-                updatedAt: now,
-              },
             ]);
           }
           if (request?.module === 'providers' && request.action === 'list') {
@@ -182,13 +170,11 @@ test.describe('ClawX chat model picker', () => {
             return makeResponse(request.id, [
               { accountId: 'alpha1234', hasKey: true, keyMasked: 'sk-***' },
               { accountId: 'beta5678', hasKey: true, keyMasked: 'sk-***' },
-              { accountId: 'moonshot-api-key', hasKey: true, keyMasked: 'sk-***' },
             ]);
           }
           if (request?.module === 'providers' && request.action === 'vendors') {
             return makeResponse(request.id, [
               { id: 'openai', name: 'OpenAI', supportedAuthModes: ['api_key', 'oauth_browser'] },
-              { id: 'moonshot', name: 'Moonshot', supportedAuthModes: ['api_key'] },
             ]);
           }
           if (request?.module === 'providers' && request.action === 'getDefaultAccount') {
@@ -207,38 +193,23 @@ test.describe('ClawX chat model picker', () => {
       const page = await getStableWindow(app);
       await page.reload();
       await expect(page.getByTestId('main-layout')).toBeVisible();
-      await expect.poll(async () => app.evaluate(() => (
-        (globalThis as typeof globalThis & {
-          __chatModelPickerRequests?: Array<{ path: string }>;
-        }).__chatModelPickerRequests?.some((request) => request.path === 'providers:accounts') ?? false
-      ))).toBe(true);
-      expect(await app.evaluate(() => (
-        (globalThis as typeof globalThis & {
-          __chatModelPickerRequests?: Array<{ path: string }>;
-        }).__chatModelPickerRequests?.some((request) => request.path === 'agents:updateModel') ?? false
-      ))).toBe(false);
-      await app.evaluate(() => {
-        (globalThis as typeof globalThis & {
-          __releaseChatModelProviders?: () => void;
-        }).__releaseChatModelProviders?.();
+      await page.evaluate(() => {
+        window.location.hash = '#/agents';
       });
+      await expect(page.getByTestId('agents-page')).toBeVisible();
       await app.evaluate(({ BrowserWindow }) => {
         const win = BrowserWindow.getAllWindows()[0];
         win?.webContents.send('gateway:status-changed', { state: 'running', port: 18789, pid: 12345, gatewayReady: true });
       });
 
-      await expect(page.getByTestId('chat-model-picker-button')).toContainText('model-alpha (Alpha)');
-      await page.getByTestId('chat-model-picker-button').click();
-      await expect(page.getByTestId('chat-model-picker-menu')).toBeVisible();
-      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('provider/model-beta (Beta)');
-      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('gpt-5.6 (OpenAI)');
-      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('gpt-5.5 (OpenAI)');
-      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('openai/gpt-5.6 (OpenAI)');
-      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('kimi-k2.7 (Moonshot)');
-      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('kimi-k2.6 (Moonshot)');
-      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('moonshot/kimi-k2.7 (Moonshot)');
-      await page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'provider/model-beta (Beta)' }).click();
-      await expect(page.getByTestId('chat-model-picker-button')).toContainText('provider/model-beta (Beta)');
+      await page.getByTestId('agent-card-settings-main').click();
+      await expect(page.getByTestId('agent-settings-model')).toBeVisible();
+      await page.getByTestId('agent-settings-model').click();
+      await expect(page.getByTestId('agent-model-modal')).toBeVisible();
+      await page.locator('#enable-custom-model').click();
+      await page.getByTestId('agent-model-save').click();
+      await expect(page.getByTestId('agent-model-modal')).not.toBeVisible();
+      await page.getByTestId('agent-settings-save-all').click();
 
       const requests = await app.evaluate(() => (
         (globalThis as typeof globalThis & { __chatModelPickerRequests?: Array<{ path: string; method: string; body: unknown }> }).__chatModelPickerRequests ?? []
@@ -246,7 +217,7 @@ test.describe('ClawX chat model picker', () => {
       expect(requests).toContainEqual({
         path: '/api/agents/main/model',
         method: 'PUT',
-        body: { modelRef: betaModelRef },
+        body: { modelRef: null },
       });
       expect(requests.some((request) =>
         request.path === '/api/gateway/restart'

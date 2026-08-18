@@ -267,7 +267,7 @@ describe('cleanupAgentsSymlinkedSkills', () => {
     expect(existsSync(link)).toBe(false);
   });
 
-  it('uses recursive fs.rmSync so directory symlinks/junctions delete reliably', () => {
+  it('strips the link without touching the linked-to skill tree', () => {
     const target = makeAgentSkill('lark-rm');
     const link = path.join(skillsDir, 'lark-rm');
     symlinkSync(target, link, SYMLINK_TYPE);
@@ -277,9 +277,13 @@ describe('cleanupAgentsSymlinkedSkills', () => {
     const res = cleanupAgentsSymlinkedSkills({ skillsDir, agentsDir: agentsSkillsDir });
     expect(res.removed).toEqual(['lark-rm']);
 
-    const linkRmCall = rmSyncMock.mock.calls.find((args) => args[0] === link);
-    expect(linkRmCall).toBeDefined();
-    expect(linkRmCall?.[1]).toEqual({ force: true, recursive: true });
+    expect(existsSync(link)).toBe(false);
+    // The target must survive.  A recursive fs.rmSync on the link would follow
+    // the junction on Windows (unlink → EPERM → dereferencing statSync →
+    // recurse) and delete these files instead.
+    expect(existsSync(target)).toBe(true);
+    expect(existsSync(path.join(target, 'SKILL.md'))).toBe(true);
+    expect(rmSyncMock.mock.calls.some((args) => args[0] === link)).toBe(false);
   });
 
   it('matches paths case-insensitively when running on Win32', () => {

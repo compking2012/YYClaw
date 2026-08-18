@@ -10,6 +10,7 @@ const { agentsState, chatState, gatewayState, providersState, artifactPanelMocks
     agents: [] as Array<Record<string, unknown>>,
     defaultModelRef: null as string | null,
     updateAgentModel: vi.fn(),
+    updateAgentAutoSelect: vi.fn(),
   },
   chatState: {
     currentAgentId: 'main',
@@ -21,6 +22,7 @@ const { agentsState, chatState, gatewayState, providersState, artifactPanelMocks
     accounts: [] as Array<Record<string, unknown>>,
     statuses: [] as Array<Record<string, unknown>>,
     defaultAccountId: null as string | null,
+    vendors: [] as Array<Record<string, unknown>>,
     error: null as string | null,
     refreshProviderSnapshot: vi.fn(),
   },
@@ -96,6 +98,16 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Loading skills...';
     case 'composer.skillEmpty':
       return 'No matching skills found';
+    case 'composer.defaultModel':
+      return 'Default';
+    case 'composer.temporaryModel':
+      return 'Temporary';
+    case 'composer.autoModelShort':
+      return 'Auto';
+    case 'composer.autoModelOption':
+      return 'Auto-select model';
+    case 'composer.autoModelOptionHint':
+      return 'The agent picks per task (saved on the agent)';
     case 'composer.pickAgent':
       return 'Choose agent';
     case 'composer.clearTarget':
@@ -119,7 +131,7 @@ function translate(key: string, vars?: Record<string, unknown>): string {
     case 'composer.gatewayStarting':
       return 'starting';
     case 'composer.gatewayStatus':
-      return `gateway ${String(vars?.state ?? '')}`;
+      return `gateway ${String(vars?.state ?? '')} | port: ${String(vars?.port ?? '')} ${String(vars?.pid ?? '')}`.trim();
     case 'composer.retryFailedAttachments':
       return 'Retry failed attachments';
     case 'composer.workspacePrefix':
@@ -139,6 +151,7 @@ function translate(key: string, vars?: Record<string, unknown>): string {
     case 'composer.skillPreviewNotFound':
       return 'Skill not found';
     default:
+      if (key.startsWith('common:status.')) return key.slice('common:status.'.length);
       return key;
   }
 }
@@ -147,6 +160,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: translate,
   }),
+  initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 
 function renderChatInput(onSend = vi.fn()) {
@@ -218,16 +232,36 @@ function configureAgentAndModelPickers() {
   vi.mocked(hostApiFetchMock).mockResolvedValue({ success: true, skills: [] });
 }
 
+// A single configured agent so the composer (and its footer workspace selector)
+// is enabled: the fork gates `inputDisabled` on `hasAgents`, unlike upstream.
+function configureSingleAgent() {
+  agentsState.agents = [
+    {
+      id: 'main',
+      name: 'Main',
+      isDefault: true,
+      inheritedModel: true,
+      workspace: '~/.openclaw/workspace',
+      agentDir: '~/.openclaw/agents/main/agent',
+      mainSessionKey: 'agent:main:main',
+      channelTypes: [],
+    },
+  ];
+}
+
 describe('ChatInput agent targeting', () => {
   beforeEach(() => {
     agentsState.agents = [];
     agentsState.defaultModelRef = null;
     agentsState.updateAgentModel.mockReset();
+    agentsState.updateAgentAutoSelect.mockReset();
+    agentsState.updateAgentAutoSelect.mockResolvedValue(undefined);
     chatState.currentAgentId = 'main';
     gatewayState.status = { state: 'running', port: 18789 };
     providersState.accounts = [];
     providersState.statuses = [];
     providersState.defaultAccountId = null;
+    providersState.vendors = [];
     providersState.error = null;
     providersState.refreshProviderSnapshot.mockReset();
     vi.mocked(hostApiFetchMock).mockReset();
@@ -253,6 +287,8 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('shows an image-generation indicator without locking the composer for background work', () => {
+    configureSingleAgent();
+
     render(
       <TooltipProvider>
         <ChatInput onSend={vi.fn()} imageGenerating />
@@ -315,6 +351,8 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('renders editable workspace selector in the composer footer', () => {
+    configureSingleAgent();
+
     render(
       <TooltipProvider>
         <ChatInput
@@ -347,7 +385,7 @@ describe('ChatInput agent targeting', () => {
     );
 
     const workspaceSelector = screen.getByTestId('chat-workspace-selector');
-    const gatewayStatus = screen.getByText(/gateway connected/i);
+    const gatewayStatus = screen.getByText(/gateway connected \| port: 18789/i);
 
     expect(workspaceSelector.compareDocumentPosition(gatewayStatus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -377,6 +415,7 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('workspace selector opens a native directory picker for editable sessions', async () => {
+    configureSingleAgent();
     const onSelectWorkspace = vi.fn();
     vi.mocked(hostApiDialogOpenMock).mockResolvedValue({
       canceled: false,
@@ -411,6 +450,8 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('uses disclosure semantics for workspace options instead of menu roles', () => {
+    configureSingleAgent();
+
     render(
       <TooltipProvider>
         <ChatInput
@@ -434,6 +475,8 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('closes the workspace menu with Escape', () => {
+    configureSingleAgent();
+
     render(
       <TooltipProvider>
         <ChatInput
@@ -457,6 +500,8 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('closes the workspace menu when Escape is pressed outside the selector', () => {
+    configureSingleAgent();
+
     render(
       <TooltipProvider>
         <ChatInput
@@ -480,6 +525,8 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('keeps workspace menu ancestors from clipping the dropdown', () => {
+    configureSingleAgent();
+
     render(
       <TooltipProvider>
         <ChatInput
@@ -505,6 +552,7 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('keeps the workspace menu closed after the selector is disabled and re-enabled', () => {
+    configureSingleAgent();
     const onSelectWorkspace = vi.fn();
     const { rerender } = render(
       <TooltipProvider>
@@ -552,6 +600,7 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('workspace selector can choose the default workspace from the menu', () => {
+    configureSingleAgent();
     const onSelectWorkspace = vi.fn();
 
     render(
@@ -575,6 +624,8 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('closes the workspace menu on outside click', () => {
+    configureSingleAgent();
+
     render(
       <TooltipProvider>
         <ChatInput
@@ -651,6 +702,152 @@ describe('ChatInput agent targeting', () => {
     expect(await screen.findByText('No matching skills found')).toBeInTheDocument();
   });
 
+  it('lists every text-capable provider account in the model picker', () => {
+    const now = '2025-01-01T00:00:00.000Z';
+    configureAgentAndModelPickers();
+    providersState.accounts = [
+      ...providersState.accounts,
+      {
+        id: 'cccccccc',
+        vendorId: 'custom',
+        label: 'Vision',
+        authMode: 'api_key',
+        baseUrl: 'http://127.0.0.1:3/v1',
+        // A vision-capable chat model: usable for chat, so it belongs in the
+        // picker even though it also declares the `image` (image input) kind.
+        modelType: ['text', 'image'],
+        model: 'gpt-vision',
+        enabled: true,
+        isDefault: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'dddddddd',
+        vendorId: 'custom',
+        label: 'Painter',
+        authMode: 'api_key',
+        baseUrl: 'http://127.0.0.1:4/v1',
+        modelType: ['image_generate'],
+        model: 'gpt-image-2',
+        enabled: true,
+        isDefault: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+    providersState.statuses = [
+      ...providersState.statuses,
+      { id: 'cccccccc', name: 'Vision', type: 'custom', hasKey: true, keyMasked: 'sk-***', enabled: true, createdAt: now, updatedAt: now },
+      { id: 'dddddddd', name: 'Painter', type: 'custom', hasKey: true, keyMasked: 'sk-***', enabled: true, createdAt: now, updatedAt: now },
+    ];
+
+    renderChatInput();
+
+    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    const menu = screen.getByTestId('chat-model-picker-menu');
+
+    expect(menu).toHaveTextContent('Alpha');
+    expect(menu).toHaveTextContent('Beta');
+    expect(menu).toHaveTextContent('Vision');
+    expect(menu).not.toHaveTextContent('Painter');
+  });
+
+  it('omits the temporary badge when the per-conversation model is the default one', () => {
+    configureAgentAndModelPickers();
+
+    render(
+      <TooltipProvider>
+        {/* Override set to the very model the agent already defaults to. */}
+        <ChatInput onSend={vi.fn()} sessionModelOverride="custom-aaaaaaaa/gpt-a" onSelectModel={vi.fn()} />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    const defaultOption = screen.getByTestId('chat-model-picker-option-Alpha');
+    expect(defaultOption).toHaveTextContent('Default');
+    expect(defaultOption).not.toHaveTextContent('Temporary');
+  });
+
+  it('shows the temporary badge when the per-conversation model differs from the default', () => {
+    configureAgentAndModelPickers();
+
+    render(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} sessionModelOverride="custom-bbbbbbbb/gpt-b" onSelectModel={vi.fn()} />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    expect(screen.getByTestId('chat-model-picker-option-Beta')).toHaveTextContent('Temporary');
+    expect(screen.getByTestId('chat-model-picker-option-Alpha')).not.toHaveTextContent('Temporary');
+  });
+
+  it('turns on the agent auto-select model option from the picker', async () => {
+    configureAgentAndModelPickers();
+    const onSelectModel = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} onSelectModel={onSelectModel} />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    fireEvent.click(screen.getByTestId('chat-model-picker-option-auto'));
+
+    await waitFor(() => {
+      expect(agentsState.updateAgentAutoSelect).toHaveBeenCalledWith('main', { autoSelectModel: { model: true } });
+    });
+    // No temporary override was set, so nothing to clear on the session.
+    expect(onSelectModel).not.toHaveBeenCalled();
+  });
+
+  it('clears the per-conversation override when switching to auto-select', async () => {
+    configureAgentAndModelPickers();
+    const onSelectModel = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} sessionModelOverride="custom-bbbbbbbb/gpt-b" onSelectModel={onSelectModel} />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    fireEvent.click(screen.getByTestId('chat-model-picker-option-auto'));
+
+    await waitFor(() => {
+      expect(agentsState.updateAgentAutoSelect).toHaveBeenCalledWith('main', { autoSelectModel: { model: true } });
+    });
+    // A pinned session model would defeat the router, so it is dropped first.
+    expect(onSelectModel).toHaveBeenCalledWith(null);
+  });
+
+  it('turns auto-select off when a concrete model is picked', async () => {
+    configureAgentAndModelPickers();
+    agentsState.agents = agentsState.agents.map((agent) => (
+      agent.id === 'main' ? { ...agent, autoSelectModel: { model: true } } : agent
+    ));
+    const onSelectModel = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} onSelectModel={onSelectModel} />
+      </TooltipProvider>,
+    );
+
+    // With auto on, the button reads "Auto" instead of a model name.
+    expect(screen.getByTestId('chat-model-picker-button')).toHaveTextContent('Auto');
+
+    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    fireEvent.click(screen.getByTestId('chat-model-picker-option-Beta'));
+
+    await waitFor(() => {
+      expect(agentsState.updateAgentAutoSelect).toHaveBeenCalledWith('main', { autoSelectModel: { model: false } });
+    });
+    expect(onSelectModel).toHaveBeenCalledWith('custom-bbbbbbbb/gpt-b');
+  });
+
   it('closes an open model picker when opening the agent picker', () => {
     configureAgentAndModelPickers();
 
@@ -693,7 +890,7 @@ describe('ChatInput agent targeting', () => {
     fireEvent.keyDown(searchInput, { key: 'Escape' });
 
     expect(screen.queryByPlaceholderText('Search skills')).not.toBeInTheDocument();
-    expect(await screen.findByText('gateway connected')).toBeInTheDocument();
+    expect(await screen.findByText('gateway connected | port: 18789')).toBeInTheDocument();
   });
 
   it('read-only workspace selector does not open the native picker', () => {
@@ -792,6 +989,7 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('workspace selector reports dialog failures without selecting a workspace', async () => {
+    configureSingleAgent();
     const onSelectWorkspace = vi.fn();
     vi.mocked(hostApiDialogOpenMock).mockRejectedValue(new Error('dialog failed'));
 
@@ -834,6 +1032,39 @@ describe('ChatInput agent targeting', () => {
     renderChatInput();
 
     expect(screen.queryByTitle('Choose agent')).not.toBeInTheDocument();
+  });
+
+  it('does not clear an agent model override while provider options are still loading', async () => {
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'gpt-5',
+        modelRef: 'custom-aaaaaaaa/gpt-5',
+        overrideModelRef: 'custom-aaaaaaaa/gpt-5',
+        inheritedModel: false,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+    ];
+    providersState.accounts = [];
+    providersState.statuses = [];
+    providersState.vendors = [];
+    // Keep the provider snapshot pending so `providerSnapshotReady` never flips
+    // true: under the current ChatInput mechanism that unresolved state *is* what
+    // "provider options are still loading" means, and the override must not be
+    // cleared until the snapshot resolves.
+    providersState.refreshProviderSnapshot.mockReturnValue(new Promise<void>(() => {}));
+
+    renderChatInput();
+
+    await waitFor(() => {
+      expect(providersState.refreshProviderSnapshot).toHaveBeenCalled();
+    });
+    expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
   });
 
   it('uses native textarea rendering when no skill token is present', () => {
@@ -953,15 +1184,9 @@ describe('ChatInput agent targeting', () => {
 
     renderChatInput(onSend);
 
-    const input = screen.getByTestId('chat-composer-input');
-    expect(input).not.toBeDisabled();
-    expect(screen.getByTestId('chat-composer-skill')).not.toBeDisabled();
-    expect(screen.getByTestId('chat-model-picker-button')).not.toBeDisabled();
-
-    fireEvent.change(input, { target: { value: 'Send through ACP' } });
-    fireEvent.click(screen.getByTitle('Send'));
-
-    expect(onSend).toHaveBeenCalledWith('Send through ACP', undefined, null);
+    expect(screen.getByTestId('chat-composer-input')).toBeDisabled();
+    expect(screen.getByTestId('chat-composer-skill')).toBeDisabled();
+    expect(screen.getByTestId('chat-model-picker-button')).toBeDisabled();
   });
 
   it('shows starting status while gateway is running but not yet ready', () => {
@@ -982,7 +1207,7 @@ describe('ChatInput agent targeting', () => {
 
     renderChatInput();
 
-    expect(screen.getByText(/gateway starting/i)).toBeInTheDocument();
+    expect(screen.getByText(/gateway starting \| port: 18789/i)).toBeInTheDocument();
   });
 
   it('renders the skill trigger after the @ agent picker', () => {

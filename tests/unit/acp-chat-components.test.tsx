@@ -7,6 +7,7 @@ import { AcpTurnFileActivity } from '@/pages/Chat/AcpTurnFileActivity';
 import type { AcpTimelineSnapshot, AttachmentRenderPart, ToolCallItem } from '@/lib/acp/timeline-types';
 import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { useArtifactPanel } from '@/stores/artifact-panel';
+import { useSettingsStore } from '@/stores/settings';
 
 const openAttachmentMock = vi.hoisted(() => vi.fn());
 const listAttachmentOpenHandlersMock = vi.hoisted(() => vi.fn());
@@ -47,6 +48,7 @@ vi.mock('sonner', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => {
       if (i18nLanguage.value === 'zh' && key === 'acp.turnDuration') return `用时 ${String(options?.duration ?? '')}`;
@@ -192,6 +194,9 @@ describe('ACP chat timeline components', () => {
       focusedFile: null,
       htmlPreviewAnchor: null,
     });
+    // Tool call specifics are only rendered in developer mode; default the
+    // store to unlocked so detail-oriented assertions below stay meaningful.
+    useSettingsStore.setState({ devModeUnlocked: true });
   });
 
   it('does not apply background highlighting to chat code', () => {
@@ -1112,6 +1117,30 @@ describe('ACP chat timeline components', () => {
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('Read file');
     expect(screen.queryByTestId('acp-tool-toggle')).not.toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('hides tool call cards entirely outside developer mode while keeping assistant prose', () => {
+    useSettingsStore.setState({ devModeUnlocked: false });
+    const state = snapshot({
+      itemOrder: ['tool:read-file', 'msg-a:0'],
+      itemsById: {
+        'tool:read-file': toolCallItem({ id: 'tool:read-file', toolCallId: 'read-file' }),
+        'msg-a:0': {
+          kind: 'message-segment',
+          id: 'msg-a:0',
+          role: 'assistant',
+          messageId: 'msg-a',
+          segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'All done.' }],
+        },
+      },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    expect(screen.queryByTestId('acp-tool-call-card')).not.toBeInTheDocument();
+    expect(screen.queryByText('File contents loaded.')).not.toBeInTheDocument();
+    expect(screen.getByText('All done.')).toBeInTheDocument();
   });
 
   it('starts auto-collapse when details are added to a completed no-detail tool call', () => {

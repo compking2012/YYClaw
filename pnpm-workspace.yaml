@@ -1,6 +1,11 @@
 packages:
   - '.'
-  - 'harness'
+
+# Skip LangGraph optional roots by default; Rollup/esbuild platform binaries still install.
+# When langgraph.env enables LangGraph, scripts/run-init.mjs installs these explicitly.
+ignoredOptionalDependencies:
+  - '@langchain/langgraph'
+  - p-finally
 
 ignoredBuiltDependencies:
   - electron

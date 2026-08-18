@@ -7,7 +7,7 @@
  * references in the ACP session/prompt request.
  */
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown, Check } from 'lucide-react';
+import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown, Mic, Check, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -19,15 +19,41 @@ import { useChatStore } from '@/stores/chat';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import { useProviderStore } from '@/stores/providers';
-import { buildConfiguredModelOptions, formatModelRefLabel, isConfiguredModelRefAvailable, resolveConfiguredModelRef } from '@/lib/model-options';
+import { useSettingsStore } from '@/stores/settings';
+import { buildConfiguredModelOptions, formatModelRefLabel, resolveConfiguredModelRef } from '@/lib/model-options';
+import { buildEnhancePromptGenPrompt } from '@/lib/enhance-prompt';
 import type { AgentSummary } from '@/types/agent';
 import type { QuickAccessSkill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { toast as appToast } from '@/lib/toast';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { collectDroppedFiles } from '@/lib/collect-dropped-files';
 import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
+import { useSkillWorkflowStore } from '@/stores/skill-workflow';
+import { startDictation, type DictationHandle } from '@/lib/voice/dictation';
+import { TalkOverlay } from './TalkOverlay';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DEFAULT_WORKSPACE_CWD, isDefaultWorkspacePath, normalizeWorkspacePath } from '@/lib/workspace-context';
+
+// Sensitive-task origin gate (mirrors electron/shared/model-routing/select-model —
+// kept local to avoid coupling the renderer to the electron project boundary).
+const SENSITIVE_RE = /机密|保密|涉密|绝密|秘密|内部(资料|文件|使用|文档)?|不(得|要)?外传|仅(限)?内部|商业机密|敏感(信息|数据)|隐私|\b(confidential|secret|classified|proprietary|sensitive|nda|internal[- ]only|do not share)\b/i;
+type ModelOrigin = 'private' | 'domestic' | 'overseas';
+function sensitiveOriginOrder(language?: string): ModelOrigin[] {
+  return (language ?? '').toLowerCase().startsWith('zh')
+    ? ['private', 'domestic', 'overseas']
+    : ['private', 'overseas', 'domestic'];
+}
+function originLabel(origin: ModelOrigin, language?: string): string {
+  const zh = (language ?? '').toLowerCase().startsWith('zh');
+  const map: Record<ModelOrigin, [string, string]> = {
+    private: ['私有', 'private'],
+    domestic: ['国内', 'domestic'],
+    overseas: ['海外', 'overseas'],
+  };
+  return map[origin][zh ? 0 : 1];
+}
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -58,6 +84,10 @@ interface ChatInputProps {
   workspaceOptions?: ChatWorkspaceOption[];
   workspaceReadOnly?: boolean;
   onSelectWorkspace?: (path: string) => void;
+  /** This-conversation-only model override (not persisted to the agent's config). */
+  sessionModelOverride?: string | null;
+  /** Switch (or clear, when `modelRef` is null) the temporary per-conversation model override. */
+  onSelectModel?: (modelRef: string | null) => void | Promise<void>;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -207,6 +237,8 @@ export function ChatInput({
   workspaceOptions = [],
   workspaceReadOnly = false,
   onSelectWorkspace,
+  sessionModelOverride = null,
+  onSelectModel,
 }: ChatInputProps) {
   const { t } = useTranslation('chat');
   const [input, setInput] = useState('');
@@ -222,24 +254,35 @@ export function ChatInput({
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<QuickAccessSkill | null>(null);
   const [switchingModelRef, setSwitchingModelRef] = useState<string | null>(null);
-  const [optimisticModelRef, setOptimisticModelRef] = useState<string | null>(null);
-  const [providerSnapshotReady, setProviderSnapshotReady] = useState(false);
+  const [enhancingPrompt, setEnhancingPrompt] = useState(false);
+  // Actual model the gateway used for the latest turn (from usage/transcript —
+  // reflects per-turn auto-select overrides, unlike the configured model above).
+  const [micState, setMicState] = useState<'idle' | 'starting' | 'recording' | 'transcribing'>('idle');
+  const [talkOpen, setTalkOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const skillPickerRef = useRef<HTMLDivElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
+  const dictationHandleRef = useRef<DictationHandle | null>(null);
+  const dictationBaseRef = useRef('');
   const gatewayStatus = useGatewayStore((s) => s.status);
   const agents = useAgentsStore((s) => s.agents);
-  const updateAgentModel = useAgentsStore((s) => s.updateAgentModel);
   const defaultModelRef = useAgentsStore((s) => s.defaultModelRef);
+  // Same action the Agents page uses for its auto-select toggle, so the picker
+  // and that page stay one source of truth.
+  const updateAgentAutoSelect = useAgentsStore((s) => s.updateAgentAutoSelect);
   const providerAccounts = useProviderStore((s) => s.accounts);
   const providerStatuses = useProviderStore((s) => s.statuses);
   const providerDefaultAccountId = useProviderStore((s) => s.defaultAccountId);
   const providerVendors = useProviderStore((s) => s.vendors);
-  const providerError = useProviderStore((s) => s.error);
   const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
+  const voiceInputMode = useSettingsStore((s) => s.voiceInputMode);
+  const language = useSettingsStore((s) => s.language);
+  const voiceTranscriptionCap = useSettingsStore((s) => s.voiceCaps?.transcription ?? false);
+  const voiceRealtimeCap = useSettingsStore((s) => s.voiceCaps?.realtime ?? false);
+  const refreshVoiceCapabilities = useSettingsStore((s) => s.refreshVoiceCapabilities);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
@@ -249,6 +292,27 @@ export function ChatInput({
     () => currentAgent?.name ?? currentAgentId,
     [currentAgent, currentAgentId],
   );
+  // ── Sensitive-task origin gate state ──────────────────────────────────────
+  const sensitiveConfirmedRef = useRef(false);
+  const sensitiveResolveRef = useRef<((ok: boolean) => void) | null>(null);
+  const [sensitivePrompt, setSensitivePrompt] = useState<{ tierLabel: string } | null>(null);
+  useEffect(() => {
+    sensitiveConfirmedRef.current = false;
+  }, [currentAgentId]);
+  /** Origins among the user's enabled provider accounts (from catalog ModelMeta). */
+  const availableOrigins = useMemo(() => {
+    const set = new Set<ModelOrigin>();
+    const vendorById = new Map(providerVendors.map((v) => [v.id, v]));
+    for (const acc of providerAccounts) {
+      if (acc.enabled === false) continue;
+      const vendor = vendorById.get(acc.vendorId);
+      for (const m of Object.values(vendor?.models ?? {})) {
+        const o = (m as { origin?: ModelOrigin } | undefined)?.origin;
+        if (o) set.add(o);
+      }
+    }
+    return set;
+  }, [providerAccounts, providerVendors]);
   const modelOptions = useMemo(
     () => buildConfiguredModelOptions(
       providerAccounts,
@@ -258,15 +322,34 @@ export function ChatInput({
     ),
     [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors],
   );
+  // Text-capable subset for the this-conversation-only picker below the
+  // composer — voice/image-generation-only accounts don't make sense there,
+  // but vision-capable chat models (text + image) must stay listed.
+  const textModelOptions = useMemo(
+    () => buildConfiguredModelOptions(
+      providerAccounts,
+      providerStatuses,
+      providerVendors,
+      providerDefaultAccountId,
+      { includeKinds: ['text'] },
+    ),
+    [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors],
+  );
   const configuredModelRef = useMemo(
     () => resolveConfiguredModelRef(currentAgent?.modelRef, defaultModelRef, modelOptions),
     [currentAgent?.modelRef, defaultModelRef, modelOptions],
   );
-  const effectiveModelRef = optimisticModelRef || configuredModelRef;
+  // The temporary, this-conversation-only override (if any) always wins over
+  // the agent's configured model, but is never persisted to openclaw.json.
+  const effectiveModelRef = sessionModelOverride || configuredModelRef;
   const currentModelLabel = useMemo(() => {
     const matchedOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
     return matchedOption?.label || formatModelRefLabel(effectiveModelRef);
   }, [effectiveModelRef, modelOptions]);
+  // Whether this agent routes each turn through the model router instead of
+  // pinning one model. Toggled from the composer's model picker — unlike the
+  // per-conversation override above, this is persisted on the agent.
+  const autoSelectOn = !!currentAgent?.autoSelectModel?.model;
   const mentionableAgents = useMemo(
     () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
     [agents, currentAgentId],
@@ -285,27 +368,21 @@ export function ChatInput({
     );
   }, [quickSkills, skillQuery]);
   const showAgentPicker = mentionableAgents.length > 0;
-  const showModelPicker = modelOptions.length > 1;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
   const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
-  const inputDisabled = disabled;
-  const gatewayUnavailable = !isGatewayUsable;
+  const hasAgents = (agents ?? []).length > 0;
+  const showModelPicker = hasAgents && textModelOptions.length > 0;
+  const inputDisabled = disabled || !isGatewayUsable || !hasAgents || !!switchingModelRef;
   const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        await refreshProviderSnapshot();
-      } finally {
-        if (!cancelled) setProviderSnapshotReady(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    void refreshProviderSnapshot();
   }, [refreshProviderSnapshot]);
+
+  useEffect(() => {
+    if (isGatewayUsable) void refreshVoiceCapabilities();
+  }, [isGatewayUsable, refreshVoiceCapabilities]);
 
   useEffect(() => {
     if (gatewayStatus.state === 'running') return;
@@ -324,21 +401,10 @@ export function ChatInput({
   }, [gatewayStatus.state, refreshProviderSnapshot]);
 
   useEffect(() => {
-    setOptimisticModelRef(null);
-  }, [currentAgent?.modelRef, currentAgentId]);
-
-  useEffect(() => {
     if (workspaceSelectorDisabled) {
       setWorkspaceMenuOpen(false);
     }
   }, [workspaceSelectorDisabled]);
-
-  useEffect(() => {
-    if (!providerSnapshotReady || providerError || !currentAgent || switchingModelRef || optimisticModelRef) return;
-    const override = (currentAgent.overrideModelRef || '').trim();
-    if (!override || isConfiguredModelRefAvailable(override, modelOptions)) return;
-    void updateAgentModel(currentAgent.id, null).catch(() => {});
-  }, [currentAgent, modelOptions, optimisticModelRef, providerError, providerSnapshotReady, switchingModelRef, updateAgentModel]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -470,6 +536,7 @@ export function ChatInput({
       }
       const list = result.skills || [];
       setQuickSkills(list);
+      useSkillWorkflowStore.getState().ingest(list);
       return list;
     } catch (error) {
       setQuickSkills([]);
@@ -500,29 +567,92 @@ export function ChatInput({
     void loadQuickSkills();
   }, [skillPickerOpen, loadQuickSkills]);
 
-  const handleSelectModel = useCallback(async (modelRef: string) => {
+  // Proactively cache workflow-shape skill metadata so the implicit path (model
+  // auto-invokes a skill) can decide whether to show an observed-workflow card
+  // even if the user never opens the skill picker.
+  useEffect(() => {
+    if (!currentAgent) return;
+    void useSkillWorkflowStore.getState().refresh({
+      workspace: currentAgent.workspace,
+      agentDir: currentAgent.agentDir,
+    });
+  }, [currentAgent]);
+
+  const handleSelectModel = useCallback((modelRef: string | null) => {
     if (!currentAgent || switchingModelRef) return;
-    if (modelRef === effectiveModelRef) {
+    if ((modelRef ?? null) === (sessionModelOverride ?? null) && !autoSelectOn) {
       setModelPickerOpen(false);
       textareaRef.current?.focus();
       return;
     }
 
-    const previousModelRef = effectiveModelRef;
-    const desiredOverride = modelRef === (defaultModelRef || '').trim() ? null : modelRef;
-    setSwitchingModelRef(modelRef);
-    setOptimisticModelRef(modelRef);
     setModelPickerOpen(false);
-    try {
-      await updateAgentModel(currentAgent.id, desiredOverride);
-    } catch (error) {
-      setOptimisticModelRef(previousModelRef);
-      toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
-    } finally {
-      setSwitchingModelRef(null);
+    setSwitchingModelRef(modelRef || '__default__');
+    void Promise.resolve()
+      // Picking a concrete model means "use exactly this one", so auto-select
+      // has to come off first — otherwise the router would re-route the next
+      // turn and silently override the choice.
+      .then(() => (autoSelectOn
+        ? updateAgentAutoSelect(currentAgent.id, { autoSelectModel: { model: false } })
+        : undefined))
+      .then(() => onSelectModel?.(modelRef))
+      .catch((error) => {
+        toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
+      })
+      .finally(() => {
+        setSwitchingModelRef(null);
+        textareaRef.current?.focus();
+      });
+  }, [autoSelectOn, currentAgent, onSelectModel, sessionModelOverride, switchingModelRef, t, updateAgentAutoSelect]);
+
+  /**
+   * Hand model choice back to the agent's own router (Agents → model →
+   * auto-select). Persisted on the agent, so it also drops the temporary
+   * per-conversation override — leaving it in place would pin the session to one
+   * model and defeat the router.
+   */
+  const handleSelectAutoModel = useCallback(() => {
+    if (!currentAgent || switchingModelRef) return;
+    if (autoSelectOn && !sessionModelOverride) {
+      setModelPickerOpen(false);
       textareaRef.current?.focus();
+      return;
     }
-  }, [currentAgent, defaultModelRef, effectiveModelRef, switchingModelRef, t, updateAgentModel]);
+
+    setModelPickerOpen(false);
+    setSwitchingModelRef('__auto__');
+    void Promise.resolve()
+      .then(() => (sessionModelOverride ? onSelectModel?.(null) : undefined))
+      .then(() => updateAgentAutoSelect(currentAgent.id, { autoSelectModel: { model: true } }))
+      .catch((error) => {
+        toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
+      })
+      .finally(() => {
+        setSwitchingModelRef(null);
+        textareaRef.current?.focus();
+      });
+  }, [autoSelectOn, currentAgent, onSelectModel, sessionModelOverride, switchingModelRef, t, updateAgentAutoSelect]);
+
+  const handleEnhancePrompt = useCallback(async () => {
+    const draft = input.trim();
+    if (!draft || enhancingPrompt) return;
+    const agentId = targetAgentId ?? currentAgentId ?? undefined;
+    setEnhancingPrompt(true);
+    try {
+      const { system, input: promptInput } = buildEnhancePromptGenPrompt(draft);
+      const res = await hostApi.agents.generateText({ agentId, system, input: promptInput }) as {
+        success: boolean;
+        text?: string;
+        error?: string;
+      };
+      if (!res.success || !res.text) throw new Error(res.error || 'Generation failed');
+      setInput(res.text);
+    } catch (error) {
+      toast.error(t('composer.enhancePromptFailed', { error: String(error) }));
+    } finally {
+      setEnhancingPrompt(false);
+    }
+  }, [currentAgentId, enhancingPrompt, input, t, targetAgentId]);
 
   const handleWorkspaceButtonClick = useCallback(() => {
     if (workspaceSelectorDisabled) return;
@@ -618,6 +748,7 @@ export function ChatInput({
       });
     } catch (err) {
       console.error('[stagePathFiles] Failed to stage files:', err);
+      appToast.appError(err);
       setAttachments(prev => prev.map(a =>
         a.status === 'staging'
           ? { ...a, status: 'error' as const, error: String(err) }
@@ -668,6 +799,7 @@ export function ChatInput({
         ));
       } catch (err) {
         console.error(`[stageBuffer] Error staging ${file.name}:`, err);
+        appToast.appError(err);
         setAttachments(prev => prev.map(a =>
           a.id === tempId
             ? { ...a, status: 'error' as const, error: String(err) }
@@ -712,6 +844,28 @@ export function ChatInput({
       }
     }
 
+    // Sensitive-task origin gate: when auto-select is on and the task is sensitive
+    // but no private-origin model is configured, confirm before sending elsewhere.
+    if (currentAgent?.autoSelectModel?.model) {
+      const sensitive = !!currentAgent.sensitiveMode || SENSITIVE_RE.test(textToSend);
+      if (
+        sensitive
+        && !sensitiveConfirmedRef.current
+        && availableOrigins.size > 0
+        && !availableOrigins.has('private')
+      ) {
+        const nextTier = sensitiveOriginOrder(language).find((o) => availableOrigins.has(o));
+        const proceed = await new Promise<boolean>((resolve) => {
+          sensitiveResolveRef.current = resolve;
+          setSensitivePrompt({ tierLabel: nextTier ? originLabel(nextTier, language) : '' });
+        });
+        setSensitivePrompt(null);
+        sensitiveResolveRef.current = null;
+        if (!proceed) return;
+        sensitiveConfirmedRef.current = true;
+      }
+    }
+
     // Capture values before clearing — clear input immediately for snappy UX,
     // but keep attachments available for the async send
     console.log(`[handleSend] text="${textToSend.substring(0, 50)}", attachments=${attachments.length}, ready=${readyAttachments.length}, sending=${!!attachmentsToSend}`);
@@ -733,12 +887,57 @@ export function ChatInput({
     setPickerOpen(false);
     setSkillPickerOpen(false);
     setWorkspaceMenuOpen(false);
-  }, [input, attachments, canSend, onSend, targetAgentId]);
+  }, [input, attachments, canSend, onSend, targetAgentId, currentAgent, availableOrigins, language]);
 
   const handleStop = useCallback(() => {
     if (!canStop) return;
     onStop?.();
   }, [canStop, onStop]);
+
+  const startDictationCapture = useCallback(async () => {
+    dictationBaseRef.current = input.trim() ? `${input.trimEnd()} ` : '';
+    setMicState('starting');
+    try {
+      const handle = await startDictation({
+        onState: (state) => setMicState(state),
+        onFinal: (text) => {
+          if (text) setInput(`${dictationBaseRef.current}${text}`);
+          setMicState('idle');
+          dictationHandleRef.current = null;
+        },
+        onError: (error) => {
+          toast.error(t('voice.dictationError', { error: String(error) }));
+          setMicState('idle');
+          dictationHandleRef.current = null;
+        },
+      });
+      dictationHandleRef.current = handle;
+    } catch (error) {
+      setMicState('idle');
+      dictationHandleRef.current = null;
+      toast.error(t('voice.dictationStartFailed', { error: String(error) }));
+    }
+  }, [input, t]);
+
+  const handleMicClick = useCallback(() => {
+    if (inputDisabled || sending) return;
+    if (voiceInputMode === 'conversation') {
+      setTalkOpen(true);
+      return;
+    }
+    if (micState === 'recording') {
+      void dictationHandleRef.current?.stop();
+    } else if (micState === 'idle') {
+      void startDictationCapture();
+    }
+  }, [inputDisabled, micState, sending, startDictationCapture, voiceInputMode]);
+
+  useEffect(() => {
+    return () => {
+      dictationHandleRef.current?.cancel();
+      dictationHandleRef.current = null;
+    };
+  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -978,7 +1177,13 @@ export function ChatInput({
                 isComposingRef.current = false;
               }}
               onPaste={handlePaste}
-              placeholder={inputDisabled && gatewayUnavailable ? t('composer.gatewayDisconnectedPlaceholder') : ''}
+              placeholder={
+                !hasAgents
+                  ? t('composer.noAgentPlaceholder')
+                  : inputDisabled
+                    ? t('composer.gatewayDisconnectedPlaceholder')
+                    : ''
+              }
               disabled={inputDisabled}
               data-testid="chat-composer-input"
               className={cn(
@@ -1025,7 +1230,7 @@ export function ChatInput({
                   <AtSign className="h-3.5 w-3.5" />
                 </Button>
                 {pickerOpen && (
-                  <div className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                  <div className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-background p-1.5 shadow-xl dark:border-white/10">
                     <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
                       {t('composer.agentPickerTitle', { currentAgent: currentAgentName })}
                     </div>
@@ -1065,11 +1270,11 @@ export function ChatInput({
                 disabled={inputDisabled || sending}
                 title={t('composer.pickSkill')}
               >
-                <span>{t('composer.skillButton')}</span>
+                <span className="text-meta font-medium leading-none">{t('composer.skillButton')}</span>
                 <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')} />
               </button>
               {skillPickerOpen && (
-                <div className="absolute left-0 bottom-full z-20 mb-2 w-80 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                <div className="absolute left-0 bottom-full z-20 mb-2 w-80 overflow-hidden rounded-2xl border border-black/10 bg-background p-1.5 shadow-xl dark:border-white/10">
                   <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
                     <Search className="h-3.5 w-3.5 text-muted-foreground" />
                     <input
@@ -1152,48 +1357,158 @@ export function ChatInput({
                   {switchingModelRef ? (
                     <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
                   ) : null}
-                  <span className="truncate">{currentModelLabel}</span>
+                  {/* Same span classes as the skill button's label: `text-meta`
+                      on the button itself is dropped by tailwind-merge (the
+                      later `text-*` colour class wins), so the 13px size has to
+                      be re-applied here or the model name renders at 16px. */}
+                  <span className="truncate text-meta font-medium leading-none">
+                    {autoSelectOn ? t('composer.autoModelShort') : currentModelLabel}
+                  </span>
                   <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', modelPickerOpen && 'rotate-180')} />
                 </button>
                 {modelPickerOpen && (
                   <div
-                    className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
+                    className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-background p-1.5 shadow-xl dark:border-white/10"
                     data-testid="chat-model-picker-menu"
                   >
                     <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
                       {t('composer.modelPickerTitle')}
                     </div>
                     <div className="max-h-64 overflow-y-auto">
-                      {modelOptions.map((option) => (
+                      {/* Hand routing back to the agent — sits above the
+                          concrete models because it overrides all of them. */}
+                      <button
+                        type="button"
+                        onClick={handleSelectAutoModel}
+                        className={cn(
+                          'flex w-full items-start justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors',
+                          autoSelectOn ? 'bg-primary/10 text-foreground' : 'hover:bg-black/5 dark:hover:bg-white/5',
+                        )}
+                        data-testid="chat-model-picker-option-auto"
+                      >
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span className="flex items-center gap-2">
+                            <Sparkles className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            <span className="truncate">{t('composer.autoModelOption')}</span>
+                          </span>
+                          <span className="text-tiny font-normal text-muted-foreground/80">
+                            {t('composer.autoModelOptionHint')}
+                          </span>
+                        </span>
+                        {autoSelectOn && (
+                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                        )}
+                      </button>
+                      {textModelOptions.map((option) => (
                         <button
                           key={option.modelRef}
                           type="button"
-                          onClick={() => void handleSelectModel(option.modelRef)}
+                          onClick={() => handleSelectModel(option.modelRef)}
                           className={cn(
                             'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors',
-                            option.modelRef === effectiveModelRef ? 'bg-primary/10 text-foreground' : 'hover:bg-black/5 dark:hover:bg-white/5'
+                            !autoSelectOn && option.modelRef === effectiveModelRef ? 'bg-primary/10 text-foreground' : 'hover:bg-black/5 dark:hover:bg-white/5'
                           )}
                           data-testid={`chat-model-picker-option-${option.label}`}
                         >
-                          <span className="truncate">{option.label}</span>
-                          {option.modelRef === effectiveModelRef && (
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="truncate">{option.label}</span>
+                            {option.modelRef === configuredModelRef && (
+                              <span className="shrink-0 rounded-full border border-black/10 px-1.5 py-0.5 text-2xs font-medium text-muted-foreground dark:border-white/10">
+                                {t('composer.defaultModel')}
+                              </span>
+                            )}
+                            {/* Only worth calling out as "temporary" when it
+                                actually differs from the agent's default —
+                                otherwise the row already reads "default". */}
+                            {sessionModelOverride
+                              && option.modelRef === sessionModelOverride
+                              && sessionModelOverride !== configuredModelRef && (
+                              <span className="shrink-0 rounded-full border border-primary/30 px-1.5 py-0.5 text-2xs font-medium text-primary">
+                                {t('composer.temporaryModel')}
+                              </span>
+                            )}
+                          </span>
+                          {!autoSelectOn && option.modelRef === effectiveModelRef && (
                             <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                           )}
                         </button>
                       ))}
                     </div>
+                    {sessionModelOverride && (
+                      <button
+                        type="button"
+                        onClick={() => handleSelectModel(null)}
+                        data-testid="chat-model-picker-reset-default"
+                        className="mt-1 flex w-full items-center gap-2 rounded-xl border-t border-black/5 px-3 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:border-white/5 dark:hover:bg-white/5"
+                      >
+                        {t('composer.resetToDefaultModel')}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
             )}
 
-            {/* Send Button — pushed to the right */}
+            {/* Right-hand action group: voice input, enhance prompt, send.
+                `ml-auto` sits on the first of the group so all three stay
+                pinned to the right edge of the action row. */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                'ml-auto shrink-0 h-8 w-8 rounded-lg transition-colors',
+                micState === 'recording'
+                  ? 'text-red-500 bg-red-500/10 hover:bg-red-500/20'
+                  : 'text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground',
+              )}
+              onClick={handleMicClick}
+              disabled={inputDisabled || sending || (voiceInputMode === 'conversation' ? !voiceRealtimeCap : !voiceTranscriptionCap)}
+              title={
+                (voiceInputMode === 'conversation' ? !voiceRealtimeCap : !voiceTranscriptionCap)
+                  ? (voiceInputMode === 'conversation'
+                    ? t('voice.realtimeNotConfigured')
+                    : t('voice.transcriptionNotConfigured'))
+                  : voiceInputMode === 'conversation'
+                    ? t('voice.startTalk')
+                    : micState === 'recording'
+                      ? t('voice.stopDictation')
+                      : micState === 'transcribing'
+                        ? t('voice.transcribing')
+                        : t('voice.startDictation')
+              }
+              data-testid="chat-composer-mic"
+            >
+              {micState === 'starting' || micState === 'transcribing' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Mic className="h-3.5 w-3.5" />
+              )}
+            </Button>
+
+            {/* Enhance Prompt */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="shrink-0 h-8 w-8 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors"
+              onClick={() => void handleEnhancePrompt()}
+              disabled={inputDisabled || sending || enhancingPrompt || !input.trim()}
+              title={t('composer.enhancePrompt')}
+              data-testid="chat-composer-enhance-prompt"
+            >
+              {enhancingPrompt ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+            </Button>
+
+            {/* Send Button */}
             <Button
               onClick={sending ? handleStop : handleSend}
               disabled={sending ? !canStop : !canSend}
               size="icon"
               data-testid="chat-composer-send"
-              className={`ml-auto shrink-0 h-8 w-8 rounded-lg transition-colors ${
+              className={`shrink-0 h-8 w-8 rounded-lg transition-colors ${
                 (sending || canSend)
                   ? 'bg-black/5 dark:bg-white/10 text-foreground hover:bg-black/10 dark:hover:bg-white/20'
                   : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
@@ -1306,8 +1621,10 @@ export function ChatInput({
                   state: isGatewayUsable
                     ? t('composer.gatewayConnected')
                     : gatewayStatus.state === 'running'
-                      ? t('composer.gatewayStarting')
-                      : gatewayStatus.state,
+                      ? t('common:status.starting')
+                      : t(`common:status.${gatewayStatus.state}`),
+                  port: gatewayStatus.port,
+                  pid: gatewayStatus.pid ? `| pid: ${gatewayStatus.pid}` : '',
                 })}
               </span>
               {chatComposerStatusComponents.map((Component, index) => (
@@ -1330,6 +1647,20 @@ export function ChatInput({
           </div>
         </div>
       </div>
+      {talkOpen && <TalkOverlay onClose={() => setTalkOpen(false)} />}
+      <ConfirmDialog
+        open={!!sensitivePrompt}
+        title={t('composer.sensitiveConfirmTitle', '敏感任务提醒')}
+        message={t('composer.sensitiveConfirmMessage', {
+          tier: sensitivePrompt?.tierLabel ?? '',
+          defaultValue: '未配置私有模型。此为敏感/机密任务，是否继续发送到「{{tier}}」来源的模型？',
+        })}
+        confirmLabel={t('composer.sensitiveConfirmContinue', '继续发送')}
+        cancelLabel={t('composer.sensitiveConfirmAbort', '中止')}
+        variant="destructive"
+        onConfirm={() => sensitiveResolveRef.current?.(true)}
+        onCancel={() => sensitiveResolveRef.current?.(false)}
+      />
     </div>
   );
 }
@@ -1347,46 +1678,51 @@ function AttachmentPreview({
   const isImage = attachment.mimeType.startsWith('image/') && attachment.preview;
 
   return (
-    <div className="relative group rounded-lg overflow-hidden border border-border">
-      {isImage ? (
-        // Image thumbnail
-        <div className="w-16 h-16">
-          <img
-            src={attachment.preview!}
-            alt={attachment.fileName}
-            className="w-full h-full object-cover"
-          />
-        </div>
-      ) : (
-        // Generic file card
-        <div className="flex items-center gap-2 px-3 py-2 bg-surface-input/50 max-w-[200px]">
-          <FileIcon mimeType={attachment.mimeType} className="h-5 w-5 shrink-0 text-muted-foreground" />
-          <div className="min-w-0 overflow-hidden">
-            <p className="text-xs font-medium truncate">{attachment.fileName}</p>
-            <p className="text-2xs text-muted-foreground">
-              {attachment.mimeType === DIRECTORY_MIME_TYPE
-                ? t('composer.folderAttachment')
-                : attachment.fileSize > 0
-                  ? formatFileSize(attachment.fileSize)
-                  : '...'}
-            </p>
+    <div className="relative group">
+      <div className="relative rounded-lg overflow-hidden border border-border">
+        {isImage ? (
+          // Image thumbnail
+          <div className="w-16 h-16">
+            <img
+              src={attachment.preview!}
+              alt={attachment.fileName}
+              className="w-full h-full object-cover"
+            />
           </div>
-        </div>
-      )}
+        ) : (
+          // Generic file card
+          <div className="flex items-center gap-2 px-3 py-2 bg-surface-input/50 max-w-[200px]">
+            <FileIcon mimeType={attachment.mimeType} className="h-5 w-5 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 overflow-hidden">
+              <p className="text-xs font-medium truncate">{attachment.fileName}</p>
+              <p className="text-2xs text-muted-foreground">
+                {attachment.mimeType === DIRECTORY_MIME_TYPE
+                  ? t('composer.folderAttachment')
+                  : attachment.fileSize > 0
+                    ? formatFileSize(attachment.fileSize)
+                    : '...'}
+              </p>
+            </div>
+          </div>
+        )}
 
-      {/* Staging overlay */}
-      {attachment.status === 'staging' && (
-        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-          <Loader2 className="h-4 w-4 text-white animate-spin" />
-        </div>
-      )}
+        {/* Staging overlay */}
+        {attachment.status === 'staging' && (
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+            <Loader2 className="h-4 w-4 text-white animate-spin" />
+          </div>
+        )}
 
-      {/* Error overlay */}
-      {attachment.status === 'error' && (
-        <div className="absolute inset-0 bg-destructive/20 flex items-center justify-center">
-          <span className="text-2xs text-destructive font-medium px-1">Error</span>
-        </div>
-      )}
+        {/* Error overlay */}
+        {attachment.status === 'error' && (
+          <div
+            className="absolute inset-0 bg-destructive/20 flex items-center justify-center"
+            title={attachment.error}
+          >
+            <span className="text-2xs text-destructive font-medium px-1">Error</span>
+          </div>
+        )}
+      </div>
 
       {/* Remove button */}
       <button

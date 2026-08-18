@@ -1,4 +1,4 @@
-import { realpath, stat } from 'node:fs/promises';
+import { mkdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, sep } from 'node:path';
 import { expandPath } from '../utils/paths';
 
@@ -25,7 +25,13 @@ function isInside(child: string, parent: string): boolean {
 export class AcpSessionAccessRegistry {
   private activeGrant: AcpSessionAccessContext | null = null;
 
-  async prepareGrant(input: AcpSessionAccessContext): Promise<AcpSessionAccessContext> {
+  async prepareGrant(
+    input: AcpSessionAccessContext,
+    options: { createWorkspaceRoot?: boolean } = {},
+  ): Promise<AcpSessionAccessContext> {
+    if (options.createWorkspaceRoot) {
+      await mkdir(expandPath(input.workspaceRoot), { recursive: true });
+    }
     const workspaceRoot = await canonicalDirectory(input.workspaceRoot, 'ACP workspace root');
     const executionCwd = await canonicalDirectory(input.executionCwd, 'ACP execution cwd');
     if (!isInside(executionCwd, workspaceRoot)) {

@@ -4,6 +4,9 @@
  */
 import { Tray, Menu, BrowserWindow, app, nativeImage } from 'electron';
 import { join } from 'path';
+import enCommon from '@shared/i18n/locales/en/common.json';
+
+const appName = enCommon.appName;
 
 let tray: Tray | null = null;
 
@@ -57,7 +60,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
   tray = new Tray(icon);
   
   // Set tooltip
-  tray.setToolTip('ClawX - AI Assistant');
+  tray.setToolTip(`${appName} - AI Assistant`);
   
   const showWindow = () => {
     if (mainWindow.isDestroyed()) return;
@@ -68,7 +71,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
   // Create context menu
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Show ClawX',
+      label: `Show ${appName}`,
       click: showWindow,
     },
     {
@@ -122,7 +125,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
       type: 'separator',
     },
     {
-      label: 'Quit ClawX',
+      label: `Quit ${appName}`,
       click: () => {
         app.quit();
       },
@@ -157,7 +160,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
  */
 export function updateTrayStatus(status: string): void {
   if (tray) {
-    tray.setToolTip(`ClawX - ${status}`);
+    tray.setToolTip(`${appName} - ${status}`);
   }
 }
 

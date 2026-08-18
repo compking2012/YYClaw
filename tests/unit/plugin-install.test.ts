@@ -105,6 +105,7 @@ vi.mock('electron', () => ({
 
 vi.mock('@electron/utils/logger', () => ({
   logger: {
+    debug: vi.fn(),
     warn: mockLoggerWarn,
     info: mockLoggerInfo,
   },
@@ -415,7 +416,7 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('replaces legacy Feishu npm ownership with the ClawX path mirror', async () => {
-    const targetDir = '/home/test/.openclaw/extensions/feishu-openclaw-plugin';
+    const targetDir = '/home/test/.openclaw/extensions/openclaw-lark';
     configState.authoritative = {
       gatewayOnly: true,
       plugins: {
@@ -439,7 +440,7 @@ describe('plugin installer diagnostics', () => {
     });
 
     const { syncTrustedOfficialPluginInstallRecord } = await import('@electron/utils/plugin-install');
-    await expect(syncTrustedOfficialPluginInstallRecord('feishu-openclaw-plugin', targetDir)).resolves.toBe(true);
+    await expect(syncTrustedOfficialPluginInstallRecord('openclaw-lark', targetDir)).resolves.toBe(true);
 
     expect(configState.authoritative).toEqual({ gatewayOnly: true, plugins: {} });
     expect(mockMutateOpenClawConfig).toHaveBeenCalledOnce();
@@ -515,5 +516,74 @@ describe('plugin installer diagnostics', () => {
     const { repairPluginOpenClawPeerLink } = await import('@electron/utils/plugin-install');
     expect(repairPluginOpenClawPeerLink(targetDir, openclawDir)).toBe(true);
     expect(mockSymlinkSync).toHaveBeenCalledWith(openclawDir, linkPath, 'junction');
+  });
+
+  it('accepts a junction whose realpath cannot be resolved by reading the link target', async () => {
+    // Windows junctions can fail realpathSync, which used to fail the
+    // post-create audit on every launch and rebuild the link each time.
+    const targetDir = '/home/test/.openclaw/extensions/openclaw-lark';
+    const openclawDir = '/app/resources/openclaw';
+    const nodeModulesDir = `${targetDir}/node_modules`;
+    const linkPath = `${nodeModulesDir}/openclaw`;
+
+    mockExistsSync.mockImplementation((input: string) => String(input) === `${openclawDir}/package.json`);
+    mockReadFileSync.mockImplementation((input: string) => (
+      String(input) === `${targetDir}/package.json`
+        ? JSON.stringify({ peerDependencies: { openclaw: '>=2026.7.1' } })
+        : '{}'
+    ));
+    mockLstatSync.mockImplementation((input: string) => {
+      if (String(input) === nodeModulesDir) {
+        return { isDirectory: () => true, isSymbolicLink: () => false };
+      }
+      const error = new Error('missing') as NodeJS.ErrnoException;
+      error.code = 'ENOENT';
+      throw error;
+    });
+    mockRealpathSync.mockImplementation((input: string) => {
+      if (String(input) === linkPath) throw new Error('EIO on junction');
+      return String(input);
+    });
+    // Junctions report the NT path with a trailing separator.
+    mockReadlinkSync.mockImplementation((input: string) => {
+      if (String(input) === linkPath) return `${openclawDir}/`;
+      const error = new Error('not a link') as NodeJS.ErrnoException;
+      error.code = 'EINVAL';
+      throw error;
+    });
+
+    const { repairPluginOpenClawPeerLink } = await import('@electron/utils/plugin-install');
+    expect(repairPluginOpenClawPeerLink(targetDir, openclawDir)).toBe(true);
+    // Already correct — nothing to recreate, and no audit warning.
+    expect(mockSymlinkSync).not.toHaveBeenCalled();
+    expect(mockLoggerWarn).not.toHaveBeenCalledWith(
+      expect.stringContaining('peer link audit failed'),
+    );
+  });
+
+  it('never recursive-deletes the peer link when removing a plugin mirror', async () => {
+    const targetDir = '/home/test/.openclaw/extensions/clawx-openai-image';
+    const openclawDir = '/app/resources/openclaw';
+    const linkPath = `${targetDir}/node_modules/openclaw`;
+
+    mockLstatSync.mockImplementation((input: string) => {
+      if (String(input) === linkPath) {
+        return { isDirectory: () => false, isSymbolicLink: () => true };
+      }
+      const error = new Error('missing') as NodeJS.ErrnoException;
+      error.code = 'ENOENT';
+      throw error;
+    });
+    mockRealpathSync.mockImplementation((input: string) => (
+      String(input) === linkPath ? openclawDir : String(input)
+    ));
+
+    const { removePluginMirrorDir } = await import('@electron/utils/plugin-install');
+    removePluginMirrorDir(targetDir);
+
+    // The link is stripped with rmdir/unlink, and rmSync is never used at all:
+    // its recursive mode follows junctions on Windows.
+    expect(mockUnlinkSync).toHaveBeenCalledWith(linkPath);
+    expect(mockRmSync).not.toHaveBeenCalled();
   });
 });

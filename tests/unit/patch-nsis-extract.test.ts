@@ -8,7 +8,10 @@ import {
   patchNsisExtractTemplate,
   restoreExtractAppPackageTemplate,
 } from '../../scripts/patch-nsis-extract.mjs';
-import { patchNsisUninstallTemplate } from '../../scripts/patch-nsis-uninstall.mjs';
+import {
+  patchNsisUninstallTemplate,
+  patchNsisUninstallerCheckTemplate,
+} from '../../scripts/patch-nsis-uninstall.mjs';
 
 const FIXTURES = join(fileURLToPath(new URL('.', import.meta.url)), '../fixtures');
 
@@ -135,5 +138,28 @@ describe('patch-nsis-uninstall', () => {
     expect(result).toContain('Skipping legacy uninstaller');
     expect(result).not.toContain('MessageBox MB_RETRYCANCEL');
     expect(patchNsisUninstallTemplate(target)).toBe(true);
+  });
+
+  it('replaces uninstaller CHECK_APP_RUNNING with a label-safe app check', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawx-patch-nsis-'));
+    const target = join(tempDir, 'uninstaller.nsh');
+    writeFileSync(target, [
+      'Function un.checkAppRunning',
+      '  !insertmacro CHECK_APP_RUNNING',
+      'FunctionEnd',
+      '',
+      'Function un.onInit',
+      '  call un.checkAppRunning',
+      'FunctionEnd',
+      '',
+    ].join('\n'), 'utf8');
+
+    expect(patchNsisUninstallerCheckTemplate(target)).toBe(true);
+
+    const result = readFileSync(target, 'utf8');
+    expect(result).toContain('ClawX-patched: uninstaller check without CHECK_APP_RUNNING');
+    expect(result).not.toContain('!insertmacro CHECK_APP_RUNNING');
+    expect(result).not.toContain('doStopProcess:');
+    expect(patchNsisUninstallerCheckTemplate(target)).toBe(true);
   });
 });

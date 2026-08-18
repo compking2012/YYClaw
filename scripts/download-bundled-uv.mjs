@@ -7,6 +7,37 @@ const UV_VERSION = '0.10.0';
 const BASE_URL = `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}`;
 const OUTPUT_BASE = path.join(ROOT_DIR, 'resources', 'bin');
 
+// Use proxy from environment (e.g. HTTPS_PROXY=http://127.0.0.1:7890) so fetch works behind proxy.
+// Prefer http(s) URLs; undici ProxyAgent does not support socks5.
+function getProxy() {
+  const candidates = [
+    process.env.HTTPS_PROXY,
+    process.env.https_proxy,
+    process.env.HTTP_PROXY,
+    process.env.http_proxy,
+    process.env.all_proxy,
+    process.env.ALL_PROXY,
+  ].filter(Boolean);
+  const proxy = candidates.find((p) => p.startsWith('http:') || p.startsWith('https:'));
+  return proxy || null;
+}
+
+async function downloadWithProxy(url) {
+  const proxy = getProxy();
+  if (proxy) {
+    const { fetch, ProxyAgent } = await import('undici');
+    const agent = new ProxyAgent(proxy);
+    const response = await fetch(url, { dispatcher: agent });
+    if (!response.ok) throw new Error(`Failed to download: ${response.statusText}`);
+    const buffer = await response.arrayBuffer();
+    return Buffer.from(buffer);
+  }
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to download: ${response.statusText}`);
+  const buffer = await response.arrayBuffer();
+  return Buffer.from(buffer);
+}
+
 // Mapping Node platforms/archs to uv release naming
 const TARGETS = {
   'darwin-arm64': {
@@ -38,7 +69,7 @@ const TARGETS = {
 // Platform groups for building multi-arch packages
 const PLATFORM_GROUPS = {
   'mac': ['darwin-x64', 'darwin-arm64'],
-  'win': ['win32-x64', 'win32-arm64'],
+  'win': ['win32-x64'],
   'linux': ['linux-x64', 'linux-arm64']
 };
 
@@ -54,6 +85,16 @@ async function setupTarget(id) {
   const archivePath = path.join(ROOT_DIR, target.filename);
   const downloadUrl = `${BASE_URL}/${target.filename}`;
 
+  const versionFile = path.join(targetDir, '.version');
+  const destBin = path.join(targetDir, target.binName);
+  if (await fs.pathExists(destBin) && await fs.pathExists(versionFile)) {
+    const existingVersion = await fs.readFile(versionFile, 'utf8');
+    if (existingVersion.trim() === UV_VERSION) {
+      echo(chalk.green`✅ uv ${UV_VERSION} for ${id} already exists, skipping download.`);
+      return;
+    }
+  }
+
   echo(chalk.blue`\n📦 Setting up uv for ${id}...`);
 
   // Cleanup & Prep
@@ -63,12 +104,10 @@ async function setupTarget(id) {
   await fs.ensureDir(tempDir);
 
   try {
-    // Download
     echo`⬇️ Downloading: ${downloadUrl}`;
-    const response = await fetch(downloadUrl);
-    if (!response.ok) throw new Error(`Failed to download: ${response.statusText}`);
-    const buffer = await response.arrayBuffer();
-    await fs.writeFile(archivePath, Buffer.from(buffer));
+    if (getProxy()) echo(chalk.gray`   (using proxy ${getProxy()})`);
+    const buffer = await downloadWithProxy(downloadUrl);
+    await fs.writeFile(archivePath, buffer);
 
     // Extract
     echo`📂 Extracting...`;
@@ -107,6 +146,8 @@ async function setupTarget(id) {
       await fs.chmod(destBin, 0o755);
     }
 
+    await fs.writeFile(versionFile, UV_VERSION);
+
     echo(chalk.green`✅ Success: ${destBin}`);
   } finally {
     // Cleanup
@@ -120,7 +161,6 @@ const downloadAll = argv.all;
 const platform = argv.platform;
 
 if (downloadAll) {
-  // Download for all platforms
   echo(chalk.cyan`🌐 Downloading uv binaries for ALL supported platforms...`);
   for (const id of Object.keys(TARGETS)) {
     await setupTarget(id);

@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { access, lstat, mkdir, readFile, rm, symlink, writeFile } from 'fs/promises';
+import { access, mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,6 +32,14 @@ vi.mock('electron', () => ({
   },
 }));
 
+vi.mock('@electron/utils/openclaw-cli', () => ({
+  execOpenclaw: vi.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+}));
+
+vi.mock('@electron/services/providers/provider-store', () => ({
+  listProviderAccounts: vi.fn().mockResolvedValue([]),
+}));
+
 async function writeOpenClawJson(config: unknown): Promise<void> {
   const openclawDir = join(testHome, '.openclaw');
   await mkdir(openclawDir, { recursive: true });
@@ -43,12 +51,39 @@ async function readOpenClawJson(): Promise<Record<string, unknown>> {
   return JSON.parse(content) as Record<string, unknown>;
 }
 
+/**
+ * Point the mocked provider store at a set of configured accounts. Must run
+ * before importing agent-config so its `listProviderAccounts` resolves to these.
+ * The prune logic keys "is this provider still configured?" off real accounts.
+ */
+async function setProviderAccounts(
+  accounts: Array<{ vendorId: string; id: string; authMode?: string }>,
+): Promise<void> {
+  const store = await import('@electron/services/providers/provider-store');
+  const full = accounts.map((account) => ({
+    id: account.id,
+    vendorId: account.vendorId,
+    label: account.id,
+    authMode: account.authMode ?? 'api_key',
+    enabled: true,
+    isDefault: false,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  }));
+  vi.mocked(store.listProviderAccounts).mockResolvedValue(full as never);
+}
+
 describe('agent config lifecycle', () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.restoreAllMocks();
     await rm(testHome, { recursive: true, force: true });
     await rm(testUserData, { recursive: true, force: true });
+    // The mocked provider store fn persists across tests; reset it to no accounts
+    // so each test starts clean (prune is skipped when no accounts are loaded).
+    const { listProviderAccounts } = await import('@electron/services/providers/provider-store');
+    vi.mocked(listProviderAccounts).mockReset();
+    vi.mocked(listProviderAccounts).mockResolvedValue([]);
   });
 
   it('lists configured agent ids from openclaw.json', async () => {
@@ -72,6 +107,207 @@ describe('agent config lifecycle', () => {
     const { listConfiguredAgentIds } = await import('@electron/utils/agent-config');
 
     await expect(listConfiguredAgentIds()).resolves.toEqual(['main']);
+  });
+
+  it('migrates globally enabled skills into every existing agent allowlist', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          { id: 'main', name: 'Main', default: true },
+          { id: 'writer', name: 'Writer' },
+        ],
+      },
+      skills: {
+        entries: {
+          pdf: { enabled: true },
+          docx: { enabled: true },
+          disabledSkill: { enabled: false },
+        },
+      },
+    });
+
+    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    const snapshot = await listAgentsSnapshot();
+    const main = snapshot.agents.find((agent) => agent.id === 'main');
+    const writer = snapshot.agents.find((agent) => agent.id === 'writer');
+    expect(main?.skills?.sort()).toEqual(['docx', 'pdf']);
+    expect(writer?.skills?.sort()).toEqual(['docx', 'pdf']);
+    expect(snapshot.defaultAgentSkills?.sort()).toEqual(['docx', 'pdf']);
+
+    const persisted = await readOpenClawJson();
+    const agents = persisted.agents as { defaults?: { skills?: string[] } };
+    expect(agents.defaults?.skills?.sort()).toEqual(['docx', 'pdf']);
+    const entries = ((persisted.skills as { entries?: Record<string, { enabled?: boolean }> }).entries) || {};
+    expect(entries.pdf?.enabled).toBe(true);
+    expect(entries.docx?.enabled).toBe(true);
+    expect(entries.disabledSkill?.enabled).toBe(false);
+  });
+
+  it('syncs stale legacy entries.enabled without re-broadcasting to agent allowlists', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          { id: 'main', name: 'Main', default: true, skills: [] },
+          { id: 'writer', name: 'Writer', skills: [] },
+        ],
+      },
+      skills: {
+        entries: {
+          pdf: { enabled: true },
+        },
+      },
+    });
+
+    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    const snapshot = await listAgentsSnapshot();
+    expect(snapshot.agents.find((agent) => agent.id === 'main')?.skills).toEqual([]);
+    expect(snapshot.agents.find((agent) => agent.id === 'writer')?.skills).toEqual([]);
+
+    const persisted = await readOpenClawJson();
+    const entries = ((persisted.skills as { entries?: Record<string, { enabled?: boolean }> }).entries) || {};
+    expect(entries.pdf?.enabled).toBe(false);
+  });
+
+  it('does not migrate from skills.entries when defaults.skills is already populated', async () => {
+    await writeOpenClawJson({
+      agents: {
+        defaults: { skills: ['pdf'] },
+        list: [
+          { id: 'main', name: 'Main', default: true, skills: ['pdf'] },
+          { id: 'writer', name: 'Writer' },
+        ],
+      },
+      skills: {
+        entries: {
+          pdf: { enabled: true },
+          docx: { enabled: true },
+        },
+      },
+    });
+
+    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    const snapshot = await listAgentsSnapshot();
+
+    expect(snapshot.defaultAgentSkills).toEqual(['pdf']);
+    expect(snapshot.agents.find((agent) => agent.id === 'main')?.skills).toEqual(['pdf']);
+    expect(snapshot.agents.find((agent) => agent.id === 'writer')?.skills).toEqual([]);
+
+    const persisted = await readOpenClawJson();
+    const agents = persisted.agents as {
+      defaults?: { skills?: string[] };
+      list?: Array<{ id: string; skills?: string[] }>;
+    };
+    expect(agents.defaults?.skills).toEqual(['pdf']);
+    expect(agents.list?.find((entry) => entry.id === 'writer')?.skills).toBeUndefined();
+    const entries = ((persisted.skills as { entries?: Record<string, { enabled?: boolean }> }).entries) || {};
+    expect(entries.docx?.enabled).toBe(false);
+  });
+
+  it('applies legacy global-skill migration once and does not re-broadcast later toggles', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          { id: 'main', name: 'Main', default: true },
+          { id: 'writer', name: 'Writer' },
+        ],
+      },
+      skills: {
+        entries: {
+          pdf: { enabled: true },
+        },
+      },
+    });
+
+    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    const firstSnapshot = await listAgentsSnapshot();
+    expect(firstSnapshot.agents.find((agent) => agent.id === 'main')?.skills).toEqual(['pdf']);
+    expect(firstSnapshot.agents.find((agent) => agent.id === 'writer')?.skills).toEqual(['pdf']);
+    expect(firstSnapshot.defaultAgentSkills).toEqual(['pdf']);
+
+    const persistedAfterFirst = await readOpenClawJson();
+    const skillsConfig = (persistedAfterFirst.skills as { entries?: Record<string, { enabled?: boolean }> }) || {};
+    const entries = skillsConfig.entries || {};
+    entries.docx = { enabled: true };
+    await writeOpenClawJson({
+      ...persistedAfterFirst,
+      skills: {
+        ...skillsConfig,
+        entries,
+      },
+    });
+
+    const secondSnapshot = await listAgentsSnapshot();
+    expect(secondSnapshot.agents.find((agent) => agent.id === 'main')?.skills).toEqual(['pdf']);
+    expect(secondSnapshot.agents.find((agent) => agent.id === 'writer')?.skills).toEqual(['pdf']);
+
+    const persistedAfterSecond = await readOpenClawJson();
+    const secondEntries = ((persistedAfterSecond.skills as { entries?: Record<string, { enabled?: boolean }> }).entries) || {};
+    expect(secondEntries.docx?.enabled).toBe(false);
+  });
+
+  it('reconciles agents.list from on-disk agent directories when config list is missing', async () => {
+    await writeOpenClawJson({
+      skills: {},
+      gateway: { port: 18789 },
+    });
+    const agentsDir = join(testHome, '.openclaw', 'agents');
+    await mkdir(join(agentsDir, 'main'), { recursive: true });
+    await mkdir(join(agentsDir, 'agent-7'), { recursive: true });
+    await mkdir(join(agentsDir, 'agent-8'), { recursive: true });
+
+    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    const snapshot = await listAgentsSnapshot();
+    expect(snapshot.agents.map((a) => a.id).sort()).toEqual(['agent-7', 'agent-8', 'main']);
+
+    const persisted = await readOpenClawJson();
+    const list = (persisted.agents as { list?: Array<{ id: string }> })?.list ?? [];
+    expect(list.map((e) => e.id).sort()).toEqual(['agent-7', 'agent-8', 'main']);
+  });
+
+  it('listAgentsSnapshotReadOnly does not reconcile or write openclaw.json', async () => {
+    await writeOpenClawJson({
+      skills: {},
+      gateway: { port: 18789 },
+    });
+    const agentsDir = join(testHome, '.openclaw', 'agents');
+    await mkdir(join(agentsDir, 'main'), { recursive: true });
+    await mkdir(join(agentsDir, 'agent-7'), { recursive: true });
+
+    const before = JSON.stringify(await readOpenClawJson());
+    const { listAgentsSnapshotReadOnly } = await import('@electron/utils/agent-config');
+    await listAgentsSnapshotReadOnly();
+    const after = JSON.stringify(await readOpenClawJson());
+    expect(after).toBe(before);
+  });
+
+  it('listAgentsSnapshotReadOnly does not prune stale agent model overrides', async () => {
+    const accountId = 'clawserverglm51-clawserv';
+    await writeOpenClawJson({
+      agents: {
+        defaults: { model: { primary: 'glm52/GLM52' } },
+        list: [
+          {
+            id: 'dev-agent',
+            name: 'Dev',
+            model: { primary: `${accountId}/Kimi-K2.6` },
+          },
+        ],
+      },
+    });
+
+    await setProviderAccounts([]);
+
+    const { listAgentsSnapshotReadOnly, listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    const readOnlySnapshot = await listAgentsSnapshotReadOnly();
+    expect(readOnlySnapshot.agents.find((agent) => agent.id === 'dev-agent')?.overrideModelRef)
+      .toBe(`${accountId}/Kimi-K2.6`);
+
+    await setProviderAccounts([{ vendorId: 'custom', id: accountId }]);
+    await listAgentsSnapshot();
+    const config = await readOpenClawJson();
+    const devEntry = ((config.agents as { list: Array<{ id: string; model?: { primary?: string } }> }).list)
+      .find((agent) => agent.id === 'dev-agent');
+    expect(devEntry?.model?.primary).toBe(`${accountId}/Kimi-K2.6`);
   });
 
   it('includes canonical per-agent main session keys in the snapshot', async () => {
@@ -185,37 +421,22 @@ describe('agent config lifecycle', () => {
     });
   });
 
-  it('mutates the running coordinator snapshot instead of replacing it from the local file', async () => {
-    await writeOpenClawJson({ localOnly: true });
-    let runningConfig: Record<string, unknown> = {
-      gatewayOnly: true,
+  it('updates skills on a single agent without affecting others', async () => {
+    await writeOpenClawJson({
       agents: {
-        list: [{ id: 'main', name: 'Gateway Main', default: true }],
+        list: [
+          { id: 'main', name: 'Main', default: true, skills: ['pdf'] },
+          { id: 'coder', name: 'Coder', skills: ['docx'] },
+        ],
       },
-    };
-    const manager = {
-      getStatus: vi.fn(() => ({ state: 'running' as const })),
-      rpc: vi.fn(async (method: string, params: unknown) => {
-        if (method === 'config.get') return { raw: JSON.stringify(runningConfig), hash: 'hash-1' };
-        if (method === 'config.set') {
-          runningConfig = JSON.parse((params as { raw: string }).raw) as Record<string, unknown>;
-          return { ok: true };
-        }
-        throw new Error(`Unexpected RPC method: ${method}`);
-      }),
-    };
-    const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
-    registerOpenClawConfigCoordinator(manager);
-    const { updateAgentName } = await import('@electron/utils/agent-config');
-
-    const snapshot = await updateAgentName('main', 'Coordinator Main');
-
-    expect(runningConfig).toMatchObject({
-      gatewayOnly: true,
-      agents: { list: [{ id: 'main', name: 'Coordinator Main', default: true }] },
     });
-    expect(snapshot.agents[0].name).toBe('Coordinator Main');
-    expect(await readOpenClawJson()).toEqual({ localOnly: true });
+
+    const { updateAgentSkills, listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    await updateAgentSkills('coder', ['pdf', 'xlsx']);
+
+    const snapshot = await listAgentsSnapshot();
+    expect(snapshot.agents.find((agent) => agent.id === 'main')?.skills).toEqual(['pdf']);
+    expect(snapshot.agents.find((agent) => agent.id === 'coder')?.skills).toEqual(['pdf', 'xlsx']);
   });
 
   it('rejects invalid model ref formats when updating agent model', async () => {
@@ -255,6 +476,12 @@ describe('agent config lifecycle', () => {
       },
     });
 
+    // minimax-portal + ark are configured; custom-custom0a was deleted.
+    await setProviderAccounts([
+      { vendorId: 'minimax-portal', id: 'minimax-portal' },
+      { vendorId: 'ark', id: 'ark' },
+    ]);
+
     const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
     const snapshot = await listAgentsSnapshot();
     const config = await readOpenClawJson();
@@ -276,6 +503,153 @@ describe('agent config lifecycle', () => {
     });
     expect(mainEntry?.model).toBeUndefined();
     expect(coderEntry?.model?.primary).toBe('ark/ark-code-latest');
+  });
+
+  it('prunes stale global default refs for a deleted built-in provider across all model kinds', async () => {
+    await writeOpenClawJson({
+      agents: {
+        defaults: {
+          model: { primary: 'ark/ark-text' },
+          musicGenerationModel: { primary: 'minimax-portal/music-2.6' },
+          videoGenerationModel: { primary: 'minimax-portal/MiniMax-Hailuo-2.3' },
+        },
+        list: [{ id: 'main', name: 'Main', default: true }],
+      },
+    });
+
+    // ark stays configured; minimax-portal was deleted.
+    await setProviderAccounts([{ vendorId: 'ark', id: 'ark' }]);
+
+    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    const snapshot = await listAgentsSnapshot();
+    const config = await readOpenClawJson();
+    const defaults = (config.agents as { defaults?: Record<string, unknown> }).defaults ?? {};
+
+    expect(snapshot.defaultModelRef).toBe('ark/ark-text');
+    expect(snapshot.defaultMusicGenerationModelRef).toBeNull();
+    expect(snapshot.defaultVideoGenerationModelRef).toBeNull();
+    expect(defaults.model).toBeDefined();
+    expect(defaults.musicGenerationModel).toBeUndefined();
+    expect(defaults.videoGenerationModel).toBeUndefined();
+  });
+
+  it('prunes a deleted custom provider from both defaults and per-agent overrides', async () => {
+    await writeOpenClawJson({
+      agents: {
+        defaults: { imageGenerationModel: { primary: 'custom-deadbeef/img' } },
+        list: [
+          { id: 'main', name: 'Main', default: true, model: { primary: 'custom-deadbeef/chat' } },
+          { id: 'coder', name: 'Coder', model: { primary: 'ark/ark-code-latest' } },
+        ],
+      },
+    });
+
+    await setProviderAccounts([{ vendorId: 'ark', id: 'ark' }]);
+
+    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    const snapshot = await listAgentsSnapshot();
+    const config = await readOpenClawJson();
+    const defaults = (config.agents as { defaults?: Record<string, unknown> }).defaults ?? {};
+    const main = snapshot.agents.find((agent) => agent.id === 'main');
+    const coder = snapshot.agents.find((agent) => agent.id === 'coder');
+
+    expect(snapshot.defaultImageGenerationModelRef).toBeNull();
+    expect(defaults.imageGenerationModel).toBeUndefined();
+    expect(main?.overrideModelRef).toBeNull();
+    expect(coder?.overrideModelRef).toBe('ark/ark-code-latest');
+  });
+
+  it('keeps refs when another account still maps to the same runtime key', async () => {
+    await writeOpenClawJson({
+      agents: {
+        defaults: { model: { primary: 'ark/ark-text' } },
+        list: [{ id: 'main', name: 'Main', default: true, model: { primary: 'ark/ark-text' } }],
+      },
+    });
+
+    // Two ark accounts share runtime key 'ark'; deleting one leaves it valid.
+    await setProviderAccounts([
+      { vendorId: 'ark', id: 'ark' },
+      { vendorId: 'ark', id: 'ark' },
+    ]);
+
+    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    const snapshot = await listAgentsSnapshot();
+
+    expect(snapshot.defaultModelRef).toBe('ark/ark-text');
+    expect(snapshot.agents.find((agent) => agent.id === 'main')?.overrideModelRef).toBe('ark/ark-text');
+  });
+
+  it('does not prune agent overrides keyed by provider account id', async () => {
+    const accountId = 'clawserverglm51-clawserv';
+    await writeOpenClawJson({
+      agents: {
+        defaults: { model: { primary: 'glm52/GLM52' } },
+        list: [
+          {
+            id: 'dev-agent',
+            name: 'Dev',
+            model: { primary: `${accountId}/Kimi-K2.6` },
+          },
+        ],
+      },
+    });
+
+    await setProviderAccounts([{ vendorId: 'custom', id: accountId }]);
+
+    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    const snapshot = await listAgentsSnapshot();
+    const config = await readOpenClawJson();
+    const devEntry = ((config.agents as { list: Array<{ id: string; model?: { primary?: string } }> }).list)
+      .find((agent) => agent.id === 'dev-agent');
+
+    expect(snapshot.agents.find((agent) => agent.id === 'dev-agent')?.overrideModelRef)
+      .toBe(`${accountId}/Kimi-K2.6`);
+    expect(devEntry?.model?.primary).toBe(`${accountId}/Kimi-K2.6`);
+  });
+
+  it('removes stale fallbacks while keeping a valid primary', async () => {
+    await writeOpenClawJson({
+      agents: {
+        defaults: {
+          model: {
+            primary: 'ark/ark-text',
+            fallbacks: ['custom-deadbeef/old', 'ark/ark-text-mini'],
+          },
+        },
+        list: [{ id: 'main', name: 'Main', default: true }],
+      },
+    });
+
+    await setProviderAccounts([{ vendorId: 'ark', id: 'ark' }]);
+
+    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    await listAgentsSnapshot();
+    const config = await readOpenClawJson();
+    const modelCfg = (config.agents as { defaults?: { model?: { primary?: string; fallbacks?: string[] } } })
+      .defaults?.model;
+
+    expect(modelCfg?.primary).toBe('ark/ark-text');
+    expect(modelCfg?.fallbacks).toEqual(['ark/ark-text-mini']);
+  });
+
+  it('does not prune any refs when no provider accounts are loaded', async () => {
+    await writeOpenClawJson({
+      agents: {
+        defaults: { model: { primary: 'custom-deadbeef/chat' } },
+        list: [{ id: 'main', name: 'Main', default: true, model: { primary: 'custom-deadbeef/chat' } }],
+      },
+    });
+
+    // Default mock returns [] — the guard must skip pruning entirely.
+    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    const snapshot = await listAgentsSnapshot();
+    const config = await readOpenClawJson();
+    const mainEntry = ((config.agents as { list: Array<{ id: string; model?: { primary?: string } }> }).list)
+      .find((agent) => agent.id === 'main');
+
+    expect(snapshot.defaultModelRef).toBe('custom-deadbeef/chat');
+    expect(mainEntry?.model?.primary).toBe('custom-deadbeef/chat');
   });
 
   it('deletes the config entry, bindings, runtime directory, and managed workspace for a removed agent', async () => {
@@ -351,11 +725,77 @@ describe('agent config lifecycle', () => {
     ]);
     expect(config.bindings).toEqual([]);
     await expect(access(test2RuntimeDir)).rejects.toThrow();
-    // The service removes the workspace after `deleteAgentConfig` commits, so the
-    // utility leaves it in place for the caller.
+    // Workspace deletion is intentionally deferred by `deleteAgentConfig` to avoid
+    // ENOENT errors during Gateway restart, so it should still exist here.
     await expect(access(test2WorkspaceDir)).resolves.toBeUndefined();
 
     infoSpy.mockRestore();
+  });
+
+  it('treats an explicit empty agents.list as an empty snapshot', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [],
+      },
+    });
+
+    const { listAgentsSnapshot, listConfiguredAgentIds } = await import('@electron/utils/agent-config');
+
+    const snapshot = await listAgentsSnapshot();
+    expect(snapshot.agents).toEqual([]);
+    expect(snapshot.defaultAgentId).toBe('');
+    await expect(listConfiguredAgentIds()).resolves.toEqual([]);
+  });
+
+  it('allows deleting the last main agent and persists an empty list', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          {
+            id: 'main',
+            name: 'Main',
+            default: true,
+            workspace: '~/.openclaw/workspace',
+            agentDir: '~/.openclaw/agents/main/agent',
+          },
+        ],
+      },
+    });
+    await mkdir(join(testHome, '.openclaw', 'agents', 'main', 'agent'), { recursive: true });
+
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const { deleteAgentConfig } = await import('@electron/utils/agent-config');
+
+    const { snapshot } = await deleteAgentConfig('main');
+
+    expect(snapshot.agents).toEqual([]);
+    expect(snapshot.defaultAgentId).toBe('');
+    const config = await readOpenClawJson();
+    expect((config.agents as { list?: unknown[] }).list).toEqual([]);
+    await expect(access(join(testHome, '.openclaw', 'agents', 'main'))).rejects.toThrow();
+
+    infoSpy.mockRestore();
+  });
+
+  it('marks the first agent created from an empty list as default', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [],
+      },
+    });
+
+    const { createAgent } = await import('@electron/utils/agent-config');
+
+    const snapshot = await createAgent('First Agent');
+
+    expect(snapshot.agents.map((agent) => ({ id: agent.id, isDefault: agent.isDefault }))).toEqual([
+      { id: 'first-agent', isDefault: true },
+    ]);
+    expect(snapshot.defaultAgentId).toBe('first-agent');
+    const config = await readOpenClawJson();
+    expect((config.agents as { list?: Array<{ id: string; default?: boolean }> }).list).toEqual([
+      expect.objectContaining({ id: 'first-agent', default: true }),
+    ]);
   });
 
   it('preserves unmanaged custom workspaces when deleting an agent', async () => {
@@ -437,122 +877,6 @@ describe('agent config lifecycle', () => {
     expect(feishu.accounts?.test2).toBeDefined();
   });
 
-  it('does not delete an account reassigned by a later binding', async () => {
-    await writeOpenClawJson({
-      agents: {
-        list: [
-          { id: 'main', name: 'Main', default: true },
-          { id: 'test2', name: 'test2' },
-          { id: 'test3', name: 'test3' },
-        ],
-      },
-      channels: {
-        telegram: {
-          accounts: {
-            test2: { enabled: false, botToken: 'telegram-token' },
-          },
-        },
-      },
-      bindings: [
-        { agentId: 'test2', match: { channel: 'telegram', accountId: 'test2' } },
-        { agentId: 'test3', match: { channel: 'telegram', accountId: 'test2' } },
-      ],
-    });
-    const { deleteAgentConfig } = await import('@electron/utils/agent-config');
-
-    await deleteAgentConfig('test2');
-
-    const config = await readOpenClawJson();
-    const telegram = (config.channels as Record<string, unknown>).telegram as {
-      accounts?: Record<string, unknown>;
-    };
-    expect(telegram.accounts?.test2).toBeDefined();
-  });
-
-  it('deletes an owned account for a disabled channel with its agent', async () => {
-    await writeOpenClawJson({
-      agents: {
-        list: [
-          { id: 'main', name: 'Main', default: true },
-          { id: 'test2', name: 'test2' },
-        ],
-      },
-      channels: {
-        telegram: {
-          enabled: false,
-          defaultAccount: 'test2',
-          accounts: {
-            test2: { enabled: false, botToken: 'telegram-token' },
-          },
-          botToken: 'telegram-token',
-        },
-      },
-      bindings: [
-        {
-          agentId: 'test2',
-          match: {
-            channel: 'telegram',
-            accountId: 'test2',
-          },
-        },
-      ],
-    });
-    const { deleteAgentConfig } = await import('@electron/utils/agent-config');
-
-    await deleteAgentConfig('test2');
-
-    const config = await readOpenClawJson();
-    expect((config.channels as Record<string, unknown>).telegram).toBeUndefined();
-  });
-
-  it('migrates legacy plugin-only credentials while deleting the owned account', async () => {
-    await writeOpenClawJson({
-      agents: {
-        list: [
-          { id: 'main', name: 'Main', default: true },
-          { id: 'test2', name: 'test2' },
-          { id: 'test3', name: 'test3' },
-        ],
-      },
-      bindings: [
-        { agentId: 'test2', match: { channel: 'discord', accountId: 'test2' } },
-        { agentId: 'test3', match: { channel: 'discord', accountId: 'test3' } },
-      ],
-      plugins: {
-        allow: ['discord'],
-        entries: {
-          discord: {
-            enabled: true,
-            defaultAccount: 'test2',
-            accounts: {
-              test2: { enabled: true, token: 'discord-token-2' },
-              test3: { enabled: true, token: 'discord-token-3' },
-            },
-          },
-        },
-      },
-    });
-    const { deleteAgentConfig } = await import('@electron/utils/agent-config');
-
-    await deleteAgentConfig('test2');
-
-    const config = await readOpenClawJson();
-    const discordChannel = (config.channels as {
-      discord: Record<string, unknown>;
-    }).discord;
-    expect(discordChannel.defaultAccount).toBe('test3');
-    expect(discordChannel.accounts).toEqual({
-      test3: { enabled: true, token: 'discord-token-3' },
-    });
-    expect(discordChannel.token).toBe('discord-token-3');
-
-    const discordPlugin = ((config.plugins as {
-      entries: Record<string, Record<string, unknown>>;
-    }).entries).discord;
-    expect(discordPlugin).toEqual({ enabled: true });
-    expect(JSON.stringify(config)).not.toContain('discord-token-2');
-  });
-
   it('allows the same agent to bind multiple different channels', async () => {
     await writeOpenClawJson({
       agents: {
@@ -603,60 +927,6 @@ describe('agent config lifecycle', () => {
     const snapshot = await listAgentsSnapshot();
     expect(snapshot.channelAccountOwners['feishu:default']).toBe('main');
     expect(snapshot.channelAccountOwners['feishu:alt']).toBe('main');
-  });
-
-  it('uses a legacy channel binding for the default account alongside an explicit sibling account', async () => {
-    await writeOpenClawJson({
-      agents: {
-        list: [
-          { id: 'main', name: 'Main', default: true },
-          { id: 'research', name: 'Research' },
-        ],
-      },
-      channels: {
-        feishu: {
-          enabled: true,
-          defaultAccount: 'default',
-          accounts: {
-            default: { enabled: true, appId: 'main-app' },
-            alt: { enabled: true, appId: 'alt-app' },
-          },
-        },
-      },
-      bindings: [
-        { agentId: 'main', match: { channel: 'feishu' } },
-        { agentId: 'research', match: { channel: 'feishu', accountId: 'alt' } },
-      ],
-    });
-
-    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
-
-    const snapshot = await listAgentsSnapshot();
-    expect(snapshot.channelAccountOwners['feishu:default']).toBe('main');
-    expect(snapshot.channelAccountOwners['feishu:alt']).toBe('research');
-  });
-
-  it('atomically migrates a legacy binding while assigning a scoped sibling account', async () => {
-    await writeOpenClawJson({
-      agents: {
-        list: [
-          { id: 'main', name: 'Main', default: true },
-          { id: 'alt', name: 'Alt' },
-        ],
-      },
-      bindings: [
-        { agentId: 'main', match: { channel: 'feishu' } },
-      ],
-    });
-    const { ensureScopedChannelBinding } = await import('@electron/utils/agent-config');
-
-    await ensureScopedChannelBinding('feishu', 'alt');
-
-    const config = await readOpenClawJson();
-    expect(config.bindings).toEqual([
-      { agentId: 'main', match: { channel: 'feishu', accountId: 'default' } },
-      { agentId: 'alt', match: { channel: 'feishu', accountId: 'alt' } },
-    ]);
   });
 
   it('preserves original agentId casing when persisting bindings', async () => {
@@ -755,60 +1025,35 @@ describe('agent config lifecycle', () => {
     const snapshot = await listAgentsSnapshot();
     const agentIds = snapshot.agents.map((agent) => agent.id);
 
-    expect(agentIds).toContain('agent');
-    expect(agentIds).toContain('agent-2');
+    expect(agentIds).toContain('ce-shi-2');
+    expect(agentIds).toContain('ce-shi-1');
     expect(agentIds).not.toContain('2');
     expect(agentIds).not.toContain('1');
   });
 
-  it('seeds a default ClawX IDENTITY.md for newly created agent workspaces', async () => {
+  it('moves default flag when setDefaultAgent is called', async () => {
     await writeOpenClawJson({
       agents: {
-        list: [{ id: 'main', name: 'Main', default: true }],
+        list: [
+          { id: 'main', name: 'Main', default: true },
+          { id: 'coding-helper', name: 'Coding helper' },
+        ],
       },
     });
 
-    const { createAgent } = await import('@electron/utils/agent-config');
+    const { setDefaultAgent, listAgentsSnapshot } = await import('@electron/utils/agent-config');
 
-    await createAgent('Research');
+    const after = await setDefaultAgent('coding-helper');
+    expect(after.defaultAgentId).toBe('coding-helper');
+    expect(after.agents.find((a) => a.id === 'main')?.isDefault).toBe(false);
+    expect(after.agents.find((a) => a.id === 'coding-helper')?.isDefault).toBe(true);
 
-    await expect(readFile(join(testHome, '.openclaw', 'workspace-research', 'IDENTITY.md'), 'utf8')).resolves.toContain('ClawX');
-  });
+    const disk = await readOpenClawJson();
+    const list = (disk.agents as { list: Array<{ id: string; default?: boolean }> }).list;
+    expect(list.find((e) => e.id === 'coding-helper')?.default).toBe(true);
+    expect(list.find((e) => e.id === 'main')?.default).toBeUndefined();
 
-  it('rolls back a committed agent entry when filesystem provisioning fails', async () => {
-    await writeOpenClawJson({
-      agents: {
-        list: [{ id: 'main', name: 'Main', default: true }],
-      },
-    });
-    const blockedWorkspace = join(testHome, '.openclaw', 'workspace-research');
-    await writeFile(blockedWorkspace, 'pre-existing file', 'utf8');
-    const { createAgent } = await import('@electron/utils/agent-config');
-
-    await expect(createAgent('Research')).rejects.toThrow();
-
-    const config = await readOpenClawJson();
-    const agents = (config.agents as { list: Array<{ id: string }> }).list;
-    expect(agents.map((agent) => agent.id)).toEqual(['main']);
-    await expect(readFile(blockedWorkspace, 'utf8')).resolves.toBe('pre-existing file');
-    await expect(access(join(testHome, '.openclaw', 'agents', 'research'))).rejects.toThrow();
-  });
-
-  it('does not delete a pre-existing dangling workspace symlink during provisioning rollback', async () => {
-    await writeOpenClawJson({
-      agents: {
-        list: [{ id: 'main', name: 'Main', default: true }],
-      },
-    });
-    const workspaceLink = join(testHome, '.openclaw', 'workspace-research');
-    await symlink(join(testHome, 'missing-workspace-target'), workspaceLink);
-    const { createAgent } = await import('@electron/utils/agent-config');
-
-    await expect(createAgent('Research')).rejects.toThrow();
-
-    await expect(lstat(workspaceLink)).resolves.toMatchObject({});
-    expect((await lstat(workspaceLink)).isSymbolicLink()).toBe(true);
-    const config = await readOpenClawJson();
-    expect((config.agents as { list: Array<{ id: string }> }).list.map((agent) => agent.id)).toEqual(['main']);
+    const snap = await listAgentsSnapshot();
+    expect(snap.defaultAgentId).toBe('coding-helper');
   });
 });

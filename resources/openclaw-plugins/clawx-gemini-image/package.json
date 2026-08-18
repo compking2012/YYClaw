@@ -1,0 +1,16 @@
+{
+  "name": "clawx-gemini-image-plugin",
+  "version": "0.2.0",
+  "description": "ClawX Gemini-native (generateContent) image generation provider for OpenClaw",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "openclaw": {
+    "extensions": [
+      "./index.mjs"
+    ]
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  }
+}

@@ -7,12 +7,11 @@ const mocks = vi.hoisted(() => ({
   saveProviderAccount: vi.fn(),
   getActiveOpenClawProviders: vi.fn(),
   getOpenClawProvidersConfig: vi.fn(),
-  getProviderApiKeyFromOpenClaw: vi.fn(),
   getOpenClawProviderKeyForType: vi.fn(),
   getAliasSourceTypes: vi.fn(),
   getProviderDefinition: vi.fn(),
   getApiKey: vi.fn(),
-  hasApiKey: vi.fn(),
+  getProviderApiKeyFromOpenClaw: vi.fn(),
   loggerWarn: vi.fn(),
   loggerInfo: vi.fn(),
 }));
@@ -57,7 +56,7 @@ vi.mock('@electron/utils/secure-storage', () => ({
   deleteApiKey: vi.fn(),
   deleteProvider: vi.fn(),
   getApiKey: mocks.getApiKey,
-  hasApiKey: mocks.hasApiKey,
+  hasApiKey: vi.fn(),
   saveProvider: vi.fn(),
   setDefaultProvider: vi.fn(),
   storeApiKey: vi.fn(),
@@ -114,9 +113,6 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     mocks.getAliasSourceTypes.mockReturnValue([]);
     mocks.getProviderDefinition.mockReturnValue(undefined);
     mocks.getOpenClawProvidersConfig.mockResolvedValue({ providers: {}, defaultModel: undefined });
-    mocks.getProviderApiKeyFromOpenClaw.mockResolvedValue(null);
-    mocks.getApiKey.mockResolvedValue(null);
-    mocks.hasApiKey.mockResolvedValue(false);
     mocks.listProviderAccounts.mockResolvedValue([]);
     service = new ProviderService();
   });
@@ -584,10 +580,8 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
           name: 'MiniMax (CN)',
           defaultAuthMode: 'oauth_device',
           defaultModelId: 'MiniMax-M2.7',
-          providerConfig: {
-            baseUrl: 'https://api.minimaxi.com/anthropic',
-            api: 'anthropic-messages',
-          },
+          defaultBaseUrl: 'https://api.minimaxi.com/anthropic',
+          apiProtocol: 'anthropic-messages',
         };
       }
       return undefined;
@@ -627,10 +621,8 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
           name: 'OpenAI',
           defaultAuthMode: 'oauth_browser',
           defaultModelId: 'gpt-5.2',
-          providerConfig: {
-            baseUrl: 'https://api.openai.com/v1',
-            api: 'openai-responses',
-          },
+          defaultBaseUrl: 'https://api.openai.com/v1',
+          apiProtocol: 'openai-responses',
         };
       }
       if (key === 'anthropic') {
@@ -657,76 +649,31 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
       }),
     ]);
   });
-});
 
-describe('ProviderService.listAccountsKeyInfo', () => {
-  let service: ProviderService;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.ensureProviderStoreMigrated.mockResolvedValue(undefined);
-    setupDefaultKeyMapping();
-    mocks.getAliasSourceTypes.mockReturnValue([]);
-    mocks.getProviderDefinition.mockReturnValue(undefined);
-    mocks.getOpenClawProvidersConfig.mockResolvedValue({ providers: {}, defaultModel: undefined });
-    mocks.getProviderApiKeyFromOpenClaw.mockResolvedValue(null);
-    mocks.getApiKey.mockResolvedValue(null);
-    mocks.hasApiKey.mockResolvedValue(false);
-    service = new ProviderService();
-  });
-
-  it('prefers OpenClaw runtime auth when reporting account key status', async () => {
+  it('dedupes one store account surfaced under two active openclaw keys (catalog id + runtime custom key)', async () => {
+    mocks.getOpenClawProviderKeyForType.mockImplementation((_type: string, id: string) =>
+      id === 'minimaxm25' ? 'custom-minimaxm25' : id,
+    );
     mocks.listProviderAccounts.mockResolvedValue([
       makeAccount({
-        id: 'custom-ui-account-id',
+        id: 'minimaxm25',
         vendorId: 'custom' as ProviderAccount['vendorId'],
+        label: '公司Claw专用MiniMax-M2.5模型',
+        updatedAt: '2026-05-01T00:00:00.000Z',
       }),
     ]);
-    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['custom-runtime']));
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['minimaxm25', 'custom-minimaxm25']));
     mocks.getOpenClawProvidersConfig.mockResolvedValue({
-      providers: { 'custom-runtime': { baseUrl: 'https://llm.example.com/v1' } },
-      defaultModel: undefined,
-    });
-    mocks.getOpenClawProviderKeyForType.mockReturnValue('custom-runtime');
-    mocks.getProviderApiKeyFromOpenClaw.mockResolvedValue('sk-openclaw-runtime-key');
-
-    const result = await service.listAccountsKeyInfo();
-
-    expect(mocks.getProviderApiKeyFromOpenClaw).toHaveBeenCalledWith('custom-runtime');
-    expect(mocks.getApiKey).not.toHaveBeenCalled();
-    expect(result).toEqual([
-      {
-        accountId: 'custom-ui-account-id',
-        hasKey: true,
-        keyMasked: 'sk-o***************-key',
+      providers: {
+        minimaxm25: { baseUrl: 'https://api.minimax.io/anthropic' },
+        'custom-minimaxm25': { baseUrl: 'https://api.minimax.io/anthropic' },
       },
-    ]);
-  });
-
-  it('falls back to ClawX local secrets when OpenClaw has no runtime key', async () => {
-    mocks.listProviderAccounts.mockResolvedValue([
-      makeAccount({
-        id: 'openrouter-ui-account-id',
-        vendorId: 'openrouter' as ProviderAccount['vendorId'],
-      }),
-    ]);
-    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openrouter']));
-    mocks.getOpenClawProvidersConfig.mockResolvedValue({
-      providers: { openrouter: { baseUrl: 'https://openrouter.ai/api/v1' } },
       defaultModel: undefined,
     });
-    mocks.getOpenClawProviderKeyForType.mockReturnValue('openrouter');
-    mocks.getApiKey.mockImplementation(async (id: string) => (
-      id === 'openrouter-ui-account-id' ? 'sk-local-provider-key' : null
-    ));
 
-    const result = await service.listAccountsKeyInfo();
+    const result = await service.listAccounts();
 
-    expect(mocks.getProviderApiKeyFromOpenClaw).toHaveBeenCalledWith('openrouter');
-    expect(mocks.getApiKey).toHaveBeenCalledWith('openrouter-ui-account-id');
-    expect(result[0]).toMatchObject({
-      accountId: 'openrouter-ui-account-id',
-      hasKey: true,
-    });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('minimaxm25');
   });
 });

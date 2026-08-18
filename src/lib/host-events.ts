@@ -122,3 +122,20 @@ export const hostEvents = {
     handler: HostEventHandler<'app', 'openClawCliInstalled'>,
   ) => onAppEvent('openClawCliInstalled', handler),
 };
+
+export function subscribeHostEvent<T = unknown>(
+  channel: string,
+  handler: (payload: T) => void,
+): () => void {
+  const ipc = window.electron?.ipcRenderer;
+  if (!ipc?.on) {
+    console.warn(`[host-events] IPC unavailable for ${channel}`);
+    return () => {};
+  }
+  const unsubscribe = ipc.on(channel, (...args: unknown[]) => {
+    handler(args[0] as T);
+  });
+  return typeof unsubscribe === 'function'
+    ? unsubscribe
+    : () => ipc.off?.(channel);
+}

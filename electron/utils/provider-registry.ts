@@ -16,6 +16,7 @@ import {
   getProviderBackendConfig,
   getProviderDefaultModel as getSharedProviderDefaultModel,
   getProviderEnvVar as getSharedProviderEnvVar,
+  getProviderTypeInfo as getSharedProviderTypeInfo,
 } from '../shared/providers/registry';
 
 // Additional env-backed providers that are not yet exposed in the UI.
@@ -40,7 +41,8 @@ export function getProviderEnvVars(type: string): string[] {
 
 /** Get the default model string for a provider type */
 export function getProviderDefaultModel(type: string): string | undefined {
-  return getSharedProviderDefaultModel(type);
+  const model = getSharedProviderDefaultModel(type);
+  return Array.isArray(model) ? model[0] : model;
 }
 
 /** Get the OpenClaw provider config (baseUrl, api, apiKeyEnv, models, headers) */
@@ -48,6 +50,11 @@ export function getProviderConfig(
   type: string
 ): { baseUrl: string; api: string; apiKeyEnv: string; models?: ProviderModelEntry[]; headers?: Record<string, string> } | undefined {
   return getProviderBackendConfig(type) as ProviderBackendConfig | undefined;
+}
+
+/** Get the OpenClaw provider type info (including modelType) */
+export function getProviderTypeInfo(type: string): ReturnType<typeof getSharedProviderTypeInfo> {
+  return getSharedProviderTypeInfo(type as Parameters<typeof getSharedProviderTypeInfo>[0]);
 }
 
 /**

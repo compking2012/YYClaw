@@ -5,46 +5,32 @@ test.describe('ClawX developer-mode gated UI', () => {
     await completeSetup(page);
 
     await page.getByTestId('sidebar-nav-settings').click();
-    await expect(page.getByTestId('settings-page')).toBeVisible();
+    await expect(page.getByTestId('settings-tab')).toBeVisible();
+    await page.getByTestId('settings-tab-gateway').click();
     await expect(page.getByTestId('settings-developer-section')).toHaveCount(0);
     await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'unchecked');
     await expect(page.getByTestId('sidebar-open-dev-console')).toHaveCount(0);
-    await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
 
-    await page.evaluate(() => {
-      window.location.hash = '#/dreams';
-    });
-    await expect(page.getByTestId('dreams-page')).toHaveCount(0);
-    await page.evaluate(() => {
-      window.location.hash = '#/';
-    });
-    await expect(page.getByTestId('chat-composer-input')).toBeVisible();
-
-    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('settings-tab-models').click();
     await page.getByTestId('providers-add-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
     await page.getByTestId('add-provider-type-siliconflow').click();
-    const preDevModelInput = page.getByTestId('add-provider-model-id-input');
-    await expect(preDevModelInput).toBeVisible();
-    await expect(preDevModelInput).toHaveValue('deepseek-ai/DeepSeek-V3');
+    await expect(page.getByTestId('add-provider-model-id-input')).toHaveCount(0);
     await page.getByTestId('add-provider-close-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toHaveCount(0);
 
-    await page.getByTestId('sidebar-nav-settings').click();
+    await page.getByTestId('settings-tab-gateway').click();
     await page.getByTestId('settings-dev-mode-switch').click();
     await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'checked');
+    await page.getByTestId('settings-tab-developer').click();
     await expect(page.getByTestId('settings-developer-section')).toBeVisible();
     await expect(page.getByTestId('settings-developer-gateway-token')).toBeVisible();
     await expect(page.getByTestId('sidebar-open-dev-console')).toBeVisible();
-    await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
-    await expect(page.getByTestId('sidebar-nav-image-generation')).toBeVisible();
 
-    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('settings-tab-models').click();
     await page.getByTestId('providers-add-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
     await page.getByTestId('add-provider-type-siliconflow').click();
-    const postDevModelInput = page.getByTestId('add-provider-model-id-input');
-    await expect(postDevModelInput).toBeVisible();
-    await expect(postDevModelInput).toHaveValue('deepseek-ai/DeepSeek-V3');
+    await expect(page.getByTestId('add-provider-model-id-input')).toBeVisible();
   });
 });

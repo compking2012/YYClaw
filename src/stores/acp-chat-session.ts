@@ -38,6 +38,7 @@ import {
 } from '@/lib/acp/reducer';
 import { hashOpenClawMediaDiagnostic, type OpenClawMediaCandidate } from '@/lib/acp/openclaw-media-compat';
 import { openClawResourceLinkPromptText } from '@/lib/acp/openclaw-prompt-compat';
+import { settleAcpTimelineAfterCancel } from '@/lib/acp/settle-after-cancel';
 import { fetchOpenClawTranscriptSupplement } from '@/lib/acp/transcript-supplement';
 import { alignHistoricalTurnTimings, type AcpTurnTiming } from '@/lib/acp/turn-timings';
 import { buildCronHistoryAcpNotifications, fetchCronSessionHistory } from '@/lib/cron-session-history';
@@ -85,8 +86,38 @@ type LiveSessionSnapshot = {
   }>;
 };
 const liveSessionSnapshots = new Map<string, LiveSessionSnapshot>();
+/**
+ * Session generations whose live turn was user-cancelled. Late buffered
+ * plan/tool updates for that generation must be re-settled so in_progress
+ * cannot permanently revive after Stop (ACP cancel does not rewrite history).
+ */
+const abortedTurnGenerations = new Map<string, number>();
 let loadRequestSeq = 0;
 const attachmentResolutionsInFlight = new Set<string>();
+
+function markTurnAborted(sessionKey: string, generation: number): void {
+  abortedTurnGenerations.set(sessionKey, generation);
+}
+
+function clearTurnAborted(sessionKey: string): void {
+  abortedTurnGenerations.delete(sessionKey);
+}
+
+function isTurnAborted(sessionKey: string, generation: number): boolean {
+  return abortedTurnGenerations.get(sessionKey) === generation;
+}
+
+function applySessionUpdateRespectingAbort(
+  timeline: AcpTimelineSnapshot,
+  notification: AcpSessionUpdateEnvelope['notification'],
+  options: { historical?: boolean; silent?: boolean; sessionKey: string; generation: number },
+): AcpTimelineSnapshot {
+  if (options.silent) return timeline;
+  const next = applyAcpSessionUpdate(timeline, notification, { historical: !!options.historical });
+  return isTurnAborted(options.sessionKey, options.generation)
+    ? settleAcpTimelineAfterCancel(next)
+    : next;
+}
 
 function deferInactiveImageUpdate(
   snapshot: LiveSessionSnapshot,
@@ -1022,6 +1053,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     const generation = get().generation;
     invalidateTranscriptSupplement();
     resetImageGenerationCompatSession(input.sessionKey);
+    clearTurnAborted(input.sessionKey);
     set({
       activeSessionKey: input.sessionKey,
       workspaceRoot: input.workspaceRoot,
@@ -1161,6 +1193,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         ? currentResumedSnapshot.timeline
         : createEmptyAcpTimeline(input.sessionKey, generation);
       for (const event of sessionUpdates) {
+        if (event.silent) continue;
         timeline = applyAcpSessionUpdate(timeline, event.notification, { historical: !!event.historical });
       }
       if (timeline.itemOrder.length === 0) {
@@ -1247,17 +1280,22 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     const payload = { ...input, messageId };
     const startedAtMs = Date.now();
     const transcriptOperation = beginTranscriptSupplement(sessionKey, generation, messageId);
+    // A new prompt starts a fresh live turn — late updates from a prior cancel
+    // must not keep settling this generation's progress.
+    clearTurnAborted(sessionKey);
 
     set((state) => (
       isCurrentAction(state, sessionKey, generation)
         ? {
           sending: true,
           error: null,
-          timeline: appendOptimisticUserSegment(state.timeline, payload, messageId),
-          turnTimingsByUserMessageId: {
-            ...state.turnTimingsByUserMessageId,
-            [messageId]: { source: 'live', status: 'running', startedAtMs },
-          },
+          ...(payload.silent ? {} : {
+            timeline: appendOptimisticUserSegment(state.timeline, payload, messageId),
+            turnTimingsByUserMessageId: {
+              ...state.turnTimingsByUserMessageId,
+              [messageId]: { source: 'live' as const, status: 'running' as const, startedAtMs },
+            },
+          }),
         }
         : {}
     ));
@@ -1337,22 +1375,72 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     if (!sessionKey) return;
     invalidateTranscriptSupplement();
 
-    set({ cancelling: true, error: null });
+    // Optimistic UI settle: stop spinning tools/plan/observed workflow immediately.
+    // ACP Chat does not drive the workflow lane from Gateway `run.ended`, so cancel
+    // must finalize the independent observed card here (see workflow-lane-independence).
+    // Mark this generation aborted so late buffered plan/tool updates cannot revive
+    // in_progress after cancel returns (until the next sendPrompt).
+    markTurnAborted(sessionKey, generation);
+    const settledTimeline = settleAcpTimelineAfterCancel(startState.timeline);
+    set({
+      cancelling: true,
+      error: null,
+      sending: false,
+      ...(settledTimeline !== startState.timeline ? { timeline: settledTimeline } : {}),
+    });
+    const liveSnapshot = liveSessionSnapshots.get(sessionKey);
+    if (liveSnapshot?.generation === generation) {
+      liveSessionSnapshots.set(sessionKey, {
+        ...liveSnapshot,
+        sending: false,
+        timeline: settleAcpTimelineAfterCancel(liveSnapshot.timeline),
+      });
+    }
+    void import('@/stores/chat').then(({ useChatStore }) => {
+      const chat = useChatStore.getState();
+      chat.failObservedWorkflow(sessionKey, 'aborted');
+      if (sessionKey in chat.pendingObservedSkillBySession) {
+        useChatStore.setState((s) => {
+          const next = { ...s.pendingObservedSkillBySession };
+          delete next[sessionKey];
+          return { pendingObservedSkillBySession: next };
+        });
+      }
+    }).catch(() => {
+      // Chat store may be unavailable in isolated tests — cancel still proceeds.
+    });
+
     try {
       const result = await hostApi.chat.cancelAcpSession({ sessionKey });
       set((state) => {
         if (!isCurrentAction(state, sessionKey, generation)) return {};
+        const timeline = settleAcpTimelineAfterCancel(state.timeline);
+        if (!result.success) {
+          return {
+            cancelling: false,
+            sending: false,
+            timeline,
+            error: failedOperationMessage(result, 'ACP cancel failed'),
+          };
+        }
         return {
           cancelling: false,
-          ...(result.success
-            ? applyOperationGeneration(state, result)
-            : { error: failedOperationMessage(result, 'ACP cancel failed') }),
+          sending: false,
+          ...applyOperationGeneration({ ...state, timeline }, result),
+          timeline: result.generation == null
+            ? timeline
+            : { ...timeline, loadGeneration: result.generation },
         };
       });
     } catch (error) {
       set((state) => (
         isCurrentAction(state, sessionKey, generation)
-          ? { cancelling: false, error: errorMessage(error, 'ACP cancel failed') }
+          ? {
+            cancelling: false,
+            sending: false,
+            timeline: settleAcpTimelineAfterCancel(state.timeline),
+            error: errorMessage(error, 'ACP cancel failed'),
+          }
           : {}
       ));
     }
@@ -1672,7 +1760,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     }
 
     const imageParts: RenderPart[] = [];
-    for (const { candidate, identity, mimeType } of resolvedCandidates) {
+    for (const { candidate, identity, mimeType, target } of resolvedCandidates) {
       const resolved = thumbnails[identity];
       if (!resolved?.preview) continue;
       imageParts.push({
@@ -1681,6 +1769,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         mimeType: candidate.mimeType ?? mimeType,
         alt: i18n.t('chat:acp.image'),
         mediaIdentity: identity,
+        ...(target.kind === 'local' ? { attachmentFileRef: target.ref } : {}),
       });
     }
 
@@ -1758,10 +1847,15 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         if (liveSnapshot?.generation === event.generation) {
           liveSessionSnapshots.set(event.sessionKey, deferInactiveImageUpdate({
             ...liveSnapshot,
-            timeline: applyAcpSessionUpdate(
+            timeline: applySessionUpdateRespectingAbort(
               liveSnapshot.timeline,
               event.notification,
-              { historical: !!event.historical },
+              {
+                historical: !!event.historical,
+                silent: !!event.silent,
+                sessionKey: event.sessionKey,
+                generation: event.generation,
+              },
             ),
           }, event));
         }
@@ -1773,16 +1867,30 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       if (liveSnapshot?.generation === event.generation) {
         liveSessionSnapshots.set(event.sessionKey, deferInactiveImageUpdate({
           ...liveSnapshot,
-          timeline: applyAcpSessionUpdate(
+          timeline: applySessionUpdateRespectingAbort(
             liveSnapshot.timeline,
             event.notification,
-            { historical: !!event.historical },
+            {
+              historical: !!event.historical,
+              silent: !!event.silent,
+              sessionKey: event.sessionKey,
+              generation: event.generation,
+            },
           ),
         }, event));
       }
       return;
     }
-    const timeline = applyAcpSessionUpdate(state.timeline, event.notification, { historical: !!event.historical });
+    const timeline = applySessionUpdateRespectingAbort(
+      state.timeline,
+      event.notification,
+      {
+        historical: !!event.historical,
+        silent: !!event.silent,
+        sessionKey: event.sessionKey,
+        generation: event.generation,
+      },
+    );
     const pending = newPendingAttachments(state.timeline, timeline);
     set({ timeline });
     if (state.sending) {

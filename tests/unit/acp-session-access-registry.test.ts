@@ -57,6 +57,34 @@ describe('AcpSessionAccessRegistry', () => {
     })).rejects.toThrow('ACP workspace root must be a directory');
   });
 
+  it('creates a missing workspace root only when explicitly authorized', async () => {
+    const registry = new AcpSessionAccessRegistry();
+    const parent = mkdtempSync(join(tmpdir(), 'clawx-acp-access-create-'));
+    temporaryDirectories.push(parent);
+    const workspaceRoot = join(parent, 'workspace');
+
+    await expect(registry.prepareGrant({
+      sessionKey: 'agent:main:new-session',
+      generation: 1,
+      workspaceRoot,
+      executionCwd: workspaceRoot,
+    })).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const prepared = await registry.prepareGrant({
+      sessionKey: 'agent:main:new-session',
+      generation: 1,
+      workspaceRoot,
+      executionCwd: workspaceRoot,
+    }, { createWorkspaceRoot: true });
+
+    expect(prepared).toEqual({
+      sessionKey: 'agent:main:new-session',
+      generation: 1,
+      workspaceRoot: realpathSync(workspaceRoot),
+      executionCwd: realpathSync(workspaceRoot),
+    });
+  });
+
   it('commits access only for the exact session and generation', async () => {
     const registry = new AcpSessionAccessRegistry();
     const { workspaceRoot, executionCwd } = createDirectories();

@@ -1,4 +1,4 @@
-import { app, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, dialog, nativeImage, shell } from 'electron';
 import crypto from 'node:crypto';
 import { constants } from 'node:fs';
 import type { Stats } from 'node:fs';
@@ -401,10 +401,31 @@ async function resolveSandboxedPath(
   try {
     real = await fsP.realpath(expanded);
   } catch {
-    real = resolve(expanded);
+    // 文件尚不存在：canonicalize 父目录再拼 basename，使 symlink 写根
+    // （如 ~/.openclaw → /Volumes/...）下的「新建文件」路径也能正确
+    // prefix-match canonicalRoots，否则新文件会被误报 readOnlyRoot。
+    try {
+      real = join(await fsP.realpath(dirname(expanded)), basename(expanded));
+    } catch {
+      real = resolve(expanded);
+    }
   }
   const writeRoots = getFilePreviewWriteRoots();
-  if (writeRoots.some((root) => isPathInside(real, root))) {
+  // Canonicalize each write root the same way `real` was resolved above.
+  // Without this, a symlinked root (e.g. `~/.openclaw` pointing at an external
+  // volume) never prefix-matches the realpath-resolved file, so legitimately
+  // writable persona/system docs are wrongly reported read-only and their
+  // edit/revert/save controls disappear.
+  const canonicalRoots = await Promise.all(
+    writeRoots.map(async (root) => {
+      try {
+        return await fsP.realpath(root);
+      } catch {
+        return root;
+      }
+    }),
+  );
+  if (canonicalRoots.some((root) => isPathInside(real, root))) {
     return { realPath: real, readOnly: false };
   }
   if (mode === 'write') {
@@ -478,7 +499,24 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
       return pinned;
     };
 
-    const stateDir = await ensureDirectory(resolveOpenClawStateDir());
+    // Follow a symlinked top-level state dir before the symlink-hardened walk.
+    // Users legitimately symlink `~/.openclaw` to another volume; without this
+    // the very first `ensureDirectory` lstat sees a symlink and throws
+    // `Invalid ClawX staging directory`, failing every attachment upload. The
+    // stricter no-symlink protection still applies to the media/outbound/
+    // clawx-staging subdirectories this process creates (they derive from
+    // `canonicalPath`), so anti-TOCTOU hardening is unchanged.
+    const resolveStateRoot = async (): Promise<string> => {
+      const configured = resolveOpenClawStateDir();
+      try {
+        return await fsP.realpath(configured);
+      } catch (error) {
+        const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+        if (code === 'ENOENT') return configured; // Fresh install: ensureDirectory will mkdir a real dir.
+        throw error;
+      }
+    };
+    const stateDir = await ensureDirectory(await resolveStateRoot());
     const mediaDir = await ensureDirectory(join(stateDir.canonicalPath, 'media'), stateDir);
     const outboundDir = await ensureDirectory(join(mediaDir.canonicalPath, 'outbound'), mediaDir);
     const stagingRoot = await ensureDirectory(join(outboundDir.canonicalPath, 'clawx-staging'), outboundDir);
@@ -905,13 +943,13 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
         }
         const { realPath: real } = await resolveSandboxedPath(requirePath(payload), 'write');
         const fsP = await import('node:fs/promises');
-        let stat;
+        let existing: Stats | null = null;
         try {
-          stat = await fsP.stat(real);
+          existing = await fsP.stat(real);
         } catch {
-          return { ok: false, error: 'notFound' };
+          existing = null; // 文件不存在 → 允许创建
         }
-        if (!stat.isFile()) return { ok: false, error: 'notFound' };
+        if (existing && !existing.isFile()) return { ok: false, error: 'notFound' }; // 已存在但非普通文件（如目录）
         await fsP.writeFile(real, body.content, 'utf8');
         return { ok: true };
       } catch (err) {
@@ -1052,6 +1090,32 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
         if (message.includes('ENOENT')) return { ok: false, error: 'notFound' };
         return { ok: false, error: message };
       }
+    },
+    saveAs: async (payload) => {
+      try {
+        const body = isRecord(payload) ? payload as { filePath?: unknown; defaultFileName?: unknown } : {};
+        const filePath = typeof body.filePath === 'string' ? body.filePath.trim() : '';
+        if (!filePath) return { success: false, error: 'filePath is required' };
+        const defaultFileName = typeof body.defaultFileName === 'string' && body.defaultFileName.trim()
+          ? body.defaultFileName.trim()
+          : basename(filePath);
+        const win = BrowserWindow.getFocusedWindow();
+        const picked = win
+          ? await dialog.showSaveDialog(win, { defaultPath: defaultFileName })
+          : await dialog.showSaveDialog({ defaultPath: defaultFileName });
+        if (picked.canceled || !picked.filePath) {
+          return { success: true, cancelled: true };
+        }
+        const fsP = await import('node:fs/promises');
+        await fsP.copyFile(expandPath(filePath), picked.filePath);
+        return { success: true, savedPath: picked.filePath };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+    saveAttachmentAs: async (payload) => dependencies.attachmentAccess?.saveAttachmentAs(payload) ?? {
+      success: false,
+      error: 'operationFailed',
     },
   };
 }

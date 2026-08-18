@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AcpAssistantTurnDisplayGroup } from '@/lib/acp/timeline-groups';
+import { useSettingsStore } from '@/stores/settings';
 import { AcpMessageSegment, AcpRenderPart, AcpAssistantHoverBar, clipboardTextForParts } from './AcpMessageSegment';
 import { AcpPermissionCard } from './AcpPermissionCard';
 import { AcpPlanItem } from './AcpPlanItem';
@@ -132,6 +133,10 @@ export function AcpAssistantTurn({
   onPermissionSelect?: (requestId: string, optionId: string) => void;
 }) {
   const clipboardText = useMemo(() => assistantTurnClipboardText(group), [group]);
+  // Tool calls (and their results) are internal detail: only surface them in
+  // developer mode. Non-dev users see just the assistant's prose/thoughts/etc.
+  const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
+  // The single assistant segment currently receiving chunks (null when idle).
   const renderItems = useMemo(() => partitionTurnItems(group.items), [group.items]);
 
   return (
@@ -145,6 +150,9 @@ export function AcpAssistantTurn({
       <div className="flex min-w-0 flex-1 flex-col items-start gap-3">
         {renderItems.map((item) => {
           if (item.kind === 'tool-call-group') {
+            // Same dev-mode gate as individual tool cards below: the grouped
+            // summary is still internal detail, so keep it hidden for non-dev users.
+            if (!devModeUnlocked) return null;
             return (
               <div key={item.id} className="w-full">
                 <AcpToolCallsGroup
@@ -176,6 +184,7 @@ export function AcpAssistantTurn({
           }
 
           if (item.kind === 'tool-call') {
+            if (!devModeUnlocked) return null;
             return (
               <div key={item.id} data-acp-item-id={item.id} className="-my-1 w-full">
                 <AcpToolCallCard item={item} />

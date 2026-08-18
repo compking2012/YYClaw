@@ -181,6 +181,18 @@ async function sanitizeConfig(
         modified = true;
       }
     }
+    // P8: clear skills.load.extraDirs (mirror of openclaw-auth sanitize).
+    const skillsLoad = skillsObj.load;
+    if (skillsLoad && typeof skillsLoad === 'object' && !Array.isArray(skillsLoad)) {
+      const loadObj = skillsLoad as Record<string, unknown>;
+      if ('extraDirs' in loadObj) {
+        delete loadObj.extraDirs;
+        modified = true;
+        if (Object.keys(loadObj).length === 0) {
+          delete skillsObj.load;
+        }
+      }
+    }
   }
 
   // Mirror: prune stale absolute plugin paths under plugins (array), plugins.load (array),
@@ -670,10 +682,11 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     expect(result).toEqual(original);
   });
 
-  it('preserves unknown valid keys (forward-compatible)', async () => {
+  it('preserves unknown valid keys (forward-compatible) except skills.load.extraDirs', async () => {
     // If OpenClaw adds new valid keys to skills in the future,
-    // the blocklist approach should NOT strip them.
-    const original = withClawXToolDefaults({
+    // the blocklist approach should NOT strip them — except P8 extraDirs,
+    // which ClawX clears so Gateway cannot load duplicate skill roots.
+    await writeConfig({
       skills: {
         entries: { 'x': { enabled: true } },
         allowBundled: ['web-search'],
@@ -683,13 +696,17 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
         futureNewKey: { some: 'value' },  // hypothetical future key
       },
     });
-    await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
-    expect(modified).toBe(false);
+    expect(modified).toBe(true);
 
     const result = await readConfig();
-    expect(result).toEqual(original);
+    const skills = result.skills as Record<string, unknown>;
+    expect(skills.allowBundled).toEqual(['web-search']);
+    expect(skills.install).toEqual({ preferBrew: false });
+    expect(skills.limits).toEqual({ maxSkillsInPrompt: 5 });
+    expect(skills.futureNewKey).toEqual({ some: 'value' });
+    expect(skills.load).toEqual({ watch: true });
   });
 
   it('handles config with no skills section', async () => {

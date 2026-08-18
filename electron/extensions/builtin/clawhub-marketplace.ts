@@ -19,7 +19,7 @@ class ClawHubMarketplaceExtension implements MarketplaceProviderExtension {
 
   async getCapability(): Promise<MarketplaceCapability> {
     return {
-      mode: 'local-only',
+      mode: 'clawhub',
       canSearch: false,
       canInstall: false,
       reason: 'marketplace-disabled',

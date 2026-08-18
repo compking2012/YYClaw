@@ -55,8 +55,9 @@ test.describe('Channels account editor behavior', () => {
     });
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
-    await expect(page.getByTestId('channels-page')).toBeVisible();
+    await page.getByTestId('sidebar-nav-settings').click();
+    await page.getByTestId('settings-tab-channels').click();
+    await expect(page.getByTestId('channels-tab')).toBeVisible();
 
     const addAccountButton = page.locator('button').filter({
       hasText: /Add Account|添加账号|アカウントを追加/,

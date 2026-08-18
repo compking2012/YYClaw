@@ -1,6 +1,7 @@
 import { readFile, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import type { BrowserWindow } from 'electron';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { app, type BrowserWindow } from 'electron';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { extractSessionRecords } from '../utils/session-util';
 import {
@@ -19,10 +20,20 @@ import {
   validateChannelCredentials,
 } from '../utils/channel-config';
 import {
+  autoCreateFeishuApp,
+  configureLarkCli,
+  deleteFeishuUserApp,
+  FeishuAppError,
+  getFeishuAppInfo,
+  getFeishuAutoCreateStrings,
+  listFeishuUserApps,
+  updateFeishuAppInfo,
+} from '../utils/feishu-auto-create';
+import {
   assignChannelAccountToAgent,
   clearAllBindingsForChannel,
   clearChannelBinding,
-  ensureScopedChannelBinding as ensureAgentScopedChannelBinding,
+  ensureScopedChannelBinding,
   listAgentsSnapshot,
   listAgentsSnapshotFromConfig,
 } from '../utils/agent-config';
@@ -75,7 +86,14 @@ import {
 import { buildGatewayHealthSummary } from '../utils/gateway-health';
 import { logger } from '../utils/logger';
 import type { GatewayManager, GatewayHealthSummary } from '../gateway/manager';
+import {
+  awaitChannelRuntimeConvergence,
+  noteConfigWatcherRefresh,
+  scheduleGatewayProcessRestart,
+} from '../gateway/config-refresh-scheduler';
 import { isRecord } from './payload-utils';
+import { getSetting } from '../utils/store';
+import { resolveSupportedLanguage } from '@shared/language';
 
 const WECHAT_QR_TIMEOUT_MS = 8 * 60 * 1000;
 const activeQrLogins = new Map<string, string>();
@@ -921,8 +939,40 @@ async function listChannelTargetOptions(params: {
   return targets;
 }
 
-async function ensureScopedChannelBinding(channelType: string, accountId?: string): Promise<void> {
-  await ensureAgentScopedChannelBinding(resolveStoredChannelType(channelType), accountId);
+function scheduleGatewayChannelRestart(ctx: ChannelsApiContext, reason: string): void {
+  // Channel enable/disable and deletion change plugin infrastructure (a plugin is
+  // installed/activated or its config removed); those only take effect on a full
+  // Gateway (re)start — a passive watcher note does not load/unload a plugin.
+  scheduleGatewayProcessRestart(ctx.gatewayManager, `Channel config changed (${reason})`, {
+    onlyIfRunning: true,
+  });
+}
+
+/**
+ * Actively converge a saved channel-account config into the running Gateway:
+ * config.apply hot-push → repoll channels.status → escalate to a restart only
+ * when the account still isn't connected (e.g. a newly-installed plugin that the
+ * Gateway loads only at startup). Safe to await; only throws if the Gateway stops.
+ */
+async function convergeGatewayChannel(
+  ctx: ChannelsApiContext,
+  channelType: string,
+  accountId?: string,
+): Promise<void> {
+  await awaitChannelRuntimeConvergence(
+    ctx.gatewayManager,
+    resolveStoredChannelType(channelType),
+    accountId,
+  );
+}
+
+function scheduleGatewayChannelSaveRefresh(ctx: ChannelsApiContext, channelType: string, reason: string): void {
+  const storedChannelType = resolveStoredChannelType(channelType);
+  noteConfigWatcherRefresh(
+    ctx.gatewayManager,
+    `Channel config changed (${reason}; channel=${storedChannelType})`,
+    { onlyIfRunning: true },
+  );
 }
 
 function toComparableConfig(input: Record<string, unknown>): Record<string, string> {
@@ -979,30 +1029,6 @@ const CHANNEL_PLUGIN_INSTALLERS: Record<
   [OPENCLAW_WECHAT_CHANNEL_TYPE]: ensureWeChatPluginInstalled,
 };
 
-function isPluginBackedChannel(storedChannelType: string): boolean {
-  return Object.hasOwn(CHANNEL_PLUGIN_INSTALLERS, storedChannelType);
-}
-
-function shouldRestartRunningGateway(ctx: ChannelsApiContext, storedChannelType: string): boolean {
-  return isPluginBackedChannel(storedChannelType)
-    && ctx.gatewayManager.getStatus().state === 'running';
-}
-
-function scheduleGatewayRestartForPluginChannel(
-  ctx: ChannelsApiContext,
-  storedChannelType: string,
-  reason: 'noChange' | 'peerLinkRepairFailed' = 'noChange',
-): void {
-  logger.info(
-    `[channels.saveConfig] scheduling Gateway restart to activate plugin channel=${storedChannelType} reason=${reason}`,
-  );
-  // The config and scoped binding are already committed. Let the host request
-  // return while the guarded lifecycle path performs stop/start/readiness.
-  // GatewayManager owns error logging, status propagation, and restart
-  // coalescing, so the Channels page can show the normal connecting state.
-  ctx.gatewayManager.debouncedRestart(0);
-}
-
 async function awaitWeChatQrLogin(
   ctx: ChannelsApiContext,
   sessionKey: string,
@@ -1029,12 +1055,9 @@ async function awaitWeChatQrLogin(
       baseUrl: result.baseUrl,
       userId: result.userId,
     });
-    const restartGateway = shouldRestartRunningGateway(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE);
     await saveChannelConfig(UI_WECHAT_CHANNEL_TYPE, { enabled: true }, normalizedAccountId);
     await ensureScopedChannelBinding(UI_WECHAT_CHANNEL_TYPE, normalizedAccountId);
-    if (restartGateway) {
-      scheduleGatewayRestartForPluginChannel(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE);
-    }
+    await convergeGatewayChannel(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE, normalizedAccountId);
 
     if (activeQrLogins.get(loginKey) !== sessionKey) return;
     emitChannelEvent(ctx, UI_WECHAT_CHANNEL_TYPE, 'success', {
@@ -1059,6 +1082,33 @@ async function ensureChannelPluginInstalled(storedChannelType: string): Promise<
     throw new Error(result.warning || `${toUiChannelType(storedChannelType)} plugin install failed`);
   }
   return { peerLinkOk: result.peerLinkOk !== false };
+}
+
+async function readFeishuCandidateIcons(): Promise<Array<{ name: string; mimeType: string; base64: string }>> {
+  const jsonPaths = [
+    app.isPackaged ? join(process.resourcesPath, 'icons', 'feishu-candidates.json') : join(app.getAppPath(), 'resources', 'icons', 'feishu-candidates.json'),
+    join(__dirname, '../../../../resources/icons/feishu-candidates.json'),
+    join(__dirname, '../../../resources/icons/feishu-candidates.json'),
+  ];
+  const jsonPath = jsonPaths.find((candidate) => existsSync(candidate));
+  if (!jsonPath) return [];
+  const parsed = JSON.parse(readFileSync(jsonPath, 'utf-8')) as unknown;
+  if (!Array.isArray(parsed)) return [];
+  const dir = dirname(jsonPath);
+  const candidates: Array<{ name: string; mimeType: string; base64: string }> = [];
+  for (const entry of parsed) {
+    if (!isRecord(entry) || typeof entry.name !== 'string' || typeof entry.path !== 'string') continue;
+    const imgPath = join(dir, entry.path);
+    if (!existsSync(imgPath)) continue;
+    const ext = imgPath.split('.').pop()?.toLowerCase();
+    const mimeType = ext === 'png' ? 'image/png' : ext === 'svg' ? 'image/svg+xml' : 'image/jpeg';
+    candidates.push({
+      name: entry.name,
+      mimeType,
+      base64: readFileSync(imgPath).toString('base64'),
+    });
+  }
+  return candidates;
 }
 
 export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceRegistry['channels'] {
@@ -1089,6 +1139,7 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const accountId = requireString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       await setChannelDefaultAccount(channelType, accountId);
+      scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:setDefaultAccount:${channelType}`);
       return { success: true };
     },
     bindingSave: async (payload) => {
@@ -1111,6 +1162,7 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
           { migrateLegacy: true },
         );
       }
+      scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:setBinding:${channelType}`);
       return { success: true };
     },
     bindingDelete: async (payload) => {
@@ -1118,6 +1170,7 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const accountId = optionalString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       await clearChannelBinding(resolveStoredChannelType(channelType), accountId);
+      scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:clearBinding:${channelType}`);
       return { success: true };
     },
     validateConfig: async (payload) => {
@@ -1135,36 +1188,31 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const accountId = optionalString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       const storedChannelType = resolveStoredChannelType(channelType);
-      const restartGateway = shouldRestartRunningGateway(ctx, storedChannelType);
-      const [installResult, existingValues] = await Promise.all([
+      const [, existingValues] = await Promise.all([
         ensureChannelPluginInstalled(storedChannelType),
         getChannelFormValues(channelType, accountId),
       ]);
       if (isSameConfigValues(existingValues, config)) {
         await ensureScopedChannelBinding(channelType, accountId);
-        if (restartGateway) {
-          scheduleGatewayRestartForPluginChannel(ctx, storedChannelType, 'noChange');
-        }
-        return { success: true, noChange: true, ...(restartGateway ? { activationPending: true } : {}) };
+        await convergeGatewayChannel(ctx, storedChannelType, accountId);
+        return { success: true, noChange: true };
       }
       await saveChannelConfig(channelType, config, accountId);
       await ensureScopedChannelBinding(channelType, accountId);
-      if (restartGateway && !installResult.peerLinkOk) {
-        scheduleGatewayRestartForPluginChannel(ctx, storedChannelType, 'peerLinkRepairFailed');
-        return { success: true, activationPending: true };
-      }
-      // A changed running config is delivered through config.set, whose native
-      // reload activates the plugin. Scheduling another full restart here races
-      // that code-1012 reload and can trip OpenClaw's restart-loop breaker.
-      // Keep the explicit restart above only for no-change retries, where no
-      // config.set reload occurs but a newly copied plugin may still need discovery,
-      // and when OpenClaw peer link repair failed after plugin install.
-      return { success: true, ...(restartGateway ? { activationPending: true } : {}) };
+      await convergeGatewayChannel(ctx, storedChannelType, accountId);
+      return { success: true };
     },
     setEnabled: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const enabled = isRecord(payload) && payload.enabled === true;
       await setChannelEnabled(channelType, enabled);
+      if (enabled) {
+        // Enabling may activate a channel plugin that only loads at Gateway start;
+        // converge (config.apply → restart escalation) so it comes up connected.
+        await convergeGatewayChannel(ctx, channelType);
+      } else {
+        scheduleGatewayChannelRestart(ctx, `channel:setEnabled:${resolveStoredChannelType(channelType)}`);
+      }
       return { success: true };
     },
     formValues: async (payload) => {
@@ -1179,6 +1227,7 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       if (accountId) {
         await deleteChannelAccountConfig(channelType, accountId);
         await clearChannelBinding(storedChannelType, accountId);
+        scheduleGatewayChannelRestart(ctx, `channel:deleteAccount:${storedChannelType}`);
       } else {
         await deleteChannelConfig(channelType);
         await clearAllBindingsForChannel(storedChannelType);
@@ -1230,6 +1279,91 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
         if (sessionKey) await cancelWeChatLoginSession(sessionKey);
       }
       return { success: true };
+    },
+    feishuCandidateIcons: async () => ({ success: true, candidates: await readFeishuCandidateIcons() }),
+    feishuMyApps: async () => {
+      try {
+        return { success: true, apps: await listFeishuUserApps() };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    },
+    feishuAppInfo: async (payload) => {
+      try {
+        return { success: true, ...(await getFeishuAppInfo(payload.appId, payload.appSecret)) };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    },
+    feishuAutoCreate: async (payload) => {
+      try {
+        if (!payload.appName) return { success: false, error: 'appName is required' };
+        const lang = resolveSupportedLanguage(await getSetting('language'));
+        const result = await autoCreateFeishuApp(
+          payload.appName,
+          getFeishuAutoCreateStrings(lang),
+          payload.iconBase64,
+          payload.iconMimeType,
+        );
+        return {
+          success: true,
+          app_id: result.appId,
+          app_secret: result.appSecret,
+          larkCliReady: result.larkCliReady,
+          larkCliError: result.larkCliError,
+        };
+      } catch (error) {
+        if (error instanceof FeishuAppError) {
+          return {
+            success: false,
+            error: error.message,
+            disabledAppId: error.disabledAppId,
+            manageUrl: error.manageUrl,
+          };
+        }
+        return { success: false, error: String(error) };
+      }
+    },
+    feishuUpdateApp: async (payload) => {
+      try {
+        if (!payload.appId || !payload.appSecret || !payload.appName) {
+          return { success: false, error: 'appId, appSecret, and appName are required' };
+        }
+        const lang = resolveSupportedLanguage(await getSetting('language'));
+        const result = await updateFeishuAppInfo(
+          payload.appId,
+          payload.appSecret,
+          getFeishuAutoCreateStrings(lang),
+          payload.appName,
+          payload.iconBase64,
+          payload.iconMimeType,
+        );
+        return { success: true, larkCliReady: result.larkCliReady, larkCliError: result.larkCliError };
+      } catch (error) {
+        if (error instanceof FeishuAppError) {
+          return { success: false, error: error.message, recovered: error.recovered, manageUrl: error.manageUrl };
+        }
+        return { success: false, error: String(error) };
+      }
+    },
+    feishuDeleteApp: async (payload) => {
+      try {
+        if (!payload.appId) return { success: false, error: 'appId is required' };
+        return await deleteFeishuUserApp(payload.appId);
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    },
+    feishuRetryLarkCli: async (payload) => {
+      try {
+        if (!payload.appId || !payload.appSecret) {
+          return { success: false, error: 'appId and appSecret are required' };
+        }
+        const result = await configureLarkCli(payload.appId, payload.appSecret);
+        return { success: result.success, error: result.error };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
     },
   };
 }

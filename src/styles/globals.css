@@ -112,86 +112,68 @@
  * ────────────────────────────────────────────────────────────────────────── */
 
 @layer base {
+  /* YYClaw warm palette — warm cream base + coral/amber accent */
   :root {
-    /* ── shadcn semantic tokens (light) ─────────────────────────── */
-    /* Clean neutral page background matching the white/gray light theme. */
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --foreground: 20 14% 14%;
+    --card: 40 50% 99%;
+    --card-foreground: 20 14% 14%;
+    --popover: 40 50% 99%;
+    --popover-foreground: 20 14% 14%;
+    --primary: 18 90% 56%;
+    --primary-foreground: 40 50% 98%;
+    --secondary: 36 30% 90%;
+    --secondary-foreground: 20 14% 18%;
+    --muted: 38 24% 88%;
+    --muted-foreground: 28 8% 42%;
+    --accent: 22 70% 92%;
+    --accent-foreground: 18 60% 30%;
+    --destructive: 4 78% 56%;
+    --destructive-foreground: 40 50% 98%;
+    --border: 34 22% 84%;
+    --input: 34 22% 86%;
+    --ring: 18 90% 56%;
+    /* Secondary accent (gold) for warm gradient + accents */
+    --accent-gold: 40 95% 60%;
     --radius: 0.5rem;
 
-    /* ── ClawX neutral surfaces (light) ───────────────────────────
-     *
-     * Three stacked neutral layers. The app shell stays white while
-     * recessed controls and the sidebar use subtle gray contrast.
-     *
-     *   --surface-modal   = lifted neutral panels, dialogs, popovers,
-     *                       composer, cards
-     *   --surface-input   = recessed neutral inputs / selects / code panes
-     *   --surface-sidebar = sidebar neutral navigation rail (often /60)
-     * ─────────────────────────────────────────────────────────── */
+    /* ── ClawX cream surfaces (light) ── three stacked cream layers:
+     *   modal   = lifted cream   (raised panels, popovers, inputs, cards)
+     *   input   = recessed cream (code/log <pre>, segmented track)
+     *   sidebar = sidebar cream  (left navigation rail) */
     --surface-modal: 0 0% 100%;
-    --surface-input: 0 0% 96.5%;
-    --surface-sidebar: 0 0% 96%;
+    --surface-input: 45 22% 94%;
+    --surface-sidebar: 0 0% 94.9%;
 
-    /* ── ClawX usage accents (light) ─────────────────────────────
-     *
-     * Three semantic accents reused everywhere that we visualise
-     * token usage / activity. Mirrors the Cron page convention so
-     * the Models bar chart, legend dots, and any future "input /
-     * output / cache" indicator pulls from the same palette:
-     *
-     *   --usage-input  = blue   (matches Cron "Total" tile / primary)
-     *   --usage-output = green  (matches Cron "Active" tile / `bg-green-500`)
-     *   --usage-cache  = yellow (matches Cron "Paused" tile)
-     *
-     * Anchored to Tailwind's *-500 shades so chart bars read at the
-     * same brightness as the `bg-green-500` "configured" status dot
-     * and the Cron stat-tile icon halos. Going darker (*-600/*-700)
-     * makes the bars look duller than the dots they sit next to.
-     * ─────────────────────────────────────────────────────────── */
+    /* ── Usage accents (light) ── input=blue / output=green / cache=yellow,
+     * anchored to Tailwind *-500 shades (Models token-usage chart + dots). */
     --usage-input: 217 91% 60%;
     --usage-output: 142 71% 45%;
     --usage-cache: 48 96% 53%;
   }
 
-  /* Neutral deep-gray dark palette */
+  /* Warm charcoal dark palette + brighter coral accent */
   .dark {
     --background: 240 4% 11%;
-    --foreground: 210 20% 96%;
-    --card: 240 3% 14%;
-    --card-foreground: 210 20% 96%;
-    --popover: 240 3% 14%;
-    --popover-foreground: 210 20% 96%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 240 3% 18%;
-    --secondary-foreground: 210 20% 96%;
-    --muted: 240 3% 18%;
-    --muted-foreground: 220 8% 72%;
-    --accent: 240 3% 22%;
-    --accent-foreground: 210 20% 96%;
-    --destructive: 0 65% 42%;
-    --destructive-foreground: 210 20% 96%;
-    --border: 240 3% 24%;
-    --input: 240 3% 18%;
-    --ring: 217.2 91.2% 59.8%;
+    --foreground: 36 18% 92%;
+    --card: 24 7% 13%;
+    --card-foreground: 36 18% 92%;
+    --popover: 24 8% 12%;
+    --popover-foreground: 36 18% 92%;
+    --primary: 20 92% 62%;
+    --primary-foreground: 24 30% 10%;
+    --secondary: 24 6% 18%;
+    --secondary-foreground: 36 18% 92%;
+    --muted: 24 6% 16%;
+    --muted-foreground: 30 10% 68%;
+    --accent: 20 24% 22%;
+    --accent-foreground: 36 30% 90%;
+    --destructive: 6 62% 46%;
+    --destructive-foreground: 36 18% 92%;
+    --border: 24 6% 22%;
+    --input: 24 6% 18%;
+    --ring: 20 92% 62%;
+    --accent-gold: 44 90% 58%;
 
     /* In dark mode the three neutral surfaces collapse onto existing
      * shadcn tokens:
@@ -205,9 +187,7 @@
     --surface-input: 240 3% 18%;
     --surface-sidebar: 240 4% 11%;
 
-    /* Usage accents — lifted *-400-ish shades so bars stay vivid
-     * against the deep-gray dark surfaces (see light block above
-     * for semantic mapping). */
+    /* Usage accents — lifted *-400-ish shades so bars stay vivid on dark. */
     --usage-input: 217 91% 65%;
     --usage-output: 142 71% 52%;
     --usage-cache: 48 96% 60%;
@@ -220,56 +200,18 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
 
 @layer components {
-  .sidebar-nav-text.sidebar-nav-text {
-    @apply text-sm font-normal leading-4;
-  }
-
   .clawx-skill-token-overlay {
     background-color: color-mix(in srgb, #2f6bff 14%, hsl(var(--surface-modal)));
   }
 
   .dark .clawx-skill-token-overlay {
     background-color: color-mix(in srgb, #2f6bff 18%, hsl(var(--surface-modal)));
-  }
-
-  .clawx-dialog-overlay {
-    @apply fixed inset-0 z-50 bg-black/30 dark:bg-black/60;
-  }
-
-  .clawx-dialog-content {
-    @apply fixed left-1/2 top-1/2 z-50 w-full outline-none;
-    transform: translate(-50%, -50%);
-    transform-origin: center;
-    will-change: opacity, transform;
-  }
-
-  .clawx-dialog-overlay[data-state='open'] {
-    animation: clawx-dialog-overlay-in 100ms ease-out both;
-  }
-
-  .clawx-dialog-overlay[data-state='closed'] {
-    animation: clawx-dialog-overlay-out 80ms ease-in both;
-  }
-
-  .clawx-dialog-content[data-state='open'] {
-    animation: clawx-dialog-content-in 100ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
-
-  .clawx-dialog-content[data-state='closed'] {
-    animation: clawx-dialog-content-out 80ms ease-in both;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .clawx-dialog-overlay[data-state],
-    .clawx-dialog-content[data-state] {
-      animation: none;
-    }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -340,60 +282,7 @@
   }
 }
 
-@keyframes clawx-dialog-overlay-in {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes clawx-dialog-overlay-out {
-  from {
-    opacity: 1;
-  }
-
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes clawx-dialog-content-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.985);
-  }
-
-  to {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-  }
-}
-
-@keyframes clawx-dialog-content-out {
-  from {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-  }
-
-  to {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.99);
-  }
-}
-
-/* Custom scrollbar: keep scrollbars visually quiet until the user hovers a scroll area. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-
-*:hover {
-  scrollbar-color: hsl(var(--border)) transparent;
-}
-
+/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -404,14 +293,10 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-transparent rounded-full;
+  @apply bg-border rounded-full;
 }
 
-*:hover::-webkit-scrollbar-thumb {
-  @apply bg-border;
-}
-
-*:hover::-webkit-scrollbar-thumb:hover {
+::-webkit-scrollbar-thumb:hover {
   @apply bg-muted-foreground/30;
 }
 
@@ -432,6 +317,23 @@
 
 .no-drag {
   -webkit-app-region: no-drag;
+}
+
+.office-form-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  contain: paint;
+}
+
+.office-form-scroll-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 480px;
+}
+
+.office-form-scroll-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
 }
 
 /* Smooth transitions */
@@ -459,18 +361,9 @@
 
 .prose ul,
 .prose ol {
-  list-style: disc outside;
   margin-top: 0.5em;
   margin-bottom: 0.5em;
   padding-left: 1.5em;
-}
-
-.prose ol {
-  list-style: decimal;
-}
-
-.prose li::marker {
-  color: hsl(var(--foreground));
 }
 
 .prose li {
@@ -672,5 +565,248 @@
 
   30% {
     transform: translateY(-4px);
+  }
+}
+
+/*
+ * Arbitrary font-size utilities used for a few headings/stats: keep class names in
+ * TSX but render at the compact scale (matches tightened `text-5xl` / `text-3xl`).
+ */
+.text-\[40px\] {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.text-\[28px\] {
+  font-size: 1.5rem;
+  line-height: 1.25;
+}
+
+.text-\[24px\] {
+  font-size: 1.375rem;
+  line-height: 1.25;
+}
+
+@layer components {
+  .sidebar-nav-text.sidebar-nav-text {
+    @apply text-sm font-normal leading-4;
+  }
+
+  /*
+   * Hover marquee for single-line labels that would otherwise just truncate
+   * (see src/components/ui/marquee-text.tsx). Idle state keeps the ellipsis;
+   * `data-marquee="on"` is set by JS only when the text actually overflows, and
+   * the shift distance / duration arrive as inline custom properties.
+   */
+  .clawx-marquee {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .clawx-marquee-track {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .clawx-marquee[data-marquee='on'] .clawx-marquee-track {
+    width: max-content;
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+    animation: clawx-marquee-shift var(--clawx-marquee-duration, 4s) linear infinite alternate;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .clawx-marquee[data-marquee='on'] .clawx-marquee-track {
+      width: auto;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      animation: none;
+    }
+  }
+
+  .clawx-dialog-overlay {
+    @apply fixed inset-0 z-50 bg-black/30 dark:bg-black/60;
+  }
+
+  .clawx-dialog-content {
+    @apply fixed left-1/2 top-1/2 z-50 w-full outline-none;
+    transform: translate(-50%, -50%);
+    transform-origin: center;
+  }
+
+  .clawx-dialog-overlay[data-state='open'] {
+    animation: clawx-dialog-overlay-in 100ms ease-out both;
+  }
+
+  .clawx-dialog-overlay[data-state='closed'] {
+    animation: clawx-dialog-overlay-out 80ms ease-in both;
+    pointer-events: none !important;
+  }
+
+  .clawx-dialog-content[data-state='open'] {
+    animation: clawx-dialog-content-in 100ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .clawx-dialog-content[data-state='closed'] {
+    animation: clawx-dialog-content-out 80ms ease-in both;
+    pointer-events: none !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .clawx-dialog-overlay[data-state],
+    .clawx-dialog-content[data-state],
+    .clawx-dialog-overlay.skill-picker-modal-overlay[data-state],
+    .clawx-dialog-content.skill-picker-modal-content[data-state],
+    .clawx-dialog-overlay.skill-picker-nested-modal-overlay[data-state],
+    .clawx-dialog-content.skill-picker-nested-modal-content[data-state] {
+      animation: none;
+    }
+  }
+
+  /* Skill picker modals must sit above SkillSideSheetShell (z-index: 100). */
+  .clawx-dialog-overlay.skill-picker-modal-overlay {
+    z-index: 110;
+  }
+
+  .clawx-dialog-content.skill-picker-modal-content {
+    z-index: 111;
+  }
+
+  /*
+   * Nested choice/confirm opened from a skill-picker dialog must sit above the
+   * parent content (111). Equal 110/111 stacking lets parent chrome paint over
+   * the nested dimmer and swallow clicks (Save/Exit look dead).
+   */
+  .clawx-dialog-overlay.skill-picker-nested-modal-overlay {
+    z-index: 120;
+  }
+
+  .clawx-dialog-content.skill-picker-nested-modal-content {
+    z-index: 121;
+  }
+
+  .clawx-dialog-overlay.skill-picker-modal-overlay[data-state='open'] {
+    animation: clawx-skill-picker-overlay-in 150ms ease-out both;
+  }
+
+  .clawx-dialog-overlay.skill-picker-modal-overlay[data-state='closed'],
+  .clawx-dialog-content.skill-picker-modal-content[data-state='closed'],
+  .clawx-dialog-overlay.skill-picker-nested-modal-overlay[data-state='closed'],
+  .clawx-dialog-content.skill-picker-nested-modal-content[data-state='closed'] {
+    pointer-events: none !important;
+  }
+
+  .clawx-dialog-overlay.skill-picker-modal-overlay[data-state='closed'] {
+    animation: clawx-skill-picker-overlay-out 120ms ease-in both;
+  }
+
+  .clawx-dialog-content.skill-picker-modal-content[data-state='open'] {
+    animation: clawx-skill-picker-content-in 150ms ease-out both;
+  }
+
+  .clawx-dialog-content.skill-picker-modal-content[data-state='closed'] {
+    animation: clawx-skill-picker-content-out 120ms ease-in both;
+  }
+}
+
+@keyframes clawx-dialog-overlay-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes clawx-dialog-overlay-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes clawx-dialog-content-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes clawx-dialog-content-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.99);
+  }
+}
+
+@keyframes clawx-skill-picker-overlay-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes clawx-skill-picker-overlay-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes clawx-skill-picker-content-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes clawx-skill-picker-content-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+/* Holds at both ends so the start/end of a long label stays readable. */
+@keyframes clawx-marquee-shift {
+  0%,
+  14% {
+    transform: translateX(0);
+  }
+
+  86%,
+  100% {
+    transform: translateX(var(--clawx-marquee-shift, 0));
   }
 }

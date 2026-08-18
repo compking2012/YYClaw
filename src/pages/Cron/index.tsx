@@ -31,6 +31,7 @@ import {
   ChevronDown,
   Bot,
   Search,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -54,7 +55,8 @@ import { useChatStore } from '@/stores/chat';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
+import { buildEnhancePromptGenPrompt } from '@/lib/enhance-prompt';
 import type { CronJob, CronJobCreateInput, CronSchedule, ScheduleType } from '@/types/cron';
 import type { QuickAccessSkill } from '@/types/skill';
 import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType } from '@/types/channel';
@@ -207,10 +209,11 @@ function parseCronExpr(cron: string, t: TFunction<'cron'>): string {
     return t('schedule.weekdaysAt', { time: `${hour}:${minute.padStart(2, '0')}` });
   }
   if (dayOfWeek !== '*' && dayOfMonth === '*') {
-    const dayLabel =
-      isNum(dayOfWeek) && Number(dayOfWeek) <= 6
-        ? t(`weekdays.${WEEKDAY_KEYS[Number(dayOfWeek)]}` as const)
-        : dayOfWeek;
+    const days = dayOfWeek.split(',').map((part) => part.trim());
+    const allWeekdayNums = days.every((day) => isNum(day) && Number(day) <= 6);
+    const dayLabel = allWeekdayNums
+      ? days.map((day) => t(`weekdays.${WEEKDAY_KEYS[Number(day)]}` as const)).join('、')
+      : dayOfWeek;
     return t('schedule.weeklyAt', { day: dayLabel, time: `${hour}:${minute.padStart(2, '0')}` });
   }
   if (dayOfMonth !== '*') {
@@ -334,21 +337,35 @@ interface TaskDialogProps {
 // ── Schedule builder (recurring / once tabs) ─────────────────────
 
 type ScheduleMode = 'recurring' | 'once';
-type RecurrenceKind = 'hourly' | 'daily' | 'weekdays' | 'weekly' | 'custom';
+type RecurrenceKind = 'minutely' | 'hourly' | 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'custom';
 
-const RECURRENCE_KINDS: RecurrenceKind[] = ['hourly', 'daily', 'weekdays', 'weekly', 'custom'];
+const RECURRENCE_KINDS: RecurrenceKind[] = ['minutely', 'hourly', 'daily', 'weekdays', 'weekly', 'monthly', 'custom'];
 // cron day-of-week is 0-6 with 0 = Sunday
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
 interface ScheduleFormState {
   mode: ScheduleMode;
   recurrence: RecurrenceKind;
-  timeOfDay: string; // HH:MM for daily/weekdays/weekly
-  weekday: number; // 0-6 for weekly
+  timeOfDay: string; // HH:MM for daily/weekdays/weekly/monthly
+  weekdays: number[]; // 0-6 for weekly (multi-select)
+  dayOfMonth: number; // 1-31 for monthly
   hourlyMinute: number; // 0-59 for hourly
   customCron: string;
   onceDate: string; // YYYY-MM-DD
   onceTime: string; // HH:MM
+}
+
+/** Parse a cron day-of-week field (single number or comma list, 0-6) into a sorted unique array, or null. */
+function parseWeekdayList(dow: string): number[] | null {
+  const parts = dow.split(',').map((part) => part.trim());
+  const days: number[] = [];
+  for (const part of parts) {
+    if (!/^\d+$/.test(part)) return null;
+    const value = Number(part);
+    if (value < 0 || value > 6) return null;
+    if (!days.includes(value)) days.push(value);
+  }
+  return days.length > 0 ? days.sort((a, b) => a - b) : null;
 }
 
 function pad2(value: number): string {
@@ -369,7 +386,8 @@ function defaultScheduleForm(): ScheduleFormState {
     mode: 'recurring',
     recurrence: 'daily',
     timeOfDay: '09:00',
-    weekday: 1,
+    weekdays: [1],
+    dayOfMonth: 1,
     hourlyMinute: 0,
     customCron: '',
     onceDate: toDateInputValue(now),
@@ -385,6 +403,9 @@ function parseCronExprToForm(expr: string, base: ScheduleFormState): ScheduleFor
     return { ...base, mode: 'recurring', recurrence: 'custom', customCron: trimmed };
   }
   const [minute, hour, dom, mon, dow] = parts;
+  if (minute === '*' && hour === '*' && dom === '*' && mon === '*' && dow === '*') {
+    return { ...base, mode: 'recurring', recurrence: 'minutely' };
+  }
   if (isNum(minute) && hour === '*' && dom === '*' && mon === '*' && dow === '*') {
     return {
       ...base,
@@ -393,12 +414,22 @@ function parseCronExprToForm(expr: string, base: ScheduleFormState): ScheduleFor
       hourlyMinute: Math.min(59, Math.max(0, Number(minute))),
     };
   }
-  if (isNum(minute) && isNum(hour) && dom === '*' && mon === '*') {
+  if (isNum(minute) && isNum(hour)) {
     const timeOfDay = `${pad2(Number(hour))}:${pad2(Number(minute))}`;
-    if (dow === '*') return { ...base, mode: 'recurring', recurrence: 'daily', timeOfDay };
-    if (dow === '1-5') return { ...base, mode: 'recurring', recurrence: 'weekdays', timeOfDay };
-    if (isNum(dow) && Number(dow) >= 0 && Number(dow) <= 6) {
-      return { ...base, mode: 'recurring', recurrence: 'weekly', weekday: Number(dow), timeOfDay };
+    if (isNum(dom) && mon === '*' && dow === '*') {
+      return {
+        ...base,
+        mode: 'recurring',
+        recurrence: 'monthly',
+        dayOfMonth: Math.min(31, Math.max(1, Number(dom))),
+        timeOfDay,
+      };
+    }
+    if (dom === '*' && mon === '*') {
+      if (dow === '*') return { ...base, mode: 'recurring', recurrence: 'daily', timeOfDay };
+      if (dow === '1-5') return { ...base, mode: 'recurring', recurrence: 'weekdays', timeOfDay };
+      const weekdays = parseWeekdayList(dow);
+      if (weekdays) return { ...base, mode: 'recurring', recurrence: 'weekly', weekdays, timeOfDay };
     }
   }
   return { ...base, mode: 'recurring', recurrence: 'custom', customCron: trimmed };
@@ -437,6 +468,8 @@ function buildScheduleFromForm(form: ScheduleFormState): string | CronSchedule {
   const hour = Number(hourRaw);
   const minute = Number(minuteRaw);
   switch (form.recurrence) {
+    case 'minutely':
+      return '* * * * *';
     case 'hourly':
       return `${form.hourlyMinute} * * * *`;
     case 'daily':
@@ -444,7 +477,9 @@ function buildScheduleFromForm(form: ScheduleFormState): string | CronSchedule {
     case 'weekdays':
       return `${minute} ${hour} * * 1-5`;
     case 'weekly':
-      return `${minute} ${hour} * * ${form.weekday}`;
+      return `${minute} ${hour} * * ${[...form.weekdays].sort((a, b) => a - b).join(',')}`;
+    case 'monthly':
+      return `${minute} ${hour} ${form.dayOfMonth} * *`;
     case 'custom':
     default:
       return form.customCron.trim();
@@ -463,6 +498,10 @@ function computeNextRunPreviewFromForm(form: ScheduleFormState): string | null {
   const next = new Date(now.getTime());
   next.setSeconds(0, 0);
   switch (form.recurrence) {
+    case 'minutely': {
+      next.setMinutes(next.getMinutes() + 1);
+      return next.toLocaleString();
+    }
     case 'hourly': {
       next.setMinutes(form.hourlyMinute);
       if (next <= now) next.setHours(next.getHours() + 1);
@@ -482,11 +521,28 @@ function computeNextRunPreviewFromForm(form: ScheduleFormState): string | null {
       return next.toLocaleString();
     }
     case 'weekly': {
-      next.setHours(hour, minute, 0, 0);
-      const dayDelta = (form.weekday - next.getDay() + 7) % 7;
-      next.setDate(next.getDate() + dayDelta);
-      if (next <= now) next.setDate(next.getDate() + 7);
-      return next.toLocaleString();
+      if (form.weekdays.length === 0) return null;
+      let best: Date | null = null;
+      for (const weekday of form.weekdays) {
+        const candidate = new Date(now.getTime());
+        candidate.setSeconds(0, 0);
+        candidate.setHours(hour, minute, 0, 0);
+        const dayDelta = (weekday - candidate.getDay() + 7) % 7;
+        candidate.setDate(candidate.getDate() + dayDelta);
+        if (candidate <= now) candidate.setDate(candidate.getDate() + 7);
+        if (!best || candidate < best) best = candidate;
+      }
+      return best ? best.toLocaleString() : null;
+    }
+    case 'monthly': {
+      for (let offset = 0; offset <= 12; offset += 1) {
+        const candidate = new Date(now.getFullYear(), now.getMonth() + offset, form.dayOfMonth, hour, minute, 0, 0);
+        // Skip months without this day-of-month (e.g. Feb 30 rolls over).
+        if (candidate.getDate() === form.dayOfMonth && candidate > now) {
+          return candidate.toLocaleString();
+        }
+      }
+      return null;
     }
     case 'custom':
     default:
@@ -553,7 +609,7 @@ function ScheduleTimePicker({ id, value, onChange, 'data-testid': testId }: Sche
         <Clock className="h-4 w-4 opacity-50" />
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1.5 w-full overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-surface-modal shadow-lg">
+        <div className="absolute left-0 top-full z-30 mt-1.5 w-full overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-background shadow-lg">
           <div className="grid grid-cols-2 text-center text-meta font-medium text-muted-foreground">
             <div className="border-r border-black/5 dark:border-white/5 py-1.5">{t('dialog.hourColumn')}</div>
             <div className="py-1.5">{t('dialog.minuteColumn')}</div>
@@ -602,9 +658,12 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
 
   const [name, setName] = useState(job?.name || '');
   const [message, setMessage] = useState(job?.message || '');
+  const [enhancingPrompt, setEnhancingPrompt] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState(job?.agentId || useChatStore.getState().currentAgentId);
   const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(() => parseScheduleToForm(job));
-  const [enabled, setEnabled] = useState(job?.enabled ?? true);
+  const [enabled, setEnabled] = useState(job?.window?.desiredEnabled ?? job?.enabled ?? true);
+  const [windowStart, setWindowStart] = useState(job?.window?.start || '');
+  const [windowEnd, setWindowEnd] = useState(job?.window?.end || '');
   const [deliveryMode, setDeliveryMode] = useState<'none' | 'announce'>(
     job?.delivery?.mode === 'announce' ? 'announce' : 'none',
   );
@@ -631,7 +690,9 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
       setMessage(job?.message || '');
       setSelectedAgentId(job?.agentId || useChatStore.getState().currentAgentId);
       setScheduleForm(parseScheduleToForm(job));
-      setEnabled(job?.enabled ?? true);
+      setEnabled(job?.window?.desiredEnabled ?? job?.enabled ?? true);
+      setWindowStart(job?.window?.start || '');
+      setWindowEnd(job?.window?.end || '');
       setDeliveryMode(job?.delivery?.mode === 'announce' ? 'announce' : 'none');
       setDeliveryChannel(job?.delivery?.channel || '');
       setDeliveryTarget(job?.delivery?.to || '');
@@ -758,6 +819,26 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
     [syncMessageOverlayScroll],
   );
 
+  const handleEnhancePrompt = useCallback(async () => {
+    const draft = message.trim();
+    if (!draft || enhancingPrompt) return;
+    setEnhancingPrompt(true);
+    try {
+      const { system, input } = buildEnhancePromptGenPrompt(draft);
+      const res = await hostApi.agents.generateText({ agentId: selectedAgentId, system, input }) as {
+        success: boolean;
+        text?: string;
+        error?: string;
+      };
+      if (!res.success || !res.text) throw new Error(res.error || 'Generation failed');
+      setMessage(res.text);
+    } catch (error) {
+      toast.error(t('dialog.enhancePromptFailed', { error: String(error) }));
+    } finally {
+      setEnhancingPrompt(false);
+    }
+  }, [enhancingPrompt, message, selectedAgentId, t]);
+
   const normalizeMessageSelection = useCallback(() => {
     if (skillTokenRanges.length === 0) return;
     const textarea = messageRef.current;
@@ -874,20 +955,21 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
     accountId: account.accountId,
     displayName: getDeliveryAccountDisplayName(account, t),
   }));
-  const hasCurrentDeliveryTarget = !!deliveryTarget;
-  const currentDeliveryTargetOption = hasCurrentDeliveryTarget
-    ? {
-        value: deliveryTarget,
-        label: `${t('dialog.currentTarget')} (${deliveryTarget})`,
-        kind: 'user' as const,
-      }
+  // Prefer the fetched option's friendly label (user / group name) for the saved
+  // target; only synthesize a fallback entry when the value isn't in the fetched
+  // list, and even then avoid dumping the raw id into the label.
+  const matchedTargetOption = deliveryTarget
+    ? channelTargetOptions.find((option) => option.value === deliveryTarget)
+    : undefined;
+  const fallbackTargetOption = deliveryTarget && !matchedTargetOption
+    ? { value: deliveryTarget, label: t('dialog.currentTarget'), kind: 'user' as const }
     : null;
   const effectiveDeliveryAccountId =
     selectedDeliveryAccountId || selectedChannel?.defaultAccountId || deliveryAccountOptions[0]?.accountId || '';
   const showsAccountSelector = (selectedChannel?.accounts.length ?? 0) > 0;
   const selectedResolvedAccountId = effectiveDeliveryAccountId || undefined;
-  const availableTargetOptions = currentDeliveryTargetOption
-    ? [currentDeliveryTargetOption, ...channelTargetOptions.filter((option) => option.value !== deliveryTarget)]
+  const availableTargetOptions = fallbackTargetOption
+    ? [fallbackTargetOption, ...channelTargetOptions]
     : channelTargetOptions;
 
   useEffect(() => {
@@ -951,6 +1033,20 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
     unsupportedDeliveryChannel,
   ]);
 
+  // Auto-select a sensible default recipient once targets load, so the user
+  // doesn't have to pick one after choosing a sending account. Prefer the
+  // account's recommended target (feishu "App Owner"), then any user, then the
+  // first option. Skips when a target is already set (e.g. editing a job).
+  useEffect(() => {
+    if (deliveryMode !== 'announce' || deliveryTarget || loadingChannelTargets) return;
+    if (channelTargetOptions.length === 0) return;
+    const recommended =
+      channelTargetOptions.find((option) => option.kind === 'user' && /app owner/i.test(option.label)) ??
+      channelTargetOptions.find((option) => option.kind === 'user') ??
+      channelTargetOptions[0];
+    if (recommended) setDeliveryTarget(recommended.value);
+  }, [deliveryMode, deliveryTarget, loadingChannelTargets, channelTargetOptions]);
+
   const handleSubmit = async () => {
     if (!name.trim()) {
       toast.error(t('toast.nameRequired'));
@@ -973,6 +1069,15 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
       }
     } else if (scheduleForm.recurrence === 'custom' && !scheduleForm.customCron.trim()) {
       toast.error(t('toast.scheduleRequired'));
+      return;
+    } else if (scheduleForm.recurrence === 'weekly' && scheduleForm.weekdays.length === 0) {
+      toast.error(t('toast.weekdayRequired'));
+      return;
+    }
+    // Validity window only applies to recurring tasks (one-time tasks self-delete).
+    const hasWindow = scheduleForm.mode === 'recurring' && (!!windowStart || !!windowEnd);
+    if (hasWindow && windowStart && windowEnd && windowEnd < windowStart) {
+      toast.error(t('toast.windowEndBeforeStart'));
       return;
     }
     const finalSchedule = buildScheduleFromForm(scheduleForm);
@@ -1011,11 +1116,17 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
         delivery: finalDelivery,
         enabled,
         agentId: selectedAgentId,
+        // Always send the window so the backend can persist OR clear it. Empty
+        // start/end => no constraint (cleared). `desiredEnabled` mirrors intent.
+        window:
+          scheduleForm.mode === 'recurring'
+            ? { start: windowStart || undefined, end: windowEnd || undefined, desiredEnabled: enabled }
+            : { desiredEnabled: enabled },
       });
       onClose();
       toast.success(job ? t('toast.updated') : t('toast.created'));
     } catch (err) {
-      toast.error(String(err));
+      toast.appError(err);
     } finally {
       setSaving(false);
     }
@@ -1111,13 +1222,13 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                       onClick={() => setSkillPickerOpen((isOpen) => !isOpen)}
                       title={t('dialog.pickSkill')}
                       className={cn(
-                        'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0',
+                        'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0',
                         skillPickerOpen && 'text-foreground',
                       )}
                     >
                       <span>{t('dialog.skillButton')}</span>
                       <ChevronDown
-                        className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')}
+                        className={cn('h-3 w-3 transition-transform', skillPickerOpen && 'rotate-180')}
                       />
                     </button>
                     {skillPickerOpen && (
@@ -1168,6 +1279,20 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                       </div>
                     )}
                   </div>
+                  <button
+                    type="button"
+                    data-testid="cron-enhance-prompt-button"
+                    onClick={() => void handleEnhancePrompt()}
+                    disabled={enhancingPrompt || !message.trim()}
+                    title={t('dialog.enhancePrompt')}
+                    className="inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    {enhancingPrompt ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" />
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
@@ -1206,7 +1331,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                     data-testid={`cron-schedule-tab-${mode}`}
                     onClick={() => updateSchedule({ mode })}
                     className={cn(
-                      'flex-1 h-8 rounded-lg text-meta font-medium transition-colors',
+                      'flex-1 h-8 rounded-lg text-sm font-medium transition-colors',
                       scheduleForm.mode === mode
                         ? 'bg-surface-modal text-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground',
@@ -1230,6 +1355,10 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                       </option>
                     ))}
                   </SelectField>
+
+                  {scheduleForm.recurrence === 'minutely' && (
+                    <p className="text-meta text-muted-foreground">{t('dialog.minutelyHint')}</p>
+                  )}
 
                   {scheduleForm.recurrence === 'hourly' && (
                     <div className="space-y-1.5">
@@ -1266,23 +1395,37 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                   )}
 
                   {scheduleForm.recurrence === 'weekly' && (
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-2.5">
                       <div className="space-y-1.5">
-                        <Label htmlFor="cron-weekday" className="text-meta text-foreground/70 font-medium">
-                          {t('dialog.weekdayLabel')}
-                        </Label>
-                        <SelectField
-                          id="cron-weekday"
-                          data-testid="cron-weekday-select"
-                          value={scheduleForm.weekday}
-                          onChange={(e) => updateSchedule({ weekday: Number(e.target.value) })}
-                        >
-                          {WEEKDAY_KEYS.map((key, index) => (
-                            <option key={key} value={index}>
-                              {t(`weekdays.${key}` as const)}
-                            </option>
-                          ))}
-                        </SelectField>
+                        <Label className="text-meta text-foreground/70 font-medium">{t('dialog.weekdaysLabel')}</Label>
+                        <div data-testid="cron-weekday-select" className="flex flex-wrap gap-1.5">
+                          {WEEKDAY_KEYS.map((key, index) => {
+                            const active = scheduleForm.weekdays.includes(index);
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                aria-pressed={active}
+                                data-testid={`cron-weekday-${index}`}
+                                onClick={() =>
+                                  updateSchedule({
+                                    weekdays: active
+                                      ? scheduleForm.weekdays.filter((day) => day !== index)
+                                      : [...scheduleForm.weekdays, index].sort((a, b) => a - b),
+                                  })
+                                }
+                                className={cn(
+                                  'h-9 min-w-0 flex-1 rounded-lg border px-1 text-sm font-medium transition-colors',
+                                  active
+                                    ? 'bg-primary text-primary-foreground border-transparent shadow-sm'
+                                    : 'bg-transparent border-black/10 dark:border-white/10 text-foreground/70 hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground',
+                                )}
+                              >
+                                {t(`weekdays.${key}` as const)}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="cron-weekly-time" className="text-meta text-foreground/70 font-medium">
@@ -1297,14 +1440,51 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                     </div>
                   )}
 
+                  {scheduleForm.recurrence === 'monthly' && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="cron-day-of-month" className="text-meta text-foreground/70 font-medium">
+                          {t('dialog.dayOfMonthLabel')}
+                        </Label>
+                        <SelectField
+                          id="cron-day-of-month"
+                          data-testid="cron-day-of-month-select"
+                          value={scheduleForm.dayOfMonth}
+                          onChange={(e) => updateSchedule({ dayOfMonth: Number(e.target.value) })}
+                        >
+                          {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
+                            <option key={day} value={day}>
+                              {t('dialog.dayOfMonthOption', { day })}
+                            </option>
+                          ))}
+                        </SelectField>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="cron-monthly-time" className="text-meta text-foreground/70 font-medium">
+                          {t('dialog.timeLabel')}
+                        </Label>
+                        <ScheduleTimePicker
+                          id="cron-monthly-time"
+                          value={scheduleForm.timeOfDay}
+                          onChange={(next) => updateSchedule({ timeOfDay: next })}
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   {scheduleForm.recurrence === 'custom' && (
-                    <Input
-                      data-testid="cron-custom-input"
-                      placeholder={t('dialog.cronPlaceholder')}
-                      value={scheduleForm.customCron}
-                      onChange={(e) => updateSchedule({ customCron: e.target.value })}
-                      className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
-                    />
+                    <div className="space-y-1.5">
+                      <Input
+                        data-testid="cron-custom-input"
+                        placeholder={t('dialog.cronPlaceholder')}
+                        value={scheduleForm.customCron}
+                        onChange={(e) => updateSchedule({ customCron: e.target.value })}
+                        className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                      />
+                      <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line">
+                        {t('dialog.cronFieldsHelp')}
+                      </p>
+                    </div>
                   )}
                 </div>
               ) : (
@@ -1340,6 +1520,58 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                 {schedulePreview ? `${t('card.next')}: ${schedulePreview}` : t('dialog.cronPlaceholder')}
               </p>
             </div>
+
+            {/* Validity window (app-side; recurring tasks only) */}
+            {scheduleForm.mode === 'recurring' && (
+              <div className="space-y-2.5">
+                <div className="space-y-1">
+                  <Label className="text-sm text-foreground/80 font-bold">{t('dialog.windowTitle')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('dialog.windowDesc')}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cron-window-start" className="text-sm text-foreground/70 font-medium">
+                      {t('dialog.windowStartLabel')}
+                    </Label>
+                    <Input
+                      id="cron-window-start"
+                      data-testid="cron-window-start"
+                      type="date"
+                      value={windowStart}
+                      max={windowEnd || undefined}
+                      onChange={(e) => setWindowStart(e.target.value)}
+                      className="h-[44px] rounded-xl font-mono text-tiny bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cron-window-end" className="text-sm text-foreground/70 font-medium">
+                      {t('dialog.windowEndLabel')}
+                    </Label>
+                    <Input
+                      id="cron-window-end"
+                      data-testid="cron-window-end"
+                      type="date"
+                      value={windowEnd}
+                      min={windowStart || undefined}
+                      onChange={(e) => setWindowEnd(e.target.value)}
+                      className="h-[44px] rounded-xl font-mono text-tiny bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                    />
+                  </div>
+                </div>
+                {(windowStart || windowEnd) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWindowStart('');
+                      setWindowEnd('');
+                    }}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {t('dialog.windowClear')}
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Delivery */}
             <div className="space-y-3">
@@ -1501,7 +1733,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
               <Button
                 onClick={handleSubmit}
                 disabled={saving}
-                className="rounded-full px-6 h-[42px] text-meta font-semibold shadow-sm border border-transparent transition-all"
+                className="rounded-full px-6 h-[42px] text-meta font-semibold shadow-sm border border-transparent transition-all text-white"
               >
                 {saving ? (
                   <>
@@ -1562,6 +1794,15 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
   const deliveryLabel = deliveryChannel ? getChannelDisplayName(deliveryChannel) : '';
   const deliveryIcon = deliveryChannel && isKnownChannelType(deliveryChannel) ? CHANNEL_ICONS[deliveryChannel] : null;
 
+  const jobWindow = job.window && (job.window.start || job.window.end) ? job.window : null;
+  const windowStatus: 'notStarted' | 'ended' | null = (() => {
+    if (!jobWindow) return null;
+    const today = toDateInputValue(new Date());
+    if (jobWindow.start && today < jobWindow.start) return 'notStarted';
+    if (jobWindow.end && today > jobWindow.end) return 'ended';
+    return null;
+  })();
+
   return (
     <div
       data-testid={`cron-job-card-${job.id}`}
@@ -1585,6 +1826,11 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
                 className={cn('w-2 h-2 rounded-full shrink-0', job.enabled ? 'bg-green-500' : 'bg-muted-foreground')}
                 title={job.enabled ? t('stats.active') : t('stats.paused')}
               />
+              {windowStatus && (
+                <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-tiny font-medium text-amber-600 dark:text-amber-500">
+                  {windowStatus === 'notStarted' ? t('schedule.windowNotStarted') : t('schedule.windowEnded')}
+                </span>
+              )}
             </div>
             <p className="text-meta text-muted-foreground flex items-center gap-1.5 min-w-0">
               <Timer className="h-3.5 w-3.5 shrink-0" />
@@ -1647,6 +1893,13 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
             <Bot className="h-3.5 w-3.5" />
             {agentName}
           </span>
+
+          {jobWindow && (
+            <span className="flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5" />
+              {t('card.windowRange', { start: jobWindow.start || '…', end: jobWindow.end || '…' })}
+            </span>
+          )}
         </div>
 
         {/* Last Run Error */}
@@ -1773,7 +2026,7 @@ export function Cron() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
           <div>
-            <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight">
+            <h1 className="text-3xl md:text-4xl font-serif text-foreground mb-3 font-normal tracking-tight">
               {t('title')}
             </h1>
             <p className="text-subtitle text-foreground/70 font-medium">{t('subtitle')}</p>
@@ -1798,7 +2051,7 @@ export function Cron() {
                 setShowDialog(true);
               }}
               disabled={!isGatewayRunning}
-              className="h-9 text-meta font-medium rounded-full px-4 shadow-none"
+              className="h-9 text-[13px] font-medium rounded-full px-4 shadow-none"
             >
               <Plus className="h-3.5 w-3.5 mr-2" />
               {t('newTask')}

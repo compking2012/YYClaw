@@ -1,0 +1,19 @@
+{
+  "title": "工作流",
+  "subtitle": "确定性的分步任务编排。控制流 100% 固定；只有标记为模型步骤的节点才带有并约束非确定性。",
+  "definitions": "工作流定义",
+  "runs": "运行记录",
+  "run": "运行",
+  "noDefinitions": "尚未注册任何工作流定义。",
+  "noRuns": "暂无运行记录。请在上方启动一个工作流。",
+  "stepKind": {
+    "deterministic": "确定性",
+    "model": "模型",
+    "agent": "智能体"
+  },
+  "status": {
+    "running": "运行中",
+    "done": "已完成",
+    "failed": "失败"
+  }
+}

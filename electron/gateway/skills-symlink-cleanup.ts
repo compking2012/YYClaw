@@ -23,11 +23,11 @@
  * Symlinks whose realpath stays inside the same managed skills root are left
  * untouched.
  *
- * Removal uses fs.rmSync({ force: true, recursive: true }) rather than
- * fs.unlinkSync so that directory symlinks and Windows junctions (the form
- * that non-admin Windows installs end up creating) are deleted correctly.
- * unlinkSync raises EPERM on those on Windows, and rmSync without recursive
- * can reject directory symlinks on some platforms.
+ * Removal goes through `safeRmSync`, which strips the link itself on every
+ * platform (rmdir for Windows junctions and directory symlinks, unlink
+ * otherwise).  A recursive fs.rmSync must never be used here: on Windows it
+ * answers EPERM on a junction, re-stats it with a dereferencing statSync and
+ * then recurses into the *target*, deleting the linked-to skill tree.
  *
  * This is a transitional workaround.  Once openclaw/openclaw#59219 lands and
  * the loader stops rejecting managed-source symlinks whose realpath escapes
@@ -39,12 +39,12 @@ import {
   readlinkSync,
   readdirSync,
   realpathSync,
-  rmSync,
   type Dirent,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { getOpenClawConfigDir, getOpenClawResolvedDir, getOpenClawSkillsDir } from '../utils/paths';
+import { safeRmSync } from '../utils/safe-fs';
 import { logger } from '../utils/logger';
 
 export interface CleanupOptions {
@@ -247,7 +247,10 @@ export function cleanupStalePluginRuntimeDeps(
     }
 
     try {
-      rmSync(cacheRoot, { force: true, recursive: true });
+      // These cache roots are, by definition, full of symlinks into an OpenClaw
+      // package dir — walk them with the containment-checked remover so the
+      // linked-to package is never touched.
+      safeRmSync(cacheRoot);
       result.removed.push(entry.name);
     } catch (err) {
       logger.warn(`[plugin-runtime-deps-cleanup] Failed to remove ${cacheRoot}:`, err);
@@ -359,10 +362,11 @@ function cleanupSkillsDir(skillsDir: string, agentsDir: string): CleanupResult {
     if (isInside(skillsRealRoot, realTarget)) continue;
 
     try {
-      // rmSync handles file symlinks, directory symlinks, and Windows
-      // junctions uniformly.  unlinkSync would raise EPERM on directory
-      // symlinks/junctions on Windows.
-      rmSync(entryPath, { force: true, recursive: true });
+      // Strip the link only.  rmSync({ recursive: true }) must NOT be used here:
+      // on Windows it hits EPERM on a junction, then re-stats it with a
+      // dereferencing statSync and recurses into the target — deleting the
+      // *linked-to* skill tree instead of the link.
+      safeRmSync(entryPath);
       result.removed.push(entry.name);
     } catch (err) {
       logger.warn(`[skills-cleanup] Failed to remove ${entryPath}:`, err);

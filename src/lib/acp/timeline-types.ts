@@ -44,7 +44,7 @@ export type AttachmentRenderPart = {
 
 export type RenderPart =
   | { kind: 'markdown'; text: string }
-  | { kind: 'image'; source: string; mimeType?: string; alt?: string; mediaIdentity?: string }
+  | { kind: 'image'; source: string; mimeType?: string; alt?: string; mediaIdentity?: string; attachmentFileRef?: AttachmentFileRef }
   | AttachmentRenderPart
   | { kind: 'error'; message: string };
 
@@ -99,10 +99,18 @@ export type PermissionItem = {
   status: 'pending' | 'selected' | 'cancelled';
 };
 
+/**
+ * ACP wire `PlanEntryStatus` is only pending|in_progress|completed. ClawX may
+ * overlay `cancelled`/`failed` on the live timeline after user abort.
+ */
+export type TimelinePlanEntry = Omit<PlanEntry, 'status'> & {
+  status: PlanEntry['status'] | 'cancelled' | 'failed';
+};
+
 export type PlanItem = {
   kind: 'plan';
   id: string;
-  entries: PlanEntry[];
+  entries: TimelinePlanEntry[];
 };
 
 export type TimelineItem = MessageSegmentItem | ThoughtItem | ToolCallItem | PermissionItem | PlanItem;

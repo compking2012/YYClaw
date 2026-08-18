@@ -27,6 +27,15 @@ const STARTUP_MIGRATION_LOCK_PATTERNS: RegExp[] = [
   /\bretry after the other gateway finishes\b/i,
 ];
 
+/**
+ * The bundled OpenClaw runtime is gone from the install directory.  Retrying
+ * cannot conjure the files back, so reconnect attempts are pure log noise —
+ * one affected install produced 552 identical failures this way.
+ */
+const MISSING_RUNTIME_PATTERNS: RegExp[] = [
+  /\bOpenClaw (?:package|entry script) not found\b/i,
+];
+
 const TRANSIENT_START_ERROR_PATTERNS: RegExp[] = [
   /WebSocket closed before handshake/i,
   /ECONNREFUSED/i,
@@ -101,6 +110,15 @@ export function hasStartupMigrationLockSignal(
 ): boolean {
   return startupFailureCandidates(startupError, startupStderrLines)
     .some((text) => STARTUP_MIGRATION_LOCK_PATTERNS.some((pattern) => pattern.test(text)));
+}
+
+/** Returns true when the bundled OpenClaw runtime is missing from the install. */
+export function hasMissingRuntimeFailureSignal(
+  startupError: unknown,
+  startupStderrLines: string[],
+): boolean {
+  return startupFailureCandidates(startupError, startupStderrLines)
+    .some((text) => MISSING_RUNTIME_PATTERNS.some((pattern) => pattern.test(text)));
 }
 
 /**

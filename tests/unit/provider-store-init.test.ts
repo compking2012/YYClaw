@@ -13,6 +13,13 @@ vi.mock('@/lib/host-api', () => ({
   },
 }));
 
+// refreshProviderSnapshot also pulls the remote catalog and, when source==='remote',
+// overrides snapshot.vendors. Keep it 'local' so the mocked snapshot vendors win.
+vi.mock('@/lib/providers', () => ({
+  fetchRemoteProviders: vi.fn().mockResolvedValue({ source: 'local', providers: [] }),
+  normalizeProviderApiKeyInput: (value: unknown) => value,
+}));
+
 // Import store after mocks are in place
 import { useProviderStore } from '@/stores/providers';
 

@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
-import { ExternalLink, Eye, FileEdit, FolderOpen, FolderTree, Maximize2, Minimize2, X } from 'lucide-react';
+import { Download, ExternalLink, Eye, FileEdit, FolderOpen, FolderTree, Loader2, Maximize2, Minimize2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ import type { AcpSessionFileGroup } from '@/lib/acp/openclaw-file-activities';
 import type { AgentSummary } from '@/types/agent';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { getFilePreviewTargetIdentity, type FilePreviewTarget } from './types';
+import { previewDisplayPath } from './build-preview-target';
 import { FilePreviewBody } from './FilePreviewBody';
 import { WorkspaceBrowserBody } from './WorkspaceBrowserBody';
 import { WORKSPACE_BROWSER_ENABLED } from './workspace-browser-config';
@@ -137,6 +138,7 @@ export function ArtifactPanel({ fileGroups, uniqueFileCount, agent, workspacePat
               refreshSignal={refreshSignal}
               active={visibleTab === 'browser'}
               compact
+              writable
             />
           </div>
         )}
@@ -201,8 +203,32 @@ function PreviewTab({ focusedFile, active }: PreviewTabProps) {
   const { t } = useTranslation('chat');
   const isMac = window.electron?.platform === 'darwin';
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [pptxSlidePositions] = useState(() => new Map<string, number>());
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
+
+  const handleDownloadFocusedFile = async () => {
+    if (!focusedFile || downloading) return;
+    setDownloading(true);
+    try {
+      const result = focusedFile.attachmentFileRef
+        ? await hostApi.files.saveAttachmentAs({
+          ref: focusedFile.attachmentFileRef,
+          defaultFileName: focusedFile.fileName,
+        })
+        : await hostApi.files.saveAs({
+          filePath: previewDisplayPath(focusedFile),
+          defaultFileName: focusedFile.fileName,
+        });
+      if (!result.success) {
+        toast.error(t('filePreview.errors.downloadFailed', 'Could not download file'));
+      }
+    } catch {
+      toast.error(t('filePreview.errors.downloadFailed', 'Could not download file'));
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   useEffect(() => {
     if (!isFullscreen) return;
@@ -265,6 +291,21 @@ function PreviewTab({ focusedFile, active }: PreviewTabProps) {
         onPptxSlideIndexChange={(index) => pptxSlidePositions.set(identity, index)}
         trailingHeader={(
           <>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={() => void handleDownloadFocusedFile()}
+              disabled={downloading}
+              aria-label={t('filePreview.actions.download', 'Download')}
+              title={t('filePreview.actions.download', 'Download')}
+              data-testid="file-preview-download"
+            >
+              {downloading
+                ? <Loader2 className="h-4 w-4 animate-spin pointer-events-none" />
+                : <Download className="h-4 w-4 pointer-events-none" />}
+            </Button>
             {htmlExternalUrl && (
               <Button
                 type="button"

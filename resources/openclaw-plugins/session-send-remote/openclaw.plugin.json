@@ -1,0 +1,22 @@
+{
+  "id": "session-send-remote",
+  "contracts": {
+    "tools": [
+      "session_send_remote",
+      "sessions_send_remote",
+      "session_list_remote",
+      "sessions_list_remote",
+      "session_history_remote",
+      "sessions_history_remote",
+      "session_status_remote",
+      "sessions_status_remote",
+      "shared_workspace_sync",
+      "office_shared_workspace_sync"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

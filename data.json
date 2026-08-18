@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "fixedGroups": [],
+  "tempProjects": [],
+  "agentBindings": {},
+  "roomMessages": {},
+  "settings": {
+    "agentToAgentEnabled": false,
+    "agentToAgentAllow": []
+  }
+}

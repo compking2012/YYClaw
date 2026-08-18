@@ -4,16 +4,27 @@
  * Scoped to the effective chat workspace, falling back to the current agent's workspace.
  * Used by `ArtifactPanel`'s browser tab (split-pane on the chat page).
  */
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  lazy,
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Tree, type NodeRendererProps, type RowRendererProps } from 'react-arborist';
-import { ChevronRight, Folder, FolderOpen, RefreshCw } from 'lucide-react';
+import { ChevronRight, Folder, FolderOpen, RefreshCw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
-import { readTextFile, statFile } from '@/lib/file-preview-client';
+import { readTextFile, statFile, writeTextFile } from '@/lib/file-preview-client';
 import { hostApi } from '@/lib/host-api';
 import {
   isDocxPreviewExt,
@@ -35,6 +46,7 @@ import {
   type WorkspaceTreeNode,
 } from '@/lib/workspace-tree';
 import type { AgentSummary } from '@/types/agent';
+import { isTopLevelSystemEntry } from '@/lib/persona-files';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { formatFileSize } from './format';
 import {
@@ -141,6 +153,9 @@ export interface WorkspaceBrowserBodyProps {
   treeWidth?: number;
   /** Optional slot rendered in the toolbar (e.g. close button when used in a Sheet). */
   toolbarTrailing?: React.ReactNode;
+  /** When true, the tree hides persona/memory files, files can be deleted, and
+   * text files are editable (saved back to disk). Used by the Chat workspace sidebar. */
+  writable?: boolean;
   /** Whether this browser surface is visible and may own the PPTX parser. */
   active?: boolean;
 }
@@ -169,6 +184,7 @@ export function WorkspaceBrowserBody({
   compact = false,
   treeWidth,
   toolbarTrailing,
+  writable = false,
   active = true,
 }: WorkspaceBrowserBodyProps) {
   const { t } = useTranslation('chat');
@@ -183,10 +199,12 @@ export function WorkspaceBrowserBody({
   });
   const treeContainerRef = useRef<HTMLDivElement | null>(null);
   const [treeHeight, setTreeHeight] = useState(0);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pptxSlidePositions] = useState(() => new Map<string, number>());
 
   const explicitWorkspace = workspacePath?.trim() ?? '';
   const workspace = explicitWorkspace || agent?.workspace || '';
+  const agentId = agent?.id;
   const treeScope = `${agent?.id ?? ''}:${workspace}`;
   const openRelPaths = openRelPathState.scope === treeScope ? openRelPathState.paths : null;
   const workspaceDisplayPath = explicitWorkspace
@@ -201,6 +219,13 @@ export function WorkspaceBrowserBody({
   });
 
   const reload = useCallback(() => setRefreshTick((v) => v + 1), []);
+
+  // Cancel any pending debounced save when the body unmounts.
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const updateTreeHeight = () => {
@@ -232,18 +257,18 @@ export function WorkspaceBrowserBody({
 
   // Reset selection when the agent changes.
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- intentional reset on agent switch */
+     
     setSelectedRel(null);
     setFileState({ status: 'idle' });
     setFileStatePath(null);
     setOpenRelPathState({ scope: treeScope, paths: null });
-    /* eslint-enable react-hooks/set-state-in-effect */
+     
   }, [treeScope]);
 
   useEffect(() => {
     if (!workspace) return;
     let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async tree fetch
+     
     setState({ status: 'loading' });
     loadWorkspaceTree(workspace, {
       runStartedAt: runStartedAt ?? null,
@@ -284,7 +309,7 @@ export function WorkspaceBrowserBody({
   }, [openRelPaths, state]);
 
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- selection-driven loader */
+     
     if (!selectedNode || selectedNode.isDir) {
       setFileState({ status: 'idle' });
       setFileStatePath(null);
@@ -345,7 +370,7 @@ export function WorkspaceBrowserBody({
       return;
     }
     setFileState({ status: 'loading' });
-    /* eslint-enable react-hooks/set-state-in-effect */
+     
     readTextFile(node.absPath)
       .then((res) => {
         if (cancelled) return;
@@ -405,6 +430,49 @@ export function WorkspaceBrowserBody({
     }
   }, [selectedNode, fileState, t]);
 
+  const handleDeleteFile = useCallback(async (relPath: string) => {
+    if (!agentId) return;
+    if (!window.confirm(t('workspace.deleteConfirm', { defaultValue: 'Delete {{path}}?', path: relPath }))) return;
+    try {
+      const res = await hostApi.workspace.deleteFile({ agentId, path: relPath }) as { success: boolean; error?: string };
+      if (!res.success) throw new Error(res.error || 'Failed to delete file');
+      if (selectedRel === relPath || (selectedRel && selectedRel.startsWith(`${relPath}/`))) {
+        setSelectedRel(null);
+      }
+      reload();
+    } catch (err) {
+      console.error(err);
+      toast.error(t('workspace.deleteFailed', { defaultValue: 'Delete failed' }));
+    }
+  }, [agentId, selectedRel, t, reload]);
+
+  const handleContentChange = useCallback((absPath: string, next: string) => {
+    setFileState((s) => (s.status === 'ready' ? { status: 'ready', content: next } : s));
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      writeTextFile(absPath, next).catch((err) => {
+        console.error(err);
+        toast.error(t('workspace.saveFailed', { defaultValue: 'Save failed' }));
+      });
+    }, 600);
+  }, [t]);
+
+  const treeRowContextValue = useMemo<WorkspaceTreeRowContextValue>(
+    () => ({
+      onDeleteFile: writable ? handleDeleteFile : undefined,
+      deleteLabel: t('workspace.delete', { defaultValue: 'Delete' }),
+    }),
+    [writable, handleDeleteFile, t],
+  );
+
+  const treeData = useMemo<WorkspaceTreeNode[]>(() => {
+    if (state.status !== 'ready') return [];
+    const children = state.root.children ?? [];
+    return writable
+      ? children.filter((node) => !isTopLevelSystemEntry(node.name, node.isDir))
+      : children;
+  }, [state, writable]);
+
   const handleOfficeTooLarge = useCallback((size?: number) => {
     if (!selectedNode || selectedNode.isDir) return;
     setFileStatePath(selectedNode.absPath);
@@ -431,50 +499,52 @@ export function WorkspaceBrowserBody({
     return (
       <div data-testid="workspace-tree" className="flex h-full min-h-0 flex-col overflow-hidden">
         <div ref={treeContainerRef} className="min-h-0 flex-1">
-          <Tree<WorkspaceTreeNode>
-            key={treeScope}
-            data={state.root.children ?? []}
-            idAccessor={(node) => node.relPath}
-            childrenAccessor={(node) => node.children ?? null}
-            selection={selectedRel ?? undefined}
-            initialOpenState={initialOpenState}
-            openByDefault={false}
-            disableDrag
-            disableDrop
-            disableEdit
-            disableMultiSelection
-            height={treeHeight}
-            width="100%"
-            rowHeight={compact ? 24 : 28}
-            indent={TREE_INDENT_PX}
-            overscanCount={8}
-            renderRow={WorkspaceTreeContainerRow}
-            onActivate={(node) => {
-              if (node.data.isDir) {
-                node.toggle();
-                return;
-              }
-              if (isHtmlPreviewExt(node.data.ext)) {
-                useArtifactPanel.getState().openPreview(buildWorkspacePreviewTarget({
-                  workspaceRoot: workspace,
-                  relativePath: node.data.relPath,
-                }));
-                return;
-              }
-              setSelectedRel(node.data.relPath);
-            }}
-            onToggle={(id) => {
-              setOpenRelPathState((prev) => {
-                const currentPaths = prev.scope === treeScope ? prev.paths : null;
-                const next = new Set(currentPaths ?? collectInitialExpanded(state.root, 1));
-                if (next.has(id)) next.delete(id);
-                else next.add(id);
-                return { scope: treeScope, paths: next };
-              });
-            }}
-          >
-            {WorkspaceTreeRow}
-          </Tree>
+          <WorkspaceTreeRowContext.Provider value={treeRowContextValue}>
+            <Tree<WorkspaceTreeNode>
+              key={treeScope}
+              data={treeData}
+              idAccessor={(node) => node.relPath}
+              childrenAccessor={(node) => node.children ?? null}
+              selection={selectedRel ?? undefined}
+              initialOpenState={initialOpenState}
+              openByDefault={false}
+              disableDrag
+              disableDrop
+              disableEdit
+              disableMultiSelection
+              height={treeHeight}
+              width="100%"
+              rowHeight={compact ? 24 : 28}
+              indent={TREE_INDENT_PX}
+              overscanCount={8}
+              renderRow={WorkspaceTreeContainerRow}
+              onActivate={(node) => {
+                if (node.data.isDir) {
+                  node.toggle();
+                  return;
+                }
+                if (isHtmlPreviewExt(node.data.ext)) {
+                  useArtifactPanel.getState().openPreview(buildWorkspacePreviewTarget({
+                    workspaceRoot: workspace,
+                    relativePath: node.data.relPath,
+                  }));
+                  return;
+                }
+                setSelectedRel(node.data.relPath);
+              }}
+              onToggle={(id) => {
+                setOpenRelPathState((prev) => {
+                  const currentPaths = prev.scope === treeScope ? prev.paths : null;
+                  const next = new Set(currentPaths ?? collectInitialExpanded(state.root, 1));
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  return { scope: treeScope, paths: next };
+                });
+              }}
+            >
+              {WorkspaceTreeRow}
+            </Tree>
+          </WorkspaceTreeRowContext.Provider>
         </div>
         {state.truncated && (
           <div className="shrink-0 px-3 py-2 text-2xs text-muted-foreground/80">
@@ -539,7 +609,7 @@ export function WorkspaceBrowserBody({
           <p>
             {directOpen
               ? t('filePreview.errors.largeBinaryOpenHint', {
-                defaultValue: 'This file is {{size}}. ClawX does not provide an inline preview for it. You can confirm to open it directly in your system default app.',
+                defaultValue: 'This file is {{size}}. YYClaw does not provide an inline preview for it. You can confirm to open it directly in your system default app.',
                 size: formatFileSize(displayedFileState.size ?? 0) || '> 2MB',
               })
               : t('filePreview.errors.tooLarge', 'File too large; preview disabled')}
@@ -565,7 +635,7 @@ export function WorkspaceBrowserBody({
           <p>
             {directOpen
               ? t('filePreview.errors.largeBinaryOpenHint', {
-                defaultValue: 'This file is {{size}}. ClawX does not provide an inline preview for it. You can confirm to open it directly in your system default app.',
+                defaultValue: 'This file is {{size}}. YYClaw does not provide an inline preview for it. You can confirm to open it directly in your system default app.',
                 size: formatFileSize(displayedFileState.size ?? 0) || '> 2MB',
               })
               : t('filePreview.errors.binary', 'Binary files do not support text preview')}
@@ -610,7 +680,7 @@ export function WorkspaceBrowserBody({
             <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
               {directOpen
                 ? t('filePreview.errors.largeBinaryOpenHint', {
-                  defaultValue: 'This file is {{size}}. ClawX does not provide an inline preview for it. You can confirm to open it directly in your system default app.',
+                  defaultValue: 'This file is {{size}}. YYClaw does not provide an inline preview for it. You can confirm to open it directly in your system default app.',
                   size: formatFileSize(displayedFileState.size ?? 0) || '> 2MB',
                 })
                 : t(
@@ -691,7 +761,12 @@ export function WorkspaceBrowserBody({
           </div>
         }
       >
-        <MonacoViewerLazy filePath={selectedNode.absPath} value={displayedFileState.content} readOnly />
+        <MonacoViewerLazy
+          filePath={selectedNode.absPath}
+          value={displayedFileState.content}
+          readOnly={!writable}
+          onChange={writable ? (next) => handleContentChange(selectedNode.absPath, next) : undefined}
+        />
       </Suspense>
     );
   };
@@ -773,6 +848,14 @@ export function WorkspaceBrowserBody({
   );
 }
 
+interface WorkspaceTreeRowContextValue {
+  /** When provided, tree rows render a delete action wired to this handler. */
+  onDeleteFile?: (relPath: string) => void;
+  deleteLabel?: string;
+}
+
+const WorkspaceTreeRowContext = createContext<WorkspaceTreeRowContextValue>({});
+
 function WorkspaceTreeContainerRow<T>({ attrs, innerRef, children }: RowRendererProps<T>) {
   return (
     <div {...attrs} ref={innerRef} onClick={undefined} className="!min-w-full">
@@ -785,6 +868,7 @@ function WorkspaceTreeRow({ node, style }: NodeRendererProps<WorkspaceTreeNode>)
   const data = node.data;
   const isOpen = data.isDir && node.isOpen;
   const indent = node.level * TREE_INDENT_PX;
+  const { onDeleteFile, deleteLabel } = useContext(WorkspaceTreeRowContext);
 
   const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -793,45 +877,61 @@ function WorkspaceTreeRow({ node, style }: NodeRendererProps<WorkspaceTreeNode>)
 
   return (
     <div style={style} className="h-full px-1" onClick={(event) => event.stopPropagation()}>
-      <button
-        type="button"
-        onClick={handleClick}
-        aria-expanded={data.isDir ? isOpen : undefined}
-        className={cn(
-          'flex h-full w-full items-center gap-1 rounded-md pr-2 text-left text-xs transition-colors',
-          node.isSelected
-            ? 'bg-black/5 text-foreground dark:bg-white/10'
-            : 'hover:bg-black/5 dark:hover:bg-white/10',
-        )}
-        style={{ paddingLeft: indent }}
-        title={data.relPath || data.name}
-      >
-        {data.isDir ? (
-          <>
-            <ChevronRight
-              className={cn(
-                'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform',
-                isOpen && 'rotate-90',
+      <div className="group/row flex h-full items-center">
+        <button
+          type="button"
+          onClick={handleClick}
+          aria-expanded={data.isDir ? isOpen : undefined}
+          className={cn(
+            'flex h-full min-w-0 flex-1 items-center gap-1 rounded-md pr-2 text-left text-xs transition-colors',
+            node.isSelected
+              ? 'bg-black/5 text-foreground dark:bg-white/10'
+              : 'hover:bg-black/5 dark:hover:bg-white/10',
+          )}
+          style={{ paddingLeft: indent }}
+          title={data.relPath || data.name}
+        >
+          {data.isDir ? (
+            <>
+              <ChevronRight
+                className={cn(
+                  'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform',
+                  isOpen && 'rotate-90',
+                )}
+              />
+              {isOpen ? (
+                <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              ) : (
+                <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               )}
-            />
-            {isOpen ? (
-              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            ) : (
-              <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            )}
-            <span className="min-w-0 flex-1 truncate font-medium">{data.name}</span>
-          </>
-        ) : (
-          <>
-            <span className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            <MaterialFileIcon filename={data.name} className="h-3.5 w-3.5" />
-            <span className="min-w-0 flex-1 truncate">{data.name}</span>
-          </>
+              <span className="min-w-0 flex-1 truncate font-medium">{data.name}</span>
+            </>
+          ) : (
+            <>
+              <span className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <MaterialFileIcon filename={data.name} className="h-3.5 w-3.5" />
+              <span className="min-w-0 flex-1 truncate">{data.name}</span>
+            </>
+          )}
+          {data.isFresh && (
+            <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+          )}
+        </button>
+        {onDeleteFile && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDeleteFile(data.relPath);
+            }}
+            className="mr-1 shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-black/5 hover:text-destructive group-hover/row:opacity-100 dark:hover:bg-white/10"
+            title={deleteLabel}
+            aria-label={deleteLabel}
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
         )}
-        {data.isFresh && (
-          <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
-        )}
-      </button>
+      </div>
     </div>
   );
 }

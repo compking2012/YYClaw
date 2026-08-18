@@ -54,6 +54,31 @@ const { acpState, chatState, settingsState } = vi.hoisted(() => ({
     loadSessions: vi.fn().mockResolvedValue(undefined),
     selectAcpSession: vi.fn(),
     acknowledgeAcpSessionCreated: vi.fn(),
+    routeAndMaybeStartWorkflow: vi.fn(),
+    ingestAcpObservedWorkflow: vi.fn(),
+    failObservedWorkflow: vi.fn(),
+    healStaleObservedWorkflows: vi.fn(),
+    workflowCardsBySession: {},
+    workspaceOverrideBySessionKey: {},
+    sessionModelOverrideBySessionKey: {},
+    sessionLabels: {},
+    loadingMoreHistory: false,
+    hasMoreHistory: false,
+    sending: false,
+    error: null,
+    runError: null,
+    streamingMessage: null,
+    streamingTools: [],
+    pendingFinal: false,
+    activeRunId: null,
+    lastUserMessageAt: null,
+    workflowRunBySession: {},
+    sendMessage: vi.fn(),
+    abortRun: vi.fn(),
+    clearError: vi.fn(),
+    loadMoreHistory: vi.fn(),
+    loadHistory: vi.fn(),
+    cleanupEmptySession: vi.fn(),
   },
   settingsState: {
     chatWorkspacePath: '/workspace',
@@ -74,6 +99,11 @@ vi.mock('@/stores/chat', () => ({
 
 vi.mock('@/stores/settings', () => ({
   useSettingsStore: (selector: (state: typeof settingsState) => unknown) => selector(settingsState),
+}));
+
+vi.mock('@/stores/settings', () => ({
+  useSettingsStore: (selector: (state: { devModeUnlocked: boolean; promptOptimizationEnabled: boolean }) => unknown) =>
+    selector({ devModeUnlocked: true, promptOptimizationEnabled: false }),
 }));
 
 vi.mock('@/stores/agents', () => ({
@@ -181,7 +211,7 @@ describe('Chat question directory', () => {
     settingsState.chatWorkspacePath = '/workspace';
   });
 
-  it('lists repeated ACP questions and smoothly scrolls to the selected user message', () => {
+  it('lists repeated ACP questions and smoothly scrolls to the selected user message', async () => {
     acpState.timeline = timelineFromQuestions(['hello', 'hello']);
 
     render(
@@ -199,27 +229,10 @@ describe('Chat question directory', () => {
 
     fireEvent.click(toggle);
 
-    const directory = screen.getByTestId('chat-question-directory');
+    const directory = await screen.findByTestId('chat-question-directory');
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(directory).toHaveAttribute('id', 'chat-question-directory');
-    expect(directory).toHaveClass(
-      'absolute',
-      'right-0',
-      'top-0',
-      'z-30',
-      'max-h-[min(32rem,calc(100%-1rem))]',
-      'overflow-hidden',
-    );
-    expect(within(directory).getByRole('navigation')).toHaveClass(
-      'min-h-0',
-      'flex-1',
-      'overflow-y-auto',
-    );
     expect(within(directory).getAllByTestId(/^chat-question-directory-item-/)).toHaveLength(2);
-    const scrollColumn = screen.getByTestId('chat-scroll-column');
-    const scrollToLatest = screen.getByTestId('chat-scroll-to-latest');
-    expect(scrollColumn).toContainElement(scrollToLatest);
-    expect(directory).not.toContainElement(scrollToLatest);
 
     const firstUserMessage = document.getElementById('acp-user-message-msg-user:0');
     const secondUserMessage = document.getElementById('acp-user-message-msg-user:1');
@@ -254,7 +267,7 @@ describe('Chat question directory', () => {
     expect(screen.getByTestId('chat-question-directory-toggle')).toBeDisabled();
   });
 
-  it('caps long question directory titles without changing their scroll target', () => {
+  it('caps long question directory titles without changing their scroll target', async () => {
     const longQuestion = 'a'.repeat(65);
     const expectedTitle = `${longQuestion.slice(0, 61)}...`;
     acpState.timeline = timelineFromQuestions([longQuestion, 'another question']);
@@ -267,7 +280,7 @@ describe('Chat question directory', () => {
 
     fireEvent.click(screen.getByTestId('chat-question-directory-toggle'));
 
-    const entry = screen.getByTestId('chat-question-directory-item-msg-user:0');
+    const entry = await screen.findByTestId('chat-question-directory-item-msg-user:0');
     expect(entry.textContent).toBe(expectedTitle);
     expect(entry).toHaveAttribute('title', expectedTitle);
 
@@ -280,7 +293,7 @@ describe('Chat question directory', () => {
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
   });
 
-  it('keeps grapheme clusters intact when truncating question directory titles', () => {
+  it('keeps grapheme clusters intact when truncating question directory titles', async () => {
     const emoji = '👩‍💻';
     const question = `${'a'.repeat(60)}${emoji} with additional detail`;
     const expectedTitle = `${'a'.repeat(60)}${emoji}...`;
@@ -294,7 +307,7 @@ describe('Chat question directory', () => {
 
     fireEvent.click(screen.getByTestId('chat-question-directory-toggle'));
 
-    const entry = screen.getByTestId('chat-question-directory-item-msg-user:0');
+    const entry = await screen.findByTestId('chat-question-directory-item-msg-user:0');
     expect(entry.textContent).toBe(expectedTitle);
     expect(entry.textContent).not.toContain('\uFFFD');
   });

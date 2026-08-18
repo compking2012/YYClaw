@@ -86,15 +86,21 @@ export function resolveSessionTranscriptPath(
     } else if (typeof val === 'object' && val !== null) {
       const entry = val as Record<string, unknown>;
       const absFile = (entry.sessionFile ?? entry.file ?? entry.fileName ?? entry.path) as string | undefined;
+      const uuidVal = (entry.id ?? entry.sessionId) as string | undefined;
+      const uuidName = uuidVal ? (uuidVal.endsWith('.jsonl') ? uuidVal : `${uuidVal}.jsonl`) : undefined;
       if (absFile) {
         if (isAnyAbsolute(absFile)) {
           resolvedSrcPath = absFile;
+          // Keep the sessionId-derived name as a fallback. An absolute
+          // `sessionFile` can be stale after an agent rename/clone — it points
+          // into the *old* agent dir — so if it escapes sessionsDir below we
+          // retry by resolving `<sessionId>.jsonl` inside sessionsDir.
+          uuidFileName = uuidName;
         } else {
           uuidFileName = absFile;
         }
-      } else {
-        const uuidVal = (entry.id ?? entry.sessionId) as string | undefined;
-        if (uuidVal) uuidFileName = uuidVal.endsWith('.jsonl') ? uuidVal : `${uuidVal}.jsonl`;
+      } else if (uuidName) {
+        uuidFileName = uuidName;
       }
     }
   }
@@ -116,6 +122,19 @@ export function resolveSessionTranscriptPath(
   // proceeded is `unlink`s in someone else's directory.
   const rel = path.relative(sessionsDir, sessionsDirAbs);
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    // The absolute `sessionFile` escaped sessionsDir. If a sessionId-derived
+    // name is available, prefer resolving it *inside* sessionsDir — this
+    // recovers stale entries left by an agent rename/clone (where the stored
+    // absolute path still points at the old agent dir). Only then do we refuse.
+    if (uuidFileName) {
+      const name = uuidFileName.endsWith('.jsonl') ? uuidFileName : `${uuidFileName}.jsonl`;
+      const recovered = path.join(sessionsDir, name);
+      const recoveredRel = path.relative(sessionsDir, path.dirname(recovered));
+      if (!recoveredRel.startsWith('..') && !path.isAbsolute(recoveredRel)) {
+        const baseId = path.basename(recovered).replace(/\.jsonl$/, '');
+        return { ok: true, resolvedSrcPath: recovered, sessionsDirAbs: path.dirname(recovered), baseId };
+      }
+    }
     return { ok: false, failure: { kind: 'path-outside-scope', resolvedPath: resolvedSrcPath } };
   }
 

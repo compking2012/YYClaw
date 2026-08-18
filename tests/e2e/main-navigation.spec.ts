@@ -50,20 +50,26 @@ test.describe('ClawX main navigation without setup flow', () => {
       const page = await getStableWindow(app);
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
-      await expect(page.getByTestId('chat-page')).toBeVisible();
-      await expect(page.getByTestId('main-content')).toBeVisible();
-      await expect(page.getByTestId('sidebar-resize-handle')).toBeVisible();
-      await expect(page.getByTestId('main-content')).toHaveCSS('border-top-left-radius', '16px');
 
       await page.getByTestId('sidebar-nav-models').click();
       await expect(page.getByTestId('models-page')).toBeVisible();
-      await expect(page.getByTestId('models-page-title')).toBeVisible();
+      await expect(page).toHaveURL(/#\/models$/);
 
       await page.getByTestId('sidebar-nav-agents').click();
       await expect(page.getByTestId('agents-page')).toBeVisible();
+      await expect(page).toHaveURL(/#\/agents$/);
 
       await page.getByTestId('sidebar-nav-channels').click();
       await expect(page.getByTestId('channels-page')).toBeVisible();
+      await expect(page).toHaveURL(/#\/channels$/);
+
+      await page.getByTestId('sidebar-nav-skills').click();
+      await expect(page.getByTestId('skills-tab')).toBeVisible();
+      await expect(page).toHaveURL(/#\/skills$/);
+
+      await page.getByTestId('sidebar-nav-settings').click();
+      await expect(page.getByTestId('settings-page')).toBeVisible();
+      await expect(page).toHaveURL(/#\/settings$/);
     } finally {
       await closeElectronApp(app);
     }

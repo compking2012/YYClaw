@@ -147,3 +147,9 @@ export function extnameOf(path: string): string {
   if (dot <= 0) return '';
   return name.slice(dot);
 }
+
+/** Snapshot of a file's pre-run contents, used to diff generated edits. */
+export type GeneratedFileBaseline =
+  | { status: 'ok'; content: string }
+  | { status: 'missing' }
+  | { status: 'unavailable'; reason: string };

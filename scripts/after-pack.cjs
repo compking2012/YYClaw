@@ -19,12 +19,12 @@
  *      @mariozechner/clipboard).
  */
 
-const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync, readFileSync, writeFileSync } = require('fs');
+const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync } = require('fs');
 const { join, dirname, basename, relative } = require('path');
 const { ELECTRON_MAIN_RUNTIME_PACKAGES } = require('./openclaw-bundle-config.mjs');
 const { patchNsisExtractTemplate } = require('./patch-nsis-extract.mjs');
 const { patchNsisInstallSectionTemplate } = require('./patch-nsis-install-section.mjs');
-const { patchNsisUninstallTemplate } = require('./patch-nsis-uninstall.mjs');
+const { patchNsisUninstallTemplate, patchNsisUninstallerCheckTemplate } = require('./patch-nsis-uninstall.mjs');
 
 // On Windows, paths in pnpm's virtual store can exceed the default MAX_PATH
 // limit (260 chars). Node.js 18.17+ respects the system LongPathsEnabled
@@ -44,45 +44,15 @@ function resolveArch(archEnum) {
   return ARCH_MAP[archEnum] || 'x64';
 }
 
-function readJsonSafe(filePath) {
-  try {
-    return JSON.parse(readFileSync(normWin(filePath), 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
-function listPackageDeps(pkgJson) {
-  return Object.keys({
-    ...(pkgJson?.dependencies && typeof pkgJson.dependencies === 'object' ? pkgJson.dependencies : {}),
-    ...(pkgJson?.optionalDependencies && typeof pkgJson.optionalDependencies === 'object' ? pkgJson.optionalDependencies : {}),
-  }).sort((a, b) => a.localeCompare(b));
-}
-
-function readInstalledPackageVersion(packageDir) {
-  const pkg = readJsonSafe(join(packageDir, 'package.json'));
-  return typeof pkg?.version === 'string' ? pkg.version.trim() : null;
-}
-
 // ── General cleanup ──────────────────────────────────────────────────────────
 
 function cleanupUnnecessaryFiles(dir) {
   let removedCount = 0;
 
   const REMOVE_DIRS = new Set([
-    'test', 'tests', '__tests__', '.github', 'examples', 'example',
+    'test', 'tests', '__tests__', '.github', 'examples', 'example', '.bin',
   ]);
-  // .d.mts / .d.cts are TypeScript declaration files for ESM/CJS dual-package
-  // builds. They are useless at runtime but show up in huge volumes from
-  // typed packages (e.g. typebox), and inflate the per-process file count
-  // that codesign opens during macOS signing → EMFILE.
-  const REMOVE_FILE_EXTS = [
-    '.d.ts', '.d.ts.map',
-    '.d.mts', '.d.mts.map',
-    '.d.cts', '.d.cts.map',
-    '.js.map', '.mjs.map', '.cjs.map', '.ts.map',
-    '.markdown',
-  ];
+  const REMOVE_FILE_EXTS = ['.d.ts', '.d.ts.map', '.js.map', '.mjs.map', '.ts.map', '.markdown'];
   const REMOVE_FILE_NAMES = new Set([
     '.DS_Store', 'README.md', 'CHANGELOG.md', 'LICENSE.md', 'CONTRIBUTING.md',
     'tsconfig.json', '.npmignore', '.eslintrc', '.prettierrc', '.editorconfig',
@@ -157,9 +127,9 @@ const PLATFORM_NATIVE_SCOPES = {
   '@snazzah': /^davey-(darwin|linux|android|freebsd|win32|wasm32)-(x64|arm64|arm|ia32|arm64-gnu|arm64-musl|x64-gnu|x64-musl|x64-msvc|arm64-msvc|ia32-msvc|arm-eabi|arm-gnueabihf|wasi)/,
   '@lydell': /^node-pty-(darwin|linux|win32)-(x64|arm64)/,
   '@reflink': /^reflink-(darwin|linux|win32)-(x64|arm64|x64-gnu|x64-musl|arm64-gnu|arm64-musl|x64-msvc|arm64-msvc)/,
+  '@openai': /^codex-(darwin|linux|win32)-(x64|arm64)$/,
   '@node-llama-cpp': /^(mac|linux|win)-(arm64|x64|armv7l)(-metal|-cuda|-cuda-ext|-vulkan)?$/,
   '@esbuild': /^(darwin|linux|win32|android|freebsd|netbsd|openbsd|sunos|aix|openharmony)-(x64|arm64|arm|ia32|loong64|mips64el|ppc64|riscv64|s390x)/,
-  '@openai': /^codex-(darwin|linux|win32)-(x64|arm64)$/,
 };
 
 // Unscoped packages that follow a <name>-<platform>-<arch> convention.
@@ -176,13 +146,6 @@ const UNSCOPED_NATIVE_PACKAGES = [
 function baseArch(rawArch) {
   const dash = rawArch.indexOf('-');
   return dash > 0 ? rawArch.slice(0, dash) : rawArch;
-}
-
-function matchesTargetArch(pkgArch, targetArch) {
-  if (targetArch === 'universal') {
-    return pkgArch === 'x64' || pkgArch === 'arm64' || pkgArch === 'universal';
-  }
-  return pkgArch === targetArch || pkgArch === 'universal';
 }
 
 function cleanupNativePlatformPackages(nodeModulesDir, platform, arch) {
@@ -202,7 +165,7 @@ function cleanupNativePlatformPackages(nodeModulesDir, platform, arch) {
 
       const isMatch =
         pkgPlatform === platform &&
-        matchesTargetArch(pkgArch, arch);
+        (arch === 'universal' || pkgArch === arch || pkgArch === 'universal');
 
       if (!isMatch) {
         try {
@@ -227,7 +190,7 @@ function cleanupNativePlatformPackages(nodeModulesDir, platform, arch) {
 
       const isMatch =
         pkgPlatform === platform &&
-        matchesTargetArch(pkgArch, arch);
+        (arch === 'universal' || pkgArch === arch || pkgArch === 'universal');
 
       if (!isMatch) {
         try {
@@ -240,75 +203,6 @@ function cleanupNativePlatformPackages(nodeModulesDir, platform, arch) {
 
   return removed;
 }
-
-function cleanupNodeModulesRuntimeJunk(nodeModulesDir, platform, arch) {
-  let removed = 0;
-
-  const nodeWavDir = join(nodeModulesDir, 'node-wav');
-  for (const name of ['x.json', 'x.js', 'x.js~', 'file.wav']) {
-    try {
-      const target = join(nodeWavDir, name);
-      if (existsSync(target)) {
-        rmSync(target, { recursive: true, force: true });
-        removed++;
-      }
-    } catch { /* */ }
-  }
-
-  const treeSitterBashDir = join(nodeModulesDir, 'tree-sitter-bash');
-  const treeSitterSrc = join(treeSitterBashDir, 'src');
-  for (const name of ['parser.c', 'scanner.c', 'grammar.json', 'tree_sitter']) {
-    try {
-      const target = join(treeSitterSrc, name);
-      if (existsSync(target)) {
-        rmSync(target, { recursive: true, force: true });
-        removed++;
-      }
-    } catch { /* */ }
-  }
-
-  const prebuildsDir = join(treeSitterBashDir, 'prebuilds');
-  if (existsSync(prebuildsDir)) {
-    for (const entry of readdirSync(prebuildsDir)) {
-      const [entryPlatform, ...entryArchParts] = entry.split('-');
-      const entryArch = baseArch(entryArchParts.join('-'));
-      if (entryPlatform === platform && matchesTargetArch(entryArch, arch)) continue;
-      try {
-        rmSync(join(prebuildsDir, entry), { recursive: true, force: true });
-        removed++;
-      } catch { /* */ }
-    }
-  }
-
-  return removed;
-}
-
-function cleanupKnownRuntimeJunk(rootDir, platform, arch) {
-  let removed = 0;
-  const stack = [rootDir];
-
-  while (stack.length > 0) {
-    const dir = stack.pop();
-    let entries;
-    try { entries = readdirSync(normWin(dir), { withFileTypes: true }); } catch { continue; }
-
-    if (basename(dir) === 'node_modules') {
-      removed += cleanupNodeModulesRuntimeJunk(dir, platform, arch);
-    }
-
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      stack.push(join(dir, entry.name));
-    }
-  }
-
-  return removed;
-}
-
-exports.__test = {
-  cleanupNativePlatformPackages,
-  cleanupNodeModulesRuntimeJunk,
-};
 
 // ── Broken module patcher ─────────────────────────────────────────────────────
 // Some bundled packages have transpiled CJS that sets `module.exports = exports.default`
@@ -356,7 +250,8 @@ function patchBrokenModules(nodeModulesDir) {
       const exp = pkg.exports;
       const hasRequireCondition = Boolean(
         (exp && typeof exp === 'object' && exp.require) ||
-        (exp && typeof exp === 'object' && exp['.'] && exp['.'].require)
+        (exp && typeof exp === 'object' && exp['.'] && exp['.'].require) ||
+        (exp && typeof exp === 'string') // Sometimes exports is just a string
       );
 
       const pkgDir = dirname(hpaPkgPath);
@@ -369,29 +264,55 @@ function patchBrokenModules(nodeModulesDir) {
         : null;
       const importEntry = dotImport || rootImport;
 
-      const cjsCandidates = [
+      let cjsCandidates = [
         mainEntry,
         importEntry && importEntry.endsWith('.js') ? importEntry.replace(/\.js$/, '.cjs') : null,
+        './dist/index.js',
         './dist/index.cjs',
       ].filter(Boolean);
+      // for https-proxy-agent 7.x, main is often empty or points to dist/index.js (which is commonjs but not exported)
+      // If we don't have good candidates, just try dist/index.js.
 
-      const requireTarget = cjsCandidates.find((candidate) =>
+      let requireTarget = cjsCandidates.find((candidate) =>
         fsExistsSync(join(pkgDir, candidate)),
       );
 
-      // Only patch if exports exists, lacks a CJS `require` condition, and we
+      // Only patch if exports is missing, or lacks a CJS `require` condition, and we
       // have a verified CJS target file.
-      if (exp && !hasRequireCondition && requireTarget) {
-        pkg.exports = {
+      if (!hasRequireCondition && requireTarget) {
+        let newExports = {
           '.': {
             import: importEntry || requireTarget,
             require: requireTarget,
             default: importEntry || requireTarget,
           },
         };
+        // Preserve other subpath exports if they exist
+        if (exp && typeof exp === 'object') {
+          for (const [key, value] of Object.entries(exp)) {
+            if (key !== '.') {
+              newExports[key] = value;
+            }
+          }
+        }
+        pkg.exports = newExports;
+        // Make sure "main" also points correctly just in case
+        pkg.main = requireTarget;
         writeFileSync(hpaPkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
         count++;
         console.log(`[after-pack] 🩹 Patched https-proxy-agent exports for CJS compatibility (require=${requireTarget})`);
+      } else if (!exp && requireTarget) {
+        // If there are no exports at all, just ensure main is correct.
+        pkg.exports = {
+          '.': {
+            require: requireTarget,
+            default: requireTarget,
+          }
+        };
+        pkg.main = requireTarget;
+        writeFileSync(hpaPkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
+        count++;
+        console.log(`[after-pack] 🩹 Patched https-proxy-agent missing exports for CJS compatibility (require=${requireTarget})`);
       }
     } catch (err) {
       console.warn('[after-pack] ⚠️  Failed to patch https-proxy-agent:', err.message);
@@ -528,6 +449,24 @@ function patchPluginIds(pluginDir, expectedId) {
 // directly into the packaged resources directory.  Mirrors the logic in
 // bundle-openclaw-plugins.mjs so the packaged app is self-contained even when
 // build/openclaw-plugins/ was not pre-generated.
+
+/**
+ * npm-sourced OpenClaw plugins mirrored into <Resources>/openclaw-plugins/.
+ * Keep in sync with the PLUGINS list in scripts/bundle-openclaw-plugins.mjs.
+ */
+const BUNDLED_NPM_PLUGINS = [
+  { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
+  { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
+  { npmName: '@larksuite/openclaw-lark', pluginId: 'openclaw-lark' },
+  { npmName: '@tencent-weixin/openclaw-weixin', pluginId: 'openclaw-weixin' },
+  // Not a channel plugin: tokenjuice is the exec/bash output compactor behind
+  // the "prompt optimization" setting. OpenClaw 2026.7.1 dropped it from its own
+  // package and made it an external official plugin whose catalog entry prefers
+  // npm, so a configured-but-unshipped tokenjuice makes the kernel shell out to
+  // `npm view @openclaw/tokenjuice` during startup migration. Shipping the
+  // mirror is what keeps a package manager out of the startup path.
+  { npmName: '@openclaw/tokenjuice', pluginId: 'tokenjuice' },
+];
 
 function getVirtualStoreNodeModules(realPkgPath) {
   let dir = realPkgPath;
@@ -672,7 +611,7 @@ exports.default = async function afterPack(context) {
     .length;
 
   console.log(`[after-pack] Copying ${depCount} openclaw dependencies to ${dest} ...`);
-  cpSync(src, dest, { recursive: true });
+  cpSync(normWin(src), normWin(dest), { recursive: true, dereference: true });
   console.log('[after-pack] ✅ openclaw node_modules copied.');
 
   const missingRuntimePackages = ELECTRON_MAIN_RUNTIME_PACKAGES.filter((pkgName) => {
@@ -694,18 +633,8 @@ exports.default = async function afterPack(context) {
   //     - electron-builder silently skips extraResources entries whose source
   //       directory doesn't exist (build/openclaw-plugins/ may not be pre-generated)
   //     - node_modules/ is excluded by .gitignore so the deps copy must be manual
-  const BUNDLED_PLUGINS = [
-    { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
-    { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
-    { npmName: '@larksuite/openclaw-lark', pluginId: 'feishu-openclaw-plugin' },
-    { npmName: '@openclaw/discord', pluginId: 'discord' },
-    { npmName: '@openclaw/qqbot', pluginId: 'qqbot' },
-    { npmName: '@openclaw/whatsapp', pluginId: 'whatsapp' },
-    { npmName: '@tencent-weixin/openclaw-weixin', pluginId: 'openclaw-weixin' },
-  ];
-
   mkdirSync(pluginsDestRoot, { recursive: true });
-  for (const { npmName, pluginId } of BUNDLED_PLUGINS) {
+  for (const { npmName, pluginId } of BUNDLED_NPM_PLUGINS) {
     const pluginDestDir = join(pluginsDestRoot, pluginId);
     console.log(`[after-pack] Bundling plugin ${npmName} -> ${pluginDestDir}`);
     const ok = bundlePlugin(nodeModulesRoot, npmName, pluginDestDir);
@@ -713,10 +642,6 @@ exports.default = async function afterPack(context) {
       const pluginNM = join(pluginDestDir, 'node_modules');
       cleanupUnnecessaryFiles(pluginDestDir);
       if (existsSync(pluginNM)) {
-        const pluginJunkRemoved = cleanupKnownRuntimeJunk(pluginDestDir, platform, arch);
-        if (pluginJunkRemoved > 0) {
-          console.log(`[after-pack] ✅ ${pluginId}: removed ${pluginJunkRemoved} known runtime junk files/directories.`);
-        }
         cleanupKoffi(pluginNM, platform, arch);
         cleanupNativePlatformPackages(pluginNM, platform, arch);
       }
@@ -724,6 +649,7 @@ exports.default = async function afterPack(context) {
       patchPluginIds(pluginDestDir, pluginId);
     }
   }
+  verifyPackagedNpmPluginMirrors(pluginsDestRoot);
 
   // 1.2 Copy built-in extension node_modules that electron-builder skipped.
   //     OpenClaw 3.31+ ships built-in extensions (discord, qqbot, etc.) under
@@ -736,129 +662,56 @@ exports.default = async function afterPack(context) {
   //     the top-level node_modules/ as well.
   const buildExtDir = join(__dirname, '..', 'build', 'openclaw', 'dist', 'extensions');
   const packExtDir = join(openclawRoot, 'dist', 'extensions');
-  // ClawX always uses the official @larksuite/openclaw-lark plugin for Feishu.
-  // The built-in openclaw dist/extensions/feishu tree is redundant, and on macOS
-  // its mirrored runtime deps significantly increase codesign file pressure.
-  rmSync(join(packExtDir, 'feishu'), { recursive: true, force: true });
   if (existsSync(buildExtDir)) {
     let extNMCount = 0;
     let mergedPkgCount = 0;
-    let prunedSharedDepCount = 0;
     for (const extEntry of readdirSync(buildExtDir, { withFileTypes: true })) {
       if (!extEntry.isDirectory()) continue;
-      if (extEntry.name === 'feishu') continue;
-
       const srcNM = join(buildExtDir, extEntry.name, 'node_modules');
       if (!existsSync(srcNM)) continue;
 
-      const destExtRoot = join(packExtDir, extEntry.name);
-      const destExtNM = join(destExtRoot, 'node_modules');
-      rmSync(destExtNM, { recursive: true, force: true });
-      mkdirSync(destExtNM, { recursive: true });
+      // Copy to extension's own node_modules (for direct requires from extension code)
+      const destExtNM = join(packExtDir, extEntry.name, 'node_modules');
+      if (!existsSync(destExtNM)) {
+        cpSync(normWin(srcNM), normWin(destExtNM), { recursive: true, dereference: true });
+      }
       extNMCount++;
 
-      if (platform === 'darwin') {
-        const buildPkgPath = join(buildExtDir, extEntry.name, 'package.json');
-        const packPkgPath = join(destExtRoot, 'package.json');
-        const buildPkgJson = readJsonSafe(buildPkgPath) || {};
-        // Deep copy the fallback so mutations to packPkgJson don't bleed back
-        // into buildPkgJson (which we still iterate via listPackageDeps below).
-        const packPkgJson = readJsonSafe(packPkgPath) || JSON.parse(JSON.stringify(buildPkgJson));
+      // Merge into top-level openclaw/node_modules/ (for shared chunks in dist/)
+      for (const pkgEntry of readdirSync(srcNM, { withFileTypes: true })) {
+        if (!pkgEntry.isDirectory() || pkgEntry.name === '.bin') continue;
+        const srcPkg = join(srcNM, pkgEntry.name);
+        const destPkg = join(dest, pkgEntry.name);
 
-        for (const depName of listPackageDeps(buildPkgJson)) {
-          const srcDepPkg = join(srcNM, ...depName.split('/'));
-          const destDepPkg = join(dest, ...depName.split('/'));
-          if (!existsSync(destDepPkg) && existsSync(srcDepPkg)) {
-            mkdirSync(dirname(destDepPkg), { recursive: true });
-            cpSync(srcDepPkg, destDepPkg, { recursive: true });
-            mergedPkgCount++;
-          }
-
-          // Reuse the top-level openclaw/node_modules copy whenever possible:
-          //   - if src is missing, we have no reference version → trust top-level
-          //     (Node's module resolution will walk up from
-          //     dist/extensions/<ext>/<file>.js to openclaw/node_modules/ anyway).
-          //   - if src exists and matches top-level version, we can safely share.
-          // Only force a per-extension local copy when we actually have a
-          // version conflict between the extension's pinned dep and the
-          // top-level shared dep.
-          const srcVersion = existsSync(srcDepPkg) ? readInstalledPackageVersion(srcDepPkg) : null;
-          const destVersion = existsSync(destDepPkg) ? readInstalledPackageVersion(destDepPkg) : null;
-          const canReuseTopLevel = existsSync(destDepPkg) && (
-            !srcVersion || (destVersion && srcVersion === destVersion)
-          );
-          if (canReuseTopLevel) {
-            if (packPkgJson.dependencies && depName in packPkgJson.dependencies) {
-              delete packPkgJson.dependencies[depName];
-              prunedSharedDepCount++;
-            }
-            if (packPkgJson.optionalDependencies && depName in packPkgJson.optionalDependencies) {
-              delete packPkgJson.optionalDependencies[depName];
-              prunedSharedDepCount++;
-            }
-            continue;
-          }
-
-          const extDepPkg = join(destExtNM, ...depName.split('/'));
-          mkdirSync(dirname(extDepPkg), { recursive: true });
-          if (existsSync(srcDepPkg)) {
-            cpSync(srcDepPkg, extDepPkg, { recursive: true });
-          } else if (existsSync(destDepPkg)) {
-            cpSync(destDepPkg, extDepPkg, { recursive: true });
-          }
-        }
-
-        if (packPkgJson.dependencies && Object.keys(packPkgJson.dependencies).length === 0) {
-          delete packPkgJson.dependencies;
-        }
-        if (packPkgJson.optionalDependencies && Object.keys(packPkgJson.optionalDependencies).length === 0) {
-          delete packPkgJson.optionalDependencies;
-        }
-        writeFileSync(packPkgPath, JSON.stringify(packPkgJson, null, 2) + '\n', 'utf8');
-      } else {
-        for (const pkgEntry of readdirSync(srcNM, { withFileTypes: true })) {
-          if (!pkgEntry.isDirectory() || pkgEntry.name === '.bin') continue;
-          const srcPkg = join(srcNM, pkgEntry.name);
-          const destPkg = join(dest, pkgEntry.name);
-
-          if (pkgEntry.name.startsWith('@')) {
-            // Scoped package — iterate sub-entries
-            for (const scopeEntry of readdirSync(srcPkg, { withFileTypes: true })) {
-              if (!scopeEntry.isDirectory()) continue;
-              const srcScoped = join(srcPkg, scopeEntry.name);
-              const destScoped = join(destPkg, scopeEntry.name);
-              if (!existsSync(destScoped)) {
-                mkdirSync(dirname(destScoped), { recursive: true });
-                cpSync(srcScoped, destScoped, { recursive: true });
-                mergedPkgCount++;
-              }
-
-              const extScoped = join(destExtNM, pkgEntry.name, scopeEntry.name);
-              mkdirSync(dirname(extScoped), { recursive: true });
-              cpSync(srcScoped, extScoped, { recursive: true });
-            }
-          } else {
-            if (!existsSync(destPkg)) {
-              cpSync(srcPkg, destPkg, { recursive: true });
+        if (pkgEntry.name.startsWith('@')) {
+          // Scoped package — iterate sub-entries
+          for (const scopeEntry of readdirSync(srcPkg, { withFileTypes: true })) {
+            if (!scopeEntry.isDirectory()) continue;
+            const srcScoped = join(srcPkg, scopeEntry.name);
+            const destScoped = join(destPkg, scopeEntry.name);
+            if (!existsSync(destScoped)) {
+              mkdirSync(dirname(destScoped), { recursive: true });
+              cpSync(normWin(srcScoped), normWin(destScoped), { recursive: true, dereference: true });
               mergedPkgCount++;
             }
-
-            const extPkg = join(destExtNM, pkgEntry.name);
-            cpSync(srcPkg, extPkg, { recursive: true });
+          }
+        } else {
+          if (!existsSync(destPkg)) {
+            cpSync(normWin(srcPkg), normWin(destPkg), { recursive: true, dereference: true });
+            mergedPkgCount++;
           }
         }
       }
     }
     if (extNMCount > 0) {
-      console.log(`[after-pack] ✅ Prepared node_modules for ${extNMCount} built-in extension(s), merged ${mergedPkgCount} packages into top-level${prunedSharedDepCount > 0 ? `, pruned ${prunedSharedDepCount} redundant direct deps on macOS` : ''}.`);
+      console.log(`[after-pack] ✅ Copied node_modules for ${extNMCount} built-in extension(s), merged ${mergedPkgCount} packages into top-level.`);
     }
   }
 
   // 2. General cleanup on the full openclaw directory (not just node_modules)
   console.log('[after-pack] 🧹 Cleaning up unnecessary files ...');
   const removedRoot = cleanupUnnecessaryFiles(openclawRoot);
-  const removedKnownJunk = cleanupKnownRuntimeJunk(openclawRoot, platform, arch);
-  console.log(`[after-pack] ✅ Removed ${removedRoot + removedKnownJunk} unnecessary files/directories.`);
+  console.log(`[after-pack] ✅ Removed ${removedRoot} unnecessary files/directories.`);
 
   // 3. Platform-specific: strip koffi non-target platform binaries
   const koffiRemoved = cleanupKoffi(dest, platform, arch);
@@ -958,8 +811,131 @@ exports.default = async function afterPack(context) {
     const extractOk = patchNsisExtractTemplate();
     const installSectionOk = patchNsisInstallSectionTemplate();
     const uninstallOk = patchNsisUninstallTemplate();
-    if (extractOk && installSectionOk && uninstallOk) {
+    const uninstallerCheckOk = patchNsisUninstallerCheckTemplate();
+    if (extractOk && installSectionOk && uninstallOk && uninstallerCheckOk) {
       console.log('[after-pack] ⚡ NSIS install templates ready (overwrite upgrade).');
     }
   }
+
+  // 7. Verify the ClawX-authored plugin mirrors actually made it into the package.
+  //
+  //    electron-builder copies resources/ via extraResources, but a filter typo
+  //    or a stale build tree silently drops a plugin directory while the build
+  //    still exits 0.  That produced a shipped 0.5.1 with no clawx-gemini-image
+  //    mirror, so ~/.openclaw/extensions/ could never get the plugin no matter
+  //    what the config asked for.  Fail the build instead.
+  verifyPackagedClawXPluginMirrors(resourcesDir);
+};
+
+/** Plugin ids that must always ship; a missing source dir is itself a failure. */
+const REQUIRED_CLAWX_PLUGIN_IDS = ['clawx-openai-image', 'clawx-gemini-image'];
+
+/**
+ * Assert every npm-sourced plugin mirror landed in the package.
+ *
+ * bundlePlugin() only warns when a package is missing from node_modules, so
+ * without this the build exits 0 and ships an app whose
+ * ~/.openclaw/extensions/ can never be populated for that plugin. For
+ * tokenjuice that also puts npm back on the Gateway startup path, which is the
+ * whole thing the mirror exists to avoid.
+ */
+function verifyPackagedNpmPluginMirrors(pluginsDestRoot) {
+  const missing = BUNDLED_NPM_PLUGINS
+    .filter(({ pluginId }) => !existsSync(normWin(join(pluginsDestRoot, pluginId, 'openclaw.plugin.json'))))
+    .map(({ npmName, pluginId }) => `${pluginId} (${npmName})`);
+
+  if (missing.length > 0) {
+    throw new Error(
+      `[after-pack] npm plugin mirrors missing from the package: ${missing.join(', ')}. `
+      + `Expected <Resources>/openclaw-plugins/<id>/openclaw.plugin.json under ${pluginsDestRoot}. `
+      + 'Run `pnpm install` so every mirrored plugin package is present in node_modules.',
+    );
+  }
+
+  console.log(
+    `[after-pack] ✅ Verified ${BUNDLED_NPM_PLUGINS.length} npm plugin mirror(s): `
+    + BUNDLED_NPM_PLUGINS.map(({ pluginId }) => pluginId).join(', '),
+  );
+}
+
+/**
+ * Assert every ClawX-authored plugin under resources/openclaw-plugins/ is present
+ * in the packaged resources with a readable manifest.
+ */
+function verifyPackagedClawXPluginMirrors(resourcesDir) {
+  const sourceRoot = join(__dirname, '..', 'resources', 'openclaw-plugins');
+  const packagedRoot = join(resourcesDir, 'resources', 'openclaw-plugins');
+
+  let sourceIds;
+  try {
+    sourceIds = readdirSync(normWin(sourceRoot), { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .filter(id => existsSync(normWin(join(sourceRoot, id, 'openclaw.plugin.json'))));
+  } catch (err) {
+    throw new Error(`[after-pack] Cannot read ${sourceRoot}: ${err.message}`);
+  }
+
+  const missingSources = REQUIRED_CLAWX_PLUGIN_IDS.filter(id => !sourceIds.includes(id));
+  if (missingSources.length > 0) {
+    throw new Error(
+      `[after-pack] Missing plugin source directories under resources/openclaw-plugins: ${missingSources.join(', ')}`,
+    );
+  }
+
+  const missingPackaged = sourceIds.filter(
+    id => !existsSync(normWin(join(packagedRoot, id, 'openclaw.plugin.json'))),
+  );
+  if (missingPackaged.length > 0) {
+    throw new Error(
+      `[after-pack] ClawX plugin mirrors missing from the package: ${missingPackaged.join(', ')}. `
+      + `Expected <Resources>/resources/openclaw-plugins/<id>/openclaw.plugin.json under ${packagedRoot}. `
+      + 'Check the extraResources filter in electron-builder.yml.',
+    );
+  }
+
+  console.log(`[after-pack] ✅ Verified ${sourceIds.length} ClawX plugin mirror(s): ${sourceIds.join(', ')}`);
+}
+
+// ── Test hooks ───────────────────────────────────────────────────────────────
+// Exposed for unit tests (tests/unit/after-pack-cleanup.test.ts). Not used at
+// runtime — the main afterPack hook calls these helpers inline.
+
+function cleanupNodeModulesRuntimeJunk(nodeModulesDir, platform, arch) {
+  let removed = 0;
+  let entries;
+  try { entries = readdirSync(nodeModulesDir); } catch { return 0; }
+
+  // Walk each package's `prebuilds/<platform>-<arch>` directory and drop
+  // subdirectories that don't match the target platform/arch. For universal
+  // builds we keep every sub-arch of the target platform.
+  for (const entry of entries) {
+    const prebuildsDir = join(nodeModulesDir, entry, 'prebuilds');
+    if (!existsSync(prebuildsDir)) continue;
+    let sub;
+    try { sub = readdirSync(prebuildsDir); } catch { continue; }
+    for (const dir of sub) {
+      const m = dir.match(/^([a-z0-9]+)-([a-z0-9]+)$/i);
+      if (!m) continue;
+      const pkgPlatform = PLATFORM_ALIASES[m[1]] || m[1];
+      const pkgArch = baseArch(m[2]);
+      const isMatch =
+        pkgPlatform === platform &&
+        (pkgArch === arch || pkgArch === 'universal' || arch === 'universal');
+      if (!isMatch) {
+        try {
+          rmSync(join(prebuildsDir, dir), { recursive: true, force: true });
+          removed++;
+        } catch { /* */ }
+      }
+    }
+  }
+  return removed;
+}
+
+exports.__test = {
+  cleanupNativePlatformPackages,
+  cleanupNodeModulesRuntimeJunk,
+  verifyPackagedNpmPluginMirrors,
+  BUNDLED_NPM_PLUGINS,
 };

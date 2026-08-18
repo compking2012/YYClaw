@@ -47,10 +47,18 @@ const { acpState, agentsState, artifactPanelState, chatState, settingsState } = 
     loadSessions: vi.fn().mockResolvedValue(undefined),
     selectAcpSession: vi.fn(),
     acknowledgeAcpSessionCreated: vi.fn(),
+    routeAndMaybeStartWorkflow: vi.fn(),
+    ingestAcpObservedWorkflow: vi.fn(),
+    healStaleObservedWorkflows: vi.fn(),
+    workflowCardsBySession: {},
+    workspaceOverrideBySessionKey: {},
+    sessionModelOverrideBySessionKey: {},
   },
   settingsState: {
     chatWorkspacePath: '/workspace',
     setChatWorkspacePath: vi.fn(),
+    devModeUnlocked: true,
+    promptOptimizationEnabled: false,
   },
 }));
 
@@ -77,8 +85,15 @@ vi.mock('@/stores/settings', () => ({
   useSettingsStore: (selector: (state: typeof settingsState) => unknown) => selector(settingsState),
 }));
 
+vi.mock('@/i18n', () => ({
+  default: {
+    t: (key: string) => key,
+    use: () => ({ init: () => undefined }),
+  },
+}));
+
 vi.mock('react-i18next', () => ({
-  initReactI18next: { type: '3rdParty', init: vi.fn() },
+  initReactI18next: { type: '3rdParty', init: () => undefined },
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown> | string) => {
       if (typeof params === 'string') return params;

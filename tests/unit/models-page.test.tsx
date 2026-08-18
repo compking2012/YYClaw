@@ -1,6 +1,6 @@
 import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Models } from '@/pages/Models/index';
+import { UsageSettings } from '@/pages/Models/index';
 
 const hostApiFetchMock = vi.fn();
 const trackUiEventMock = vi.fn();
@@ -84,7 +84,7 @@ describe('Models page auto refresh', () => {
   });
 
   it('refreshes token usage while the page stays open', async () => {
-    render(<Models />);
+    render(<UsageSettings />);
 
     await act(async () => {
       await Promise.resolve();

@@ -3,6 +3,8 @@ import { Check, Copy, Download, ImageIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { RenderPart } from '@/lib/acp/timeline-types';
 import { hostApi } from '@/lib/host-api';
+import { extnameOf } from '@/lib/generated-files';
+import { useArtifactPanel } from '@/stores/artifact-panel';
 import { cn } from '@/lib/utils';
 import { copyImageToClipboard } from './copy-image';
 
@@ -82,6 +84,20 @@ export function AcpImagePart({ part, className }: { part: ImageRenderPart; class
     window.setTimeout(() => setSaved(false), 1600);
   }, [src, mimeType, defaultFileName]);
 
+  const attachmentFileRef = part.attachmentFileRef;
+  const canPreview = Boolean(attachmentFileRef);
+  const openLargePreview = useCallback(() => {
+    if (!attachmentFileRef) return;
+    useArtifactPanel.getState().openPreview({
+      attachmentFileRef,
+      filePath: defaultFileName,
+      fileName: defaultFileName,
+      ext: extnameOf(defaultFileName),
+      mimeType,
+      contentType: 'snapshot',
+    });
+  }, [attachmentFileRef, defaultFileName, mimeType]);
+
   if (!src) {
     return (
       <div
@@ -102,8 +118,23 @@ export function AcpImagePart({ part, className }: { part: ImageRenderPart; class
       data-testid="acp-image-part"
       className={cn(
         'group/acp-image relative inline-flex w-fit max-w-full overflow-hidden rounded-xl border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/10',
+        canPreview && 'cursor-zoom-in',
         className,
       )}
+      {...(canPreview
+        ? {
+          role: 'button',
+          tabIndex: 0,
+          'aria-label': part.alt || t('acp.image'),
+          onClick: openLargePreview,
+          onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              openLargePreview();
+            }
+          },
+        }
+        : {})}
     >
       <img
         src={src}

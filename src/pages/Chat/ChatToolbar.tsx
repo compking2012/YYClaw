@@ -7,6 +7,7 @@ import { useMemo } from 'react';
 import { Bot, FolderTree, ListTree } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { QuestionDirectoryPopover, type QuestionDirectoryItem } from './QuestionDirectoryPopover';
 import { useChatStore } from '@/stores/chat';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
@@ -16,15 +17,17 @@ import { WORKSPACE_BROWSER_ENABLED } from '@/components/file-preview/workspace-b
 
 export type ChatToolbarProps = {
   questionDirectoryOpen?: boolean;
-  questionDirectoryCount?: number;
+  questionDirectoryItems?: QuestionDirectoryItem[];
   onToggleQuestionDirectory?: () => void;
+  onCloseQuestionDirectory?: () => void;
   workspaceAvailable?: boolean;
 };
 
 export function ChatToolbar({
   questionDirectoryOpen = false,
-  questionDirectoryCount = 0,
+  questionDirectoryItems = [],
   onToggleQuestionDirectory,
+  onCloseQuestionDirectory,
   workspaceAvailable = false,
 }: ChatToolbarProps = {}) {
   const currentAgentId = useChatStore((s) => s.currentAgentId);
@@ -39,15 +42,16 @@ export function ChatToolbar({
     [agents, currentAgentId],
   );
   const currentAgentName = currentAgent?.name ?? currentAgentId;
+  const hasAgents = (agents ?? []).length > 0;
 
   const browserActive = WORKSPACE_BROWSER_ENABLED && panelOpen && panelTab === 'browser';
-  const questionDirectoryAvailable = questionDirectoryCount > 1 && !!onToggleQuestionDirectory;
+  const questionDirectoryAvailable = questionDirectoryItems.length > 1 && !!onToggleQuestionDirectory;
 
   return (
     <div className="flex items-center gap-2">
       <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-black/10 bg-white/70 px-3 py-1.5 text-xs font-medium text-foreground/80 dark:border-white/10 dark:bg-white/5">
         <Bot className="h-3.5 w-3.5 text-primary" />
-        <span>{t('toolbar.currentAgent', { agent: currentAgentName })}</span>
+        <span>{hasAgents ? t('toolbar.currentAgent', { agent: currentAgentName }) : t('toolbar.noAgent')}</span>
       </div>
       {WORKSPACE_BROWSER_ENABLED && (
         <Tooltip>
@@ -73,24 +77,32 @@ export function ChatToolbar({
         </Tooltip>
       )}
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            data-testid="chat-question-directory-toggle"
-            variant="ghost"
-            size="icon"
-            className={cn(
-              'h-8 w-8 hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
-              questionDirectoryOpen && 'bg-foreground/10 text-foreground',
-            )}
-            onClick={onToggleQuestionDirectory}
-            disabled={!questionDirectoryAvailable}
-            aria-label={t('questionDirectory.title')}
-            aria-controls="chat-question-directory"
-            aria-expanded={questionDirectoryOpen}
-          >
-            <ListTree className="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
+        <QuestionDirectoryPopover
+          open={questionDirectoryOpen}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) onCloseQuestionDirectory?.();
+          }}
+          items={questionDirectoryItems}
+        >
+          <TooltipTrigger asChild>
+            <Button
+              data-testid="chat-question-directory-toggle"
+              variant="ghost"
+              size="icon"
+              className={cn(
+                'h-8 w-8 hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
+                questionDirectoryOpen && 'bg-foreground/10 text-foreground',
+              )}
+              onClick={onToggleQuestionDirectory}
+              disabled={!questionDirectoryAvailable}
+              aria-label={t('questionDirectory.title')}
+              aria-controls="chat-question-directory"
+              aria-expanded={questionDirectoryOpen}
+            >
+              <ListTree className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+        </QuestionDirectoryPopover>
         <TooltipContent>
           <p>{t('questionDirectory.title')}</p>
         </TooltipContent>

@@ -15,6 +15,8 @@ export type ChatRuntimeEvent =
       status: 'completed' | 'error' | 'aborted';
       endedAt?: number;
       error?: string;
+      /** Original Gateway lifecycle `data.phase` (e.g. end vs completed). */
+      lifecyclePhase?: string;
       livenessState?: string;
       replayInvalid?: boolean;
       stopReason?: string;

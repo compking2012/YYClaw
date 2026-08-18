@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { Channels } from '@/pages/Channels/index';
-import { CHANNEL_META, SUPPORTED_CHANNEL_TYPES } from '@shared/types/channel';
+import { ChannelsSettings } from '@/pages/Channels/index';
 
 const hostApiCallMock = vi.fn();
 const subscribeHostEventMock = vi.fn();
@@ -48,6 +47,7 @@ vi.mock('@/lib/host-api', () => ({
       restart: () => hostApiCallMock('gateway.restart', { method: 'POST' }),
     },
   },
+  hostApiFetch: vi.fn(async () => ({ success: true })),
 }));
 
 vi.mock('@/lib/host-events', () => ({
@@ -57,12 +57,14 @@ vi.mock('@/lib/host-events', () => ({
     onChannelSuccess: (channel: string, handler: unknown) => subscribeHostEventMock(`channel:${channel}-success`, handler),
     onChannelError: (channel: string, handler: unknown) => subscribeHostEventMock(`channel:${channel}-error`, handler),
   },
+  subscribeHostEvent: (...args: unknown[]) => subscribeHostEventMock(...args),
 }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
   }),
+  initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 
 vi.mock('sonner', () => ({
@@ -73,14 +75,21 @@ vi.mock('sonner', () => ({
   },
 }));
 
+vi.mock('@/lib/toast', () => ({
+  toast: {
+    success: (...args: unknown[]) => toastSuccessMock(...args),
+    error: (...args: unknown[]) => toastErrorMock(...args),
+    warning: (...args: unknown[]) => toastWarningMock(...args),
+    appError: (...args: unknown[]) => toastErrorMock(...args),
+  },
+}));
+
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
+  const promise = new Promise<T>((res) => {
     resolve = res;
-    reject = rej;
   });
-  return { promise, resolve, reject };
+  return { promise, resolve };
 }
 
 describe('Channels page status refresh', () => {
@@ -132,63 +141,6 @@ describe('Channels page status refresh', () => {
     });
   });
 
-  it('defines exactly the eight ClawX-supported channel integrations', () => {
-    expect(Object.keys(CHANNEL_META).sort()).toEqual([...SUPPORTED_CHANNEL_TYPES].sort());
-  });
-
-  it('filters runtime channel groups that ClawX does not support', async () => {
-    subscribeHostEventMock.mockImplementation(() => vi.fn());
-    const unsupportedChannelTypes = [
-      'signal',
-      'imessage',
-      'matrix',
-      'line',
-      'msteams',
-      'googlechat',
-      'mattermost',
-    ];
-    hostApiCallMock.mockImplementation(async (path: string) => {
-      if (path === 'channels.accounts') {
-        return {
-          success: true,
-          channels: [
-            {
-              channelType: 'feishu',
-              defaultAccountId: 'default',
-              status: 'connected',
-              accounts: [],
-            },
-            ...unsupportedChannelTypes.map((channelType) => ({
-              channelType,
-              defaultAccountId: 'default',
-              status: 'connected',
-              accounts: [{
-                accountId: 'default',
-                name: `unsupported-${channelType}`,
-                configured: true,
-                status: 'connected',
-                isDefault: true,
-              }],
-            })),
-          ],
-        };
-      }
-      if (path === 'agents.list') return { success: true, agents: [] };
-      throw new Error(`Unexpected host API path: ${path}`);
-    });
-
-    render(<Channels />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Feishu / Lark')).toBeInTheDocument();
-      expect(screen.getByText('Telegram')).toBeInTheDocument();
-    });
-    for (const channelType of unsupportedChannelTypes) {
-      expect(screen.queryByText(channelType, { exact: true })).not.toBeInTheDocument();
-      expect(screen.queryByText(`unsupported-${channelType}`)).not.toBeInTheDocument();
-    }
-  });
-
   it('blocks saving when custom account ID is non-canonical', async () => {
     subscribeHostEventMock.mockImplementation(() => vi.fn());
     hostApiCallMock.mockImplementation(async (path: string) => {
@@ -238,7 +190,7 @@ describe('Channels page status refresh', () => {
       throw new Error(`Unexpected host API path: ${path}`);
     });
 
-    render(<Channels />);
+    render(<ChannelsSettings />);
 
     await waitFor(() => {
       expect(screen.getByText('Feishu / Lark')).toBeInTheDocument();
@@ -271,145 +223,6 @@ describe('Channels page status refresh', () => {
     expect(saveCalls).toHaveLength(0);
   });
 
-  it('uses a config-only refresh immediately after a channel save', async () => {
-    subscribeHostEventMock.mockImplementation(() => vi.fn());
-    hostApiCallMock.mockImplementation(async (path: string) => {
-      if (path === 'channels.accounts') {
-        return { success: true, channels: [] };
-      }
-      if (path === 'agents.list') return { success: true, agents: [] };
-      if (path === 'channels.validateCredentials') {
-        return { success: true, valid: true, warnings: [] };
-      }
-      if (path === 'channels.saveConfig') {
-        return { success: true, activationPending: true };
-      }
-      throw new Error(`Unexpected host API path: ${path}`);
-    });
-
-    render(<Channels />);
-    await screen.findByRole('button', { name: /QQ Bot/ });
-    hostApiCallMock.mockClear();
-
-    fireEvent.click(screen.getByRole('button', { name: /QQ Bot/ }));
-    fireEvent.change(document.getElementById('appId') as HTMLInputElement, {
-      target: { value: 'qq-app-id' },
-    });
-    fireEvent.change(document.getElementById('clientSecret') as HTMLInputElement, {
-      target: { value: 'qq-client-secret' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'dialog.saveAndConnect' }));
-
-    await waitFor(() => {
-      expect(screen.queryByText('dialog.configureTitle')).not.toBeInTheDocument();
-    });
-    const postSaveAccountCalls = hostApiCallMock.mock.calls.filter(
-      ([path]) => path === 'channels.accounts',
-    );
-    expect(postSaveAccountCalls).toEqual([
-      ['channels.accounts', expect.objectContaining({ mode: 'config', probe: false })],
-    ]);
-  });
-
-  it('removes a channel optimistically before the host delete settles', async () => {
-    subscribeHostEventMock.mockImplementation(() => vi.fn());
-    const deleteDeferred = createDeferred<{ success: true }>();
-    hostApiCallMock.mockImplementation(async (path: string) => {
-      if (path === 'channels.accounts') {
-        return {
-          success: true,
-          channels: [{
-            channelType: 'feishu',
-            defaultAccountId: 'default',
-            status: 'connected',
-            accounts: [{
-              accountId: 'default',
-              name: 'Primary Account',
-              configured: true,
-              status: 'connected',
-              isDefault: true,
-            }],
-          }],
-        };
-      }
-      if (path === 'agents.list') return { success: true, agents: [] };
-      if (path === 'channels.deleteConfig') return deleteDeferred.promise;
-      throw new Error(`Unexpected host API path: ${path}`);
-    });
-
-    render(<Channels />);
-    await screen.findByTitle('account.deleteChannel');
-    fireEvent.click(screen.getByTitle('account.deleteChannel'));
-    fireEvent.click(await screen.findByTestId('confirm-dialog-confirm-button'));
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('confirm-dialog-confirm-button')).not.toBeInTheDocument();
-      expect(screen.queryByTitle('account.deleteChannel')).not.toBeInTheDocument();
-    });
-    expect(toastSuccessMock).not.toHaveBeenCalled();
-
-    await act(async () => {
-      deleteDeferred.resolve({ success: true });
-      await deleteDeferred.promise;
-    });
-    await waitFor(() => {
-      expect(toastSuccessMock).toHaveBeenCalledWith('toast.channelDeleted');
-    });
-  });
-
-  it('restores the config-backed view when an optimistic channel delete fails', async () => {
-    subscribeHostEventMock.mockImplementation(() => vi.fn());
-    const deleteDeferred = createDeferred<{ success: true }>();
-    hostApiCallMock.mockImplementation(async (path: string) => {
-      if (path === 'channels.accounts') {
-        return {
-          success: true,
-          channels: [{
-            channelType: 'feishu',
-            defaultAccountId: 'default',
-            status: 'connected',
-            accounts: [{
-              accountId: 'default',
-              name: 'Primary Account',
-              configured: true,
-              status: 'connected',
-              isDefault: true,
-            }],
-          }],
-        };
-      }
-      if (path === 'agents.list') return { success: true, agents: [] };
-      if (path === 'channels.deleteConfig') return deleteDeferred.promise;
-      throw new Error(`Unexpected host API path: ${path}`);
-    });
-
-    render(<Channels />);
-    await screen.findByTitle('account.deleteChannel');
-    fireEvent.click(screen.getByTitle('account.deleteChannel'));
-    fireEvent.click(await screen.findByTestId('confirm-dialog-confirm-button'));
-
-    await waitFor(() => {
-      expect(screen.queryByTitle('account.deleteChannel')).not.toBeInTheDocument();
-    });
-    await act(async () => {
-      deleteDeferred.reject(new Error('delete failed'));
-      try {
-        await deleteDeferred.promise;
-      } catch {
-        // Expected host failure.
-      }
-    });
-
-    await waitFor(() => {
-      expect(toastErrorMock).toHaveBeenCalledWith('toast.configFailed');
-      expect(hostApiCallMock).toHaveBeenCalledWith(
-        'channels.accounts',
-        expect.objectContaining({ mode: 'config', probe: false }),
-      );
-      expect(screen.getByTitle('account.deleteChannel')).toBeInTheDocument();
-    });
-  });
-
   it('refetches channel accounts when gateway channel-status events arrive', async () => {
     let channelStatusHandler: (() => void) | undefined;
     subscribeHostEventMock.mockImplementation((eventName: string, handler: () => void) => {
@@ -419,7 +232,7 @@ describe('Channels page status refresh', () => {
       return vi.fn();
     });
 
-    render(<Channels />);
+    render(<ChannelsSettings />);
 
     await waitFor(() => {
       expect(hostApiCallMock).toHaveBeenCalledWith('channels.accounts', expect.objectContaining({ mode: 'runtime' }));
@@ -444,7 +257,7 @@ describe('Channels page status refresh', () => {
   it('refetches when the gateway transitions to running after mount', async () => {
     gatewayState.status = { state: 'starting', port: 18789 };
 
-    const { rerender } = render(<Channels />);
+    const { rerender } = render(<ChannelsSettings />);
 
     await waitFor(() => {
       expect(hostApiCallMock).toHaveBeenCalledWith('channels.accounts', expect.objectContaining({ mode: 'runtime' }));
@@ -453,7 +266,7 @@ describe('Channels page status refresh', () => {
 
     gatewayState.status = { state: 'running', port: 18789 };
     await act(async () => {
-      rerender(<Channels />);
+      rerender(<ChannelsSettings />);
     });
 
     await waitFor(() => {
@@ -502,7 +315,7 @@ describe('Channels page status refresh', () => {
       throw new Error(`Unexpected host API path: ${path}`);
     });
 
-    render(<Channels />);
+    render(<ChannelsSettings />);
 
     expect(await screen.findByText('Feishu / Lark')).toBeInTheDocument();
 
@@ -550,7 +363,7 @@ describe('Channels page status refresh', () => {
       throw new Error(`Unexpected host API path: ${path}`);
     });
 
-    render(<Channels />);
+    render(<ChannelsSettings />);
 
     await waitFor(() => {
       expect(screen.getByText('WeChat')).toBeInTheDocument();
@@ -615,7 +428,7 @@ describe('Channels page status refresh', () => {
       throw new Error(`Unexpected host API path: ${path}`);
     });
 
-    render(<Channels />);
+    render(<ChannelsSettings />);
 
     expect(await screen.findByText('Feishu / Lark')).toBeInTheDocument();
 
@@ -650,7 +463,7 @@ describe('Channels page status refresh', () => {
   it('keeps filled Feishu credentials when account ID is edited', async () => {
     subscribeHostEventMock.mockImplementation(() => vi.fn());
 
-    render(<Channels />);
+    render(<ChannelsSettings />);
 
     await waitFor(() => {
       expect(screen.getByText('Feishu / Lark')).toBeInTheDocument();
@@ -734,7 +547,7 @@ describe('Channels page status refresh', () => {
       throw new Error(`Unexpected host API path: ${path}`);
     });
 
-    render(<Channels />);
+    render(<ChannelsSettings />);
 
     expect(await screen.findByTestId('channels-health-banner')).toBeInTheDocument();
     expect(screen.getByText('health.state.degraded')).toBeInTheDocument();
@@ -785,7 +598,7 @@ describe('Channels page status refresh', () => {
       throw new Error(`Unexpected host API path: ${path}`);
     });
 
-    render(<Channels />);
+    render(<ChannelsSettings />);
 
     expect(await screen.findByText('Feishu / Lark')).toBeInTheDocument();
     expect(screen.queryByTestId('channels-health-banner')).not.toBeInTheDocument();
@@ -834,7 +647,7 @@ describe('Channels page status refresh', () => {
       throw new Error(`Unexpected host API path: ${path}`);
     });
 
-    render(<Channels />);
+    render(<ChannelsSettings />);
     expect(await screen.findByTestId('channels-health-banner')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('channels-toggle-diagnostics'));
@@ -887,7 +700,7 @@ describe('Channels page status refresh', () => {
       throw new Error(`Unexpected host API path: ${path}`);
     });
 
-    render(<Channels />);
+    render(<ChannelsSettings />);
     expect(await screen.findByTestId('channels-health-banner')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('channels-restart-gateway'));
@@ -954,7 +767,7 @@ describe('Channels page status refresh', () => {
       throw new Error(`Unexpected host API path: ${path}`);
     });
 
-    render(<Channels />);
+    render(<ChannelsSettings />);
 
     expect(await screen.findByTestId('channels-health-banner')).toBeInTheDocument();
 

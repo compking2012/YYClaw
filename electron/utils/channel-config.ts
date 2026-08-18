@@ -4,14 +4,17 @@
  *
  * All file I/O uses async fs/promises to avoid blocking the main thread.
  */
-import { access, mkdir, readFile, writeFile, readdir, stat, rm } from 'fs/promises';
+import { access, mkdir, readFile, writeFile, readdir, stat, rm, rename } from 'fs/promises';
 import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import { mutateOpenClawConfig, readOpenClawConfigSnapshot } from '../gateway/config-delivery';
+import { mutateOpenClawConfig } from '../gateway/config-delivery';
 import { getOpenClawResolvedDir, resolveOpenClawConfigPath } from './paths';
 import * as logger from './logger';
 import { proxyAwareFetch } from './proxy-fetch';
+import { withConfigLock } from './config-mutex';
+import { readEncryptedJson, writeEncryptedJson, shouldEncryptConfigFilesAtRest } from './crypto-helper';
+import { getSetting } from './store';
 import {
     OPENCLAW_WECHAT_CHANNEL_TYPE,
     isWechatChannelType,
@@ -20,38 +23,21 @@ import {
 } from './channel-alias';
 
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
+const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
+const CONFIG_READ_RETRY_ATTEMPTS = 5;
+const CONFIG_READ_RETRY_DELAY_MS = 25;
+// Last successfully-read non-empty config, used as a fallback when a later read
+// hits a transient failure (see readOpenClawConfig).
+let lastGoodOpenClawConfig: OpenClawConfig | null = null;
 const WECOM_PLUGIN_ID = 'wecom';
 const WECHAT_PLUGIN_ID = OPENCLAW_WECHAT_CHANNEL_TYPE;
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const DEFAULT_ACCOUNT_ID = 'default';
-// Channels whose top-level schema (additionalProperties:false) does NOT
-// include `defaultAccount`.  We still use the multi-account `accounts`
-// map, but strip `defaultAccount` before persisting to avoid plugin
-// schema validation errors.  ClawX falls back to DEFAULT_ACCOUNT_ID
-// when `defaultAccount` is absent.
-const CHANNELS_OMIT_DEFAULT_ACCOUNT_KEY = new Set(['dingtalk']);
-
-// Channels whose schema accepts a top-level default account and account map,
-// but whose account payload contains nested strict-schema objects that ClawX
-// can accidentally make invalid by adding UI convenience fields.  Keep this
-// sanitization narrowly scoped to known nested maps so local config remains
-// OpenClaw-compatible after a save.
-const DISCORD_GUILD_CHANNEL_KEYS_TO_KEEP = new Set([
-    'autoArchiveDuration',
-    'autoThread',
-    'autoThreadName',
-    'enabled',
-    'ignoreOtherMentions',
-    'includeThreadStarter',
-    'requireMention',
-    'roles',
-    'skills',
-    'systemPrompt',
-    'tools',
-    'toolsBySender',
-    'users',
-]);
-const DISCORD_CHANNEL_ALLOW_FLAG_KEYS = new Set(['allow']);
+// Channels whose plugin schema uses additionalProperties:false, meaning
+// credential keys MUST NOT appear at the top level of `channels.<type>`.
+// All other channels get the default account mirrored to the top level
+// so their runtime/plugin can discover the credentials.
+const CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR = new Set(['dingtalk']);
 const CHANNEL_TOP_LEVEL_KEYS_TO_KEEP = new Set(['accounts', 'defaultAccount', 'enabled']);
 const WECHAT_STATE_DIR = join(OPENCLAW_DIR, WECHAT_PLUGIN_ID);
 const WECHAT_ACCOUNT_INDEX_FILE = join(WECHAT_STATE_DIR, 'accounts.json');
@@ -87,6 +73,31 @@ const CHANNEL_UNIQUE_CREDENTIAL_KEY: Record<string, string> = {
 };
 
 // ── Helpers ──────────────────────────────────────────────────────
+
+/**
+ * Strip `defaultAccount` from channel sections whose plugin schema
+ * declares additionalProperties:false without listing `defaultAccount`.
+ * Call before committing channel-config mutations.
+ */
+// OpenClaw's DiscordGuildChannelConfig rejects unknown keys, and older ClawX
+// saves wrote an `allow` flag it never accepted. Keep the sanitization narrowly
+// scoped to known nested maps so local config stays OpenClaw-compatible.
+const DISCORD_GUILD_CHANNEL_KEYS_TO_KEEP = new Set([
+    'autoArchiveDuration',
+    'autoThread',
+    'autoThreadName',
+    'enabled',
+    'ignoreOtherMentions',
+    'includeThreadStarter',
+    'requireMention',
+    'roles',
+    'skills',
+    'systemPrompt',
+    'tools',
+    'toolsBySender',
+    'users',
+]);
+const DISCORD_CHANNEL_ALLOW_FLAG_KEYS = new Set(['allow']);
 
 function sanitizeDiscordGuildChannelConfig(channelConfig: unknown): void {
     if (!channelConfig || typeof channelConfig !== 'object' || Array.isArray(channelConfig)) {
@@ -139,11 +150,6 @@ function sanitizeDiscordGuilds(config: unknown): void {
     }
 }
 
-/**
- * Strip `defaultAccount` from channel sections whose plugin schema
- * declares additionalProperties:false without listing `defaultAccount`.
- * Call before committing channel-config mutations.
- */
 function sanitizeChannelSectionsBeforeWrite(config: OpenClawConfig): void {
     for (const pluginId of PLUGIN_CHANNELS) {
         const pluginEntry = config.plugins?.entries?.[pluginId];
@@ -153,7 +159,7 @@ function sanitizeChannelSectionsBeforeWrite(config: OpenClawConfig): void {
     }
 
     if (!config.channels) return;
-    for (const channelType of CHANNELS_OMIT_DEFAULT_ACCOUNT_KEY) {
+    for (const channelType of CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR) {
         const section = config.channels[channelType];
         if (section) {
             delete section.defaultAccount;
@@ -466,14 +472,152 @@ export interface OpenClawConfig {
 
 // ── Config I/O ───────────────────────────────────────────────────
 
+async function ensureConfigDir(): Promise<void> {
+    if (!(await fileExists(OPENCLAW_DIR))) {
+        await mkdir(OPENCLAW_DIR, { recursive: true });
+    }
+}
+
+function delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientConfigParseError(error: unknown): boolean {
+    if (!(error instanceof SyntaxError)) return false;
+    const message = error.message.toLowerCase();
+    return message.includes('unexpected end of json input')
+        || message.includes('unexpected token');
+}
+
+// Transient filesystem errors seen while another writer replaces openclaw.json
+// (temp-file + rename). On Windows the file is briefly locked/absent during the
+// rename window, so readFile can throw EPERM/EBUSY/EACCES/ENOENT even though the
+// config is perfectly valid a moment later. macOS rarely surfaces these because
+// its rename/read semantics don't expose the replacement window. Retrying a few
+// times almost always succeeds.
+function isTransientFsError(error: unknown): boolean {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    return code === 'EPERM'
+        || code === 'EBUSY'
+        || code === 'EACCES'
+        || code === 'ENOENT'
+        || code === 'EMFILE';
+}
+
+async function writeTextFileAtomic(filePath: string, content: string): Promise<void> {
+    const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+    await writeFile(tempPath, content, 'utf-8');
+    await rename(tempPath, filePath);
+}
+
+async function readOpenClawConfigPlain(): Promise<OpenClawConfig> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < CONFIG_READ_RETRY_ATTEMPTS; attempt += 1) {
+        try {
+            const content = await readFile(CONFIG_FILE, 'utf-8');
+            const trimmed = content.trim();
+            if (!trimmed) {
+                if (attempt < CONFIG_READ_RETRY_ATTEMPTS - 1) {
+                    await delay(CONFIG_READ_RETRY_DELAY_MS * (attempt + 1));
+                    continue;
+                }
+                return {};
+            }
+            return JSON.parse(trimmed) as OpenClawConfig;
+        } catch (error) {
+            lastError = error;
+            const retriable = isTransientConfigParseError(error) || isTransientFsError(error);
+            if (attempt < CONFIG_READ_RETRY_ATTEMPTS - 1 && retriable) {
+                await delay(CONFIG_READ_RETRY_DELAY_MS * (attempt + 1));
+                continue;
+            }
+            throw error;
+        }
+    }
+    throw lastError ?? new Error('Failed to parse OpenClaw config');
+}
+
 export async function readOpenClawConfig(): Promise<OpenClawConfig> {
     try {
-        const snapshot = await readOpenClawConfigSnapshot();
-        return snapshot.config as OpenClawConfig;
+        let configKey: string | undefined = undefined;
+        try {
+            configKey = await getSetting('configKey');
+        } catch {
+            // Fallback for tests or contexts without electron-store
+        }
+
+        let config: OpenClawConfig;
+        if (configKey) {
+            try {
+                config = await readEncryptedJson<OpenClawConfig>(CONFIG_FILE, configKey);
+            } catch {
+                // Fallback to plain read if decryption fails (e.g. file was plain text)
+                config = await readOpenClawConfigPlain();
+            }
+        } else {
+            config = await readOpenClawConfigPlain();
+        }
+        // Remember the last successfully-read non-empty config so a later transient
+        // read failure can fall back to it instead of a blank {} (which would wipe
+        // agents/skills in the UI). An intentionally empty file stays {} and does
+        // not overwrite a previously-good snapshot. Clone to isolate the cache from
+        // callers that mutate the returned config (read-modify-write).
+        if (config && Object.keys(config).length > 0) {
+            lastGoodOpenClawConfig = structuredClone(config);
+        }
+        return config;
     } catch (error) {
-        logger.error('Failed to read OpenClaw config', error);
-        console.error('Failed to read OpenClaw config:', error);
+        if (isTransientConfigParseError(error) || isTransientFsError(error)) {
+            logger.warn('OpenClaw config read hit a transient failure', error);
+        } else {
+            logger.error('Failed to read OpenClaw config', error);
+            console.error('Failed to read OpenClaw config:', error);
+        }
+        // Prefer the last known-good config over {} so a transient read failure
+        // (common on Windows during a concurrent atomic rename) does not clear
+        // downstream state such as the agent/skill lists. Clone so callers can
+        // safely mutate the result without corrupting the cache.
+        if (lastGoodOpenClawConfig) {
+            return structuredClone(lastGoodOpenClawConfig);
+        }
         return {};
+    }
+}
+
+// OpenClaw kernel version — injected at compile time from package.json
+// devDependencies.openclaw, so it always reflects the bundled kernel.
+export async function readOpenClawVersion(): Promise<string> {
+    return __OPENCLAW_VERSION__;
+}
+
+export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void> {
+    await ensureConfigDir();
+
+    try {
+        // Enable graceful in-process reload authorization for SIGUSR1 flows.
+        const commands =
+            config.commands && typeof config.commands === 'object'
+                ? { ...(config.commands as Record<string, unknown>) }
+                : {};
+        commands.restart = true;
+        config.commands = commands;
+
+        let configKey: string | undefined = undefined;
+        try {
+            configKey = await getSetting('configKey');
+        } catch {
+            // Fallback for tests or contexts without electron-store
+        }
+
+        if (configKey && shouldEncryptConfigFilesAtRest(configKey)) {
+            await writeEncryptedJson(CONFIG_FILE, config, configKey);
+        } else {
+            await writeTextFileAtomic(CONFIG_FILE, JSON.stringify(config, null, 2));
+        }
+    } catch (error) {
+        logger.error('Failed to write OpenClaw config', error);
+        console.error('Failed to write OpenClaw config:', error);
+        throw error;
     }
 }
 
@@ -632,11 +776,11 @@ function transformChannelConfig(
 
             if (channelId && typeof channelId === 'string' && channelId.trim()) {
                 guildConfig.channels = {
-                    [channelId.trim()]: { requireMention: true }
+                    [channelId.trim()]: { allow: true, requireMention: true }
                 };
             } else {
                 guildConfig.channels = {
-                    '*': { requireMention: true }
+                    '*': { allow: true, requireMention: true }
                 };
             }
 
@@ -675,16 +819,15 @@ function transformChannelConfig(
         }
 
         transformedConfig.allowFrom = allowFrom;
-    }
 
-    if (channelType === 'whatsapp') {
-        // The WhatsApp plugin stores QR/session state on disk and does not
-        // require static credentials, but the runtime still needs an enabled
-        // plugin config entry for the channel account to appear in status.
-        transformedConfig = {
-            ...transformedConfig,
-            enabled: transformedConfig.enabled ?? true,
-        };
+        if (channelType === 'feishu') {
+            transformedConfig.groupPolicy = 'open';
+            const existingGroups = (transformedConfig.groups ?? existingAccountConfig.groups ?? {}) as Record<string, Record<string, unknown>>;
+            transformedConfig.groups = {
+                ...existingGroups,
+                '*': { enabled: true }
+            };
+        }
     }
 
     if (channelType === 'dingtalk') {
@@ -849,37 +992,52 @@ export async function saveChannelConfig(
             }
         }
 
-        // ── Write into accounts.<accountId> (multi-account support) ───
-        const accounts = ensureChannelAccountsMap(channelSection);
-        channelSection.defaultAccount =
-            typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
-                ? channelSection.defaultAccount
-                : resolvedAccountId;
-        accounts[resolvedAccountId] = {
-            ...accounts[resolvedAccountId],
-            ...transformedConfig,
-            enabled: transformedConfig.enabled ?? true,
-        };
-
-        // Keep channel-level enabled explicit so callers/tests that
-        // read channels.<type>.enabled still work.
-        channelSection.enabled = transformedConfig.enabled ?? channelSection.enabled ?? true;
-
-        syncPluginChannelRegistration(currentConfig, resolvedChannelType);
-
-        // Most OpenClaw channel plugins/built-ins also read the default
-        // account's credentials from the top level of `channels.<type>`
-        // (e.g. channels.feishu.appId).  Mirror them there so the
-        // runtime can discover them.
-        const mirroredAccountId =
-            typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
-                ? channelSection.defaultAccount
-                : resolvedAccountId;
-        const defaultAccountData = accounts[mirroredAccountId] ?? accounts[resolvedAccountId] ?? accounts[DEFAULT_ACCOUNT_ID];
-        if (defaultAccountData) {
-            for (const [key, value] of Object.entries(defaultAccountData)) {
+        // ── Strict-schema channels (e.g. dingtalk) ──────────────────────
+        // These plugins declare additionalProperties:false and do NOT
+        // recognise `accounts` / `defaultAccount`.  Write credentials
+        // flat to the channel root and strip the multi-account keys.
+        if (CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR.has(resolvedChannelType)) {
+            for (const [key, value] of Object.entries(transformedConfig)) {
                 channelSection[key] = value;
             }
+            channelSection.enabled = transformedConfig.enabled ?? channelSection.enabled ?? true;
+            // Remove keys the strict schema rejects
+            delete channelSection.accounts;
+            delete channelSection.defaultAccount;
+        } else {
+            // ── Normal channels ──────────────────────────────────────────
+            // Write into accounts.<accountId> (multi-account support).
+            const accounts = ensureChannelAccountsMap(channelSection);
+            channelSection.defaultAccount =
+                typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
+                    ? channelSection.defaultAccount
+                    : resolvedAccountId;
+            accounts[resolvedAccountId] = {
+                ...accounts[resolvedAccountId],
+                ...transformedConfig,
+                enabled: transformedConfig.enabled ?? true,
+            };
+
+            // Keep channel-level enabled explicit so callers/tests that
+            // read channels.<type>.enabled still work.
+            channelSection.enabled = transformedConfig.enabled ?? channelSection.enabled ?? true;
+
+            // Most OpenClaw channel plugins/built-ins also read the default
+            // account's credentials from the top level of `channels.<type>`
+            // (e.g. channels.feishu.appId).  Mirror them there so the
+            // runtime can discover them.
+            const mirroredAccountId =
+                typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
+                    ? channelSection.defaultAccount
+                    : resolvedAccountId;
+            const defaultAccountData = accounts[mirroredAccountId] ?? accounts[resolvedAccountId] ?? accounts[DEFAULT_ACCOUNT_ID];
+            if (defaultAccountData) {
+                for (const [key, value] of Object.entries(defaultAccountData)) {
+                    channelSection[key] = value;
+                }
+            }
+
+            syncPluginChannelRegistration(currentConfig, resolvedChannelType);
         }
 
         sanitizeChannelSectionsBeforeWrite(currentConfig);
@@ -981,6 +1139,16 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
             } else if (PLUGIN_CHANNELS.includes(resolvedChannelType)) {
                 removePluginRegistration(currentConfig, resolvedChannelType);
             }
+            return;
+        }
+
+        // Strict-schema channels have no `accounts` structure — delete means
+        // removing the entire channel section.
+        if (CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR.has(resolvedChannelType)) {
+            delete currentConfig.channels![resolvedChannelType];
+            syncBuiltinChannelsWithPluginAllowlist(currentConfig);
+            deletedAccount = true;
+            logger.info('Deleted strict-schema channel config', { channelType: resolvedChannelType, accountId });
             return;
         }
 
@@ -1720,4 +1888,119 @@ export async function validateChannelConfig(channelType: string): Promise<Valida
     }
 
     return result;
+}
+
+// ── Session maintenance (auto-cleanup policy) ────────────────────
+// Reads/writes `session.maintenance` in openclaw.json. See OpenClaw's
+// SessionMaintenanceConfig: `mode` "warn" (default, advisory) vs "enforce"
+// (actually prunes), `pruneAfter` stale-age cutoff (e.g. "30d"), `maxEntries`
+// cap on sessions.json rows, and an optional `maxDiskBytes`/`highWaterBytes`
+// per-agent sessions-directory budget.
+
+export interface SessionMaintenanceConfig {
+    mode?: 'warn' | 'enforce';
+    pruneAfter?: string | number;
+    maxEntries?: number;
+    maxDiskBytes?: string | number;
+    highWaterBytes?: string | number;
+    resetArchiveRetention?: string | number | false;
+}
+
+function asMaintenanceRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+}
+
+export async function readSessionMaintenance(): Promise<SessionMaintenanceConfig> {
+    const config = await readOpenClawConfig();
+    const session = asMaintenanceRecord(config.session);
+    const maintenance = asMaintenanceRecord(session.maintenance);
+    return maintenance as SessionMaintenanceConfig;
+}
+
+/**
+ * Merge a partial maintenance patch into `session.maintenance`. A key set to
+ * `undefined`, `null`, or `''` is deleted so the form can clear a field;
+ * unmanaged keys (e.g. `resetArchiveRetention`) are preserved.
+ */
+export async function saveSessionMaintenance(
+    patch: Partial<Record<keyof SessionMaintenanceConfig, unknown>>,
+): Promise<SessionMaintenanceConfig> {
+    return withConfigLock(async () => {
+        const currentConfig = await readOpenClawConfig();
+        const session = { ...asMaintenanceRecord(currentConfig.session) };
+        const maintenance = { ...asMaintenanceRecord(session.maintenance) };
+
+        for (const [key, value] of Object.entries(patch)) {
+            if (value === undefined || value === null || value === '') {
+                delete maintenance[key];
+            } else {
+                maintenance[key] = value;
+            }
+        }
+
+        session.maintenance = maintenance;
+        currentConfig.session = session;
+
+        sanitizeChannelSectionsBeforeWrite(currentConfig);
+        await writeOpenClawConfig(currentConfig);
+        logger.info('Session maintenance config saved', { path: 'session.maintenance' });
+        return maintenance as SessionMaintenanceConfig;
+    });
+}
+
+/**
+ * Ensure `session.maintenance.mode` exists in openclaw.json, defaulting it to
+ * `enforce` so the Gateway prunes old/over-budget sessions on its own schedule.
+ * Other maintenance fields are left unset to use OpenClaw defaults. No-op when a
+ * mode is already configured. Returns true when it wrote a default.
+ */
+export async function ensureSessionMaintenanceDefaults(): Promise<boolean> {
+    return withConfigLock(async () => {
+        const currentConfig = await readOpenClawConfig();
+        const session = { ...asMaintenanceRecord(currentConfig.session) };
+        const maintenance = { ...asMaintenanceRecord(session.maintenance) };
+
+        if (maintenance.mode === 'warn' || maintenance.mode === 'enforce') {
+            return false;
+        }
+
+        maintenance.mode = 'enforce';
+        session.maintenance = maintenance;
+        currentConfig.session = session;
+
+        sanitizeChannelSectionsBeforeWrite(currentConfig);
+        await writeOpenClawConfig(currentConfig);
+        logger.info('Applied default session.maintenance.mode=enforce');
+        return true;
+    });
+}
+
+// ── Control UI (OpenClaw web console) toggle ─────────────────────
+// Reads/writes `gateway.controlUi.enabled` in openclaw.json. Other controlUi
+// keys (e.g. allowedOrigins, synced on gateway start) are preserved.
+
+export async function readControlUiEnabled(): Promise<boolean> {
+    const config = await readOpenClawConfig();
+    const gateway = asMaintenanceRecord(config.gateway);
+    const controlUi = asMaintenanceRecord(gateway.controlUi);
+    return controlUi.enabled === true;
+}
+
+export async function setControlUiEnabled(enabled: boolean): Promise<boolean> {
+    return withConfigLock(async () => {
+        const currentConfig = await readOpenClawConfig();
+        const gateway = { ...asMaintenanceRecord(currentConfig.gateway) };
+        const controlUi = { ...asMaintenanceRecord(gateway.controlUi) };
+
+        controlUi.enabled = enabled;
+        gateway.controlUi = controlUi;
+        currentConfig.gateway = gateway;
+
+        sanitizeChannelSectionsBeforeWrite(currentConfig);
+        await writeOpenClawConfig(currentConfig);
+        logger.info('Control UI enabled set', { enabled });
+        return enabled;
+    });
 }

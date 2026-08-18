@@ -1,0 +1,21 @@
+{
+    "title": "Workspace",
+    "subtitle": "Browse and preview files in your agent workspaces",
+    "refresh": "Refresh",
+    "revealInFinder": "Reveal in Finder",
+    "revealInExplorer": "Reveal in Explorer",
+    "revealInFileManager": "Open in File Manager",
+    "selectFileToPreview": "Select a file to preview",
+    "binaryNotSupported": "Binary files cannot be previewed",
+    "emptyWorkspace": "This workspace is empty",
+    "noAgents": "No agents yet",
+    "noAgentsHint": "Create an agent first to browse its workspace",
+    "viewPersonaSettings": "Persona Settings",
+    "viewWorkspaceFiles": "Workspace Files",
+    "rebuildPersona": "Rebuild Persona Templates",
+    "showHidden": "Show hidden files",
+    "hideHidden": "Hide hidden files",
+    "showInFileManager": "Show in file manager",
+    "deleteFileConfirm": "Are you sure you want to delete {{path}}? This action cannot be undone.",
+    "deleteTitle": "Confirm Deletion"
+}

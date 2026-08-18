@@ -1,5 +1,6 @@
 #!/usr/bin/env zx
 
+import { spawnSync } from 'node:child_process';
 import 'zx/globals';
 
 const ROOT_DIR = path.resolve(__dirname, '..');
@@ -19,7 +20,7 @@ const TARGETS = {
 };
 
 const PLATFORM_GROUPS = {
-  win: ['win32-x64', 'win32-arm64'],
+  win: ['win32-x64'],
 };
 
 async function setupTarget(id) {
@@ -33,15 +34,11 @@ async function setupTarget(id) {
   const tempDir = path.join(ROOT_DIR, 'temp_node_extract');
   const archivePath = path.join(ROOT_DIR, target.filename);
   const downloadUrl = `${BASE_URL}/${target.filename}`;
+  const outputNode = path.join(targetDir, 'node.exe');
 
   echo(chalk.blue`\n📦 Setting up Node.js for ${id}...`);
 
-  // Only remove the target binary, not the entire directory,
-  // to avoid deleting uv.exe or other binaries placed by other download scripts.
-  const outputNode = path.join(targetDir, 'node.exe');
-  if (await fs.pathExists(outputNode)) {
-    await fs.remove(outputNode);
-  }
+  //await fs.remove(targetDir);
   await fs.remove(tempDir);
   await fs.ensureDir(targetDir);
   await fs.ensureDir(tempDir);
@@ -82,6 +79,18 @@ async function setupTarget(id) {
   }
 }
 
+function syncMetaBinAfterNodeDownload() {
+  const script = path.join(ROOT_DIR, 'scripts', 'build-rel-cache.mjs');
+  const r = spawnSync(process.execPath, [script, 'sync-meta-bin'], {
+    cwd: ROOT_DIR,
+    stdio: 'inherit',
+  });
+  if (r.status !== 0) {
+    echo(chalk.red`❌ sync-meta-bin 失败（exit ${r.status ?? '∅'}）`);
+    process.exit(r.status ?? 1);
+  }
+}
+
 const downloadAll = argv.all;
 const platform = argv.platform;
 
@@ -90,6 +99,7 @@ if (downloadAll) {
   for (const id of Object.keys(TARGETS)) {
     await setupTarget(id);
   }
+  syncMetaBinAfterNodeDownload();
 } else if (platform) {
   const targets = PLATFORM_GROUPS[platform];
   if (!targets) {
@@ -101,6 +111,7 @@ if (downloadAll) {
   for (const id of targets) {
     await setupTarget(id);
   }
+  syncMetaBinAfterNodeDownload();
 } else {
   const currentId = `${os.platform()}-${os.arch()}`;
   if (TARGETS[currentId]) {
@@ -112,6 +123,7 @@ if (downloadAll) {
       await setupTarget(id);
     }
   }
+  syncMetaBinAfterNodeDownload();
 }
 
 echo(chalk.green`\n🎉 Done!`);

@@ -4,6 +4,7 @@ import {
   getGatewayStartupRecoveryAction,
   hasFatalRuntimeFailureSignal,
   hasInvalidConfigFailureSignal,
+  hasMissingRuntimeFailureSignal,
   hasStartupMigrationLockSignal,
   isGatewayStillStartingError,
   isInvalidConfigSignal,
@@ -75,6 +76,25 @@ describe('gateway startup recovery heuristics', () => {
       [],
     )).toBe(true);
     expect(hasFatalRuntimeFailureSignal(new Error('Config invalid'), [])).toBe(false);
+  });
+
+  it('detects a missing bundled OpenClaw runtime so reconnect is not looped', () => {
+    expect(hasMissingRuntimeFailureSignal(
+      new Error(
+        'OpenClaw package not found at: C:\\Users\\test\\yyclaw\\resources\\openclaw '
+        + '(bundled runtime missing from the install directory — reinstall YYClaw to restore it)',
+      ),
+      [],
+    )).toBe(true);
+    expect(hasMissingRuntimeFailureSignal(
+      new Error('OpenClaw entry script not found at: /app/resources/openclaw/openclaw.mjs'),
+      [],
+    )).toBe(true);
+    expect(hasMissingRuntimeFailureSignal(undefined, [
+      'OpenClaw package not found at: /app/resources/openclaw',
+    ])).toBe(true);
+    expect(hasMissingRuntimeFailureSignal(new Error('Gateway process exited before becoming ready'), []))
+      .toBe(false);
   });
 });
 

@@ -1,0 +1,70 @@
+{
+  "PROCESS_FAILED": {
+    "title": "Engine failed to start",
+    "message": "The local engine couldn't start or exited unexpectedly.",
+    "hint": "Try restarting the gateway. If a port is in use, close the conflicting app or change the port in Settings."
+  },
+  "GATEWAY": {
+    "title": "Gateway unavailable",
+    "message": "Can't reach the local gateway right now.",
+    "hint": "Restart the gateway and try again."
+  },
+  "TIMEOUT": {
+    "title": "Request timed out",
+    "message": "The engine took too long to respond.",
+    "hint": "Check your network and try again. Long-running tasks may just need another attempt."
+  },
+  "AUTH_INVALID": {
+    "title": "Authentication failed",
+    "message": "Your API key or login session is invalid.",
+    "hint": "Open Settings to update your API key, or sign in again."
+  },
+  "QUOTA": {
+    "title": "Out of credit",
+    "message": "Your account has run out of quota or balance.",
+    "hint": "Top up your account, or switch to another provider in Settings."
+  },
+  "RATE_LIMIT": {
+    "title": "Too many requests",
+    "message": "You're sending requests too fast.",
+    "hint": "Wait a moment and try again."
+  },
+  "UPSTREAM": {
+    "title": "Model service error",
+    "message": "The upstream model provider returned an error.",
+    "hint": "This is usually temporary. Try again, or switch models in Settings."
+  },
+  "CONFIG": {
+    "title": "Invalid configuration",
+    "message": "Something in your settings isn't quite right.",
+    "hint": "Review your model and provider settings."
+  },
+  "PERMISSION": {
+    "title": "Permission denied",
+    "message": "The operation was blocked by a permission check.",
+    "hint": "Check file or system permissions and try again."
+  },
+  "NETWORK": {
+    "title": "Network error",
+    "message": "Couldn't connect to the network.",
+    "hint": "Check your internet connection or proxy settings and retry."
+  },
+  "WORKSPACE": {
+    "title": "Workspace path error",
+    "message": "A file or folder in your workspace couldn't be found.",
+    "hint": "Verify the workspace path exists and is accessible."
+  },
+  "CHANNEL_UNAVAILABLE": {
+    "title": "Service unavailable",
+    "message": "This service channel isn't available right now.",
+    "hint": "Restart the app or gateway and try again."
+  },
+  "UNKNOWN": {
+    "title": "Something went wrong",
+    "message": "An unexpected error occurred.",
+    "hint": "Try again. If it keeps happening, check the details below."
+  },
+  "detailLabel": "View details",
+  "copyDetail": "Copy original error",
+  "retry": "Retry"
+}

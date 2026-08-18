@@ -14,7 +14,7 @@ import { constants, readdirSync, readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
 import { listConfiguredAgentIds } from './agent-config';
-import { getOpenClawResolvedDir } from './paths';
+import { getOpenClawResolvedDir, resolveOpenClawConfigPath } from './paths';
 import {
   getProviderEnvVar,
   getProviderDefaultModel,
@@ -28,6 +28,8 @@ import {
   isOpenClawOAuthPluginProviderKey,
 } from './provider-keys';
 import { normalizePiAiModelCost, type PiAiModelCostRates } from '../shared/pi-ai-model-cost';
+import { withConfigLock } from './config-mutex';
+import { removeLegacySkillConfigReferences } from './legacy-skill-config-cleanup';
 import {
   mutateOpenClawConfig,
   readOpenClawConfigSnapshot,
@@ -733,6 +735,26 @@ async function readOpenClawJson(): Promise<Record<string, unknown>> {
   return (await readOpenClawConfigSnapshot()).config;
 }
 
+/**
+ * Persist a whole config document. Callers already hold the config lock — the
+ * same lock the delivery coordinator takes — so this writes directly instead of
+ * opening a nested coordinator transaction.
+ */
+async function writeOpenClawJson(config: Record<string, unknown>): Promise<void> {
+  normalizeAgentsDefaultsCompactionMode(config);
+
+  // Ensure SIGUSR1 graceful reload is authorized by OpenClaw config.
+  const commands = (
+    config.commands && typeof config.commands === 'object'
+      ? { ...(config.commands as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  commands.restart = true;
+  config.commands = commands;
+
+  await writeJsonFile(resolveOpenClawConfigPath(), config);
+}
+
 async function resolveInstalledFeishuPluginId(): Promise<string | null> {
   const extensionRoot = join(homedir(), '.openclaw', 'extensions');
   for (const dirName of FEISHU_PLUGIN_ID_CANDIDATES) {
@@ -1070,14 +1092,6 @@ export async function removeProviderKeyFromOpenClaw(
  * Remove a provider completely from OpenClaw (delete config, disable plugins, delete keys)
  */
 
-function getModelRefProviderKey(modelRef: string): string | null {
-  const separatorIndex = modelRef.indexOf('/');
-  if (separatorIndex <= 0 || separatorIndex >= modelRef.length - 1) {
-    return null;
-  }
-  return modelRef.slice(0, separatorIndex);
-}
-
 function removeProviderPrefixFromModelConfig(
   modelCfg: Record<string, unknown>,
   prefix: string,
@@ -1100,15 +1114,23 @@ function removeProviderPrefixFromModelConfig(
   return modified;
 }
 
-function deleteModelConfigIfEmpty(parent: Record<string, unknown>): void {
-  const modelCfg = parent.model;
+function deleteModelConfigIfEmpty(parent: Record<string, unknown>, slot = 'model'): void {
+  const modelCfg = parent[slot];
   if (!isPlainRecord(modelCfg)) return;
 
   const hasPrimary = typeof modelCfg.primary === 'string' && modelCfg.primary.trim();
   const hasFallbacks = Array.isArray(modelCfg.fallbacks) && modelCfg.fallbacks.length > 0;
   if (!hasPrimary && !hasFallbacks) {
-    delete parent.model;
+    delete parent[slot];
   }
+}
+
+function getModelRefProviderKey(modelRef: string): string | null {
+  const separatorIndex = modelRef.indexOf('/');
+  if (separatorIndex <= 0 || separatorIndex >= modelRef.length - 1) {
+    return null;
+  }
+  return modelRef.slice(0, separatorIndex);
 }
 
 const RUNTIME_GENERATED_PROVIDER_KEY = /^(custom|ollama)-[a-z0-9]+$/i;
@@ -1214,6 +1236,10 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
         modified = true;
       }
 
+      if (removeProviderModelAllowlistWildcard(config, provider)) {
+        modified = true;
+      }
+
       const auth = (config.auth && typeof config.auth === 'object'
         ? config.auth as Record<string, unknown>
         : null);
@@ -1237,28 +1263,46 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
 
       // Clean up agent model references that point to the deleted provider.
       // Model refs use the format "providerType/modelId", e.g. "openai/gpt-4".
-      // Leaving stale refs causes the Gateway to report "Unknown model" errors.
+      // Cover every model kind (text/image/image-gen/music-gen/video-gen) on both
+      // the global defaults and per-agent overrides. Leaving stale refs causes the
+      // Gateway to report "Unknown model" errors and keeps deleted models visible
+      // in the UI.
       const agents = config.agents as Record<string, unknown> | undefined;
       const providerPrefix = `${provider}/`;
+
+      const stripContainerSlots = (container: Record<string, unknown>, context: string): void => {
+        for (const slot of DEFAULT_MODEL_SLOT_KEYS) {
+          const value = container[slot];
+          if (typeof value === 'string') {
+            if (value.startsWith(providerPrefix)) {
+              delete container[slot];
+              modified = true;
+              console.log(`Removed deleted provider "${provider}" from ${context} ${slot}`);
+            }
+            continue;
+          }
+          if (!isPlainRecord(value)) continue;
+          if (removeProviderPrefixFromModelConfig(value, providerPrefix)) {
+            deleteModelConfigIfEmpty(container, slot);
+            modified = true;
+            console.log(`Removed deleted provider "${provider}" from ${context} ${slot}`);
+          }
+        }
+      };
+
       const agentDefaults = (agents?.defaults && typeof agents.defaults === 'object'
         ? agents.defaults as Record<string, unknown>
         : null);
-      if (agentDefaults?.model && typeof agentDefaults.model === 'object') {
-        const modelCfg = agentDefaults.model as Record<string, unknown>;
-        if (removeProviderPrefixFromModelConfig(modelCfg, providerPrefix)) {
-          deleteModelConfigIfEmpty(agentDefaults);
-          modified = true;
-        }
+      if (agentDefaults) {
+        stripContainerSlots(agentDefaults, 'agents.defaults');
       }
 
       const agentList = agents?.list;
       if (Array.isArray(agentList)) {
         for (const entry of agentList) {
-          if (!isPlainRecord(entry) || !isPlainRecord(entry.model)) continue;
-          if (removeProviderPrefixFromModelConfig(entry.model, providerPrefix)) {
-            deleteModelConfigIfEmpty(entry);
-            modified = true;
-          }
+          if (!isPlainRecord(entry)) continue;
+          const agentId = typeof entry.id === 'string' ? entry.id : 'unknown';
+          stripContainerSlots(entry, `agent "${agentId}"`);
         }
       }
 
@@ -1500,6 +1544,153 @@ export function buildProviderEnvVars(providers: Array<{ type: string; apiKey: st
   return env;
 }
 
+type DefaultModelSlot =
+  | 'model'
+  | 'imageModel'
+  | 'imageGenerationModel'
+  | 'musicGenerationModel'
+  | 'videoGenerationModel';
+
+const DEFAULT_MODEL_SLOT_KEYS: DefaultModelSlot[] = [
+  'model',
+  'imageModel',
+  'imageGenerationModel',
+  'musicGenerationModel',
+  'videoGenerationModel',
+];
+
+function defaultModelEntryUsesProvider(entry: unknown, validProviderKeys: Set<string>): boolean {
+  if (!isPlainRecord(entry)) return false;
+  const primary = typeof entry.primary === 'string' ? entry.primary : '';
+  if (!primary.includes('/')) return false;
+  return !validProviderKeys.has(primary.split('/')[0]);
+}
+
+export async function removeDefaultModelSlotsForMissingProviders(validProviderKeys: Set<string>): Promise<string[]> {
+  return withConfigLock(async () => {
+    const config = await readOpenClawJson();
+    const agents = isPlainRecord(config.agents) ? config.agents as Record<string, unknown> : {};
+    const defaults = isPlainRecord(agents.defaults) ? agents.defaults as Record<string, unknown> : {};
+    const removed: string[] = [];
+
+    for (const slot of DEFAULT_MODEL_SLOT_KEYS) {
+      if (defaultModelEntryUsesProvider(defaults[slot], validProviderKeys)) {
+        delete defaults[slot];
+        removed.push(slot);
+      }
+    }
+
+    if (removed.length > 0) {
+      agents.defaults = defaults;
+      config.agents = agents;
+      await writeOpenClawJson(config);
+    }
+
+    return removed;
+  });
+}
+
+export async function clearOpenClawUnsupportedDefaultModels(supportedSlots: Set<string>): Promise<void> {
+  await withConfigLock(async () => {
+    const config = await readOpenClawJson();
+    const agents = isPlainRecord(config.agents) ? config.agents as Record<string, unknown> : {};
+    const defaults = isPlainRecord(agents.defaults) ? agents.defaults as Record<string, unknown> : {};
+    let changed = false;
+
+    for (const slot of DEFAULT_MODEL_SLOT_KEYS) {
+      if (slot !== 'model' && !supportedSlots.has(slot) && slot in defaults) {
+        delete defaults[slot];
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      agents.defaults = defaults;
+      config.agents = agents;
+      await writeOpenClawJson(config);
+    }
+  });
+}
+
+/**
+ * Ensures a single provider entry carries `request.allowPrivateNetwork = true`
+ * (the schema-valid location) and strips any stale top-level
+ * `allowPrivateNetwork` key. The top-level key is rejected by openclaw's strict
+ * config schema, which on startup discards the config and writes a
+ * `openclaw.json.clobbered.*` forensic snapshot. Mutates `entry` in place and
+ * returns true if anything changed.
+ */
+function healProviderEntryAllowPrivateNetwork(entry: Record<string, unknown>): boolean {
+  let changed = false;
+
+  // Remove the legacy/invalid top-level key.
+  if ('allowPrivateNetwork' in entry) {
+    delete entry.allowPrivateNetwork;
+    changed = true;
+  }
+
+  const hadRequest = isPlainRecord(entry.request);
+  const request = hadRequest ? entry.request as Record<string, unknown> : {};
+  if (request.allowPrivateNetwork !== true) {
+    request.allowPrivateNetwork = true;
+    changed = true;
+  }
+  if (!hadRequest) {
+    entry.request = request;
+    changed = true;
+  }
+
+  return changed;
+}
+
+export async function ensureOpenClawProviderAllowPrivateNetwork(): Promise<string[]> {
+  return withConfigLock(async () => {
+    const config = await readOpenClawJson();
+    const models = isPlainRecord(config.models) ? config.models as Record<string, unknown> : {};
+    const providers = isPlainRecord(models.providers) ? models.providers as Record<string, unknown> : {};
+    const changed: string[] = [];
+
+    for (const [providerKey, entry] of Object.entries(providers)) {
+      if (!isPlainRecord(entry)) continue;
+      if (healProviderEntryAllowPrivateNetwork(entry as Record<string, unknown>)) {
+        changed.push(providerKey);
+      }
+    }
+
+    if (changed.length > 0) {
+      models.providers = providers;
+      config.models = models;
+      await writeOpenClawJson(config);
+    }
+
+    return changed;
+  });
+}
+
+/**
+ * Synchronously ensures an in-memory provider entry carries a valid
+ * `request.allowPrivateNetwork = true` (and no stale top-level key). Used while
+ * building a provider entry before it is written to disk. Mutates `entry` in
+ * place and returns true if anything changed.
+ */
+export function ensureProviderRequestAllowPrivateNetwork(
+  entry: unknown,
+  _opts?: { providerKey?: string; baseUrl?: string },
+): boolean {
+  if (!isPlainRecord(entry)) return false;
+  return healProviderEntryAllowPrivateNetwork(entry as Record<string, unknown>);
+}
+
+export async function readModifyWriteOpenClawJson(
+  modifier: (config: Record<string, unknown>) => void | Record<string, unknown> | Promise<void | Record<string, unknown>>,
+): Promise<void> {
+  await withConfigLock(async () => {
+    const config = await readOpenClawJson();
+    const next = await modifier(config);
+    await writeOpenClawJson(next && typeof next === 'object' ? next : config);
+  });
+}
+
 /**
  * Update the OpenClaw config to use the given provider and model
  * Writes to ~/.openclaw/openclaw.json
@@ -1507,7 +1698,8 @@ export function buildProviderEnvVars(providers: Array<{ type: string; apiKey: st
 export async function setOpenClawDefaultModel(
   provider: string,
   modelOverride?: string,
-  fallbackModels: string[] = []
+  fallbackModels: string[] = [],
+  targetSlot: DefaultModelSlot = 'model',
 ): Promise<void> {
   await mutateOpenClawConfig((config) => {
     ensureMoonshotKimiWebSearchCnBaseUrl(config, provider);
@@ -1524,7 +1716,7 @@ export async function setOpenClawDefaultModel(
     // Set the default model for the agents
     const agents = (config.agents || {}) as Record<string, unknown>;
     const defaults = (agents.defaults || {}) as Record<string, unknown>;
-    defaults.model = {
+    defaults[targetSlot] = {
       primary: model,
       fallbacks: fallbackModels,
     };
@@ -1549,7 +1741,7 @@ export async function setOpenClawDefaultModel(
       // Legacy runtime key: OpenClaw Codex hooks only apply to canonical `openai`.
       const oauthModel = model.replace(/^openai-codex\//, 'openai/');
       const oauthFallbacks = fallbackModels.map((fallback) => fallback.replace(/^openai-codex\//, 'openai/'));
-      defaults.model = {
+      defaults[targetSlot] = {
         primary: oauthModel,
         fallbacks: oauthFallbacks,
       };
@@ -2005,6 +2197,55 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * OpenClaw's `/model` directive gates live switches behind
+ * `agents.defaults.models`: once that map has ANY entry, OpenClaw flips from
+ * "allow any configured provider" to "only what's listed" — globally, not
+ * per-provider. Every provider we write to `models.providers` therefore
+ * needs a matching `"<provider>/*"` wildcard here so it stays switchable,
+ * regardless of how many other providers/entries already exist. This never
+ * disables the allow-any default on its own (it only adds entries), so
+ * providers that predate this function still need `ensureProviderModelAllowlistWildcard`
+ * run against them once (see `syncAllProviderAuthToRuntime`'s backfill).
+ */
+function ensureProviderModelAllowlistWildcard(config: Record<string, unknown>, provider: string): void {
+  const agents = isPlainRecord(config.agents) ? config.agents : {};
+  const defaults = isPlainRecord(agents.defaults) ? agents.defaults : {};
+  const models = isPlainRecord(defaults.models) ? defaults.models : {};
+  const key = `${provider}/*`;
+  if (!(key in models)) {
+    models[key] = {};
+  }
+  defaults.models = models;
+  agents.defaults = defaults;
+  config.agents = agents;
+}
+
+function removeProviderModelAllowlistWildcard(config: Record<string, unknown>, provider: string): boolean {
+  const agents = isPlainRecord(config.agents) ? config.agents : null;
+  const defaults = agents && isPlainRecord(agents.defaults) ? agents.defaults : null;
+  const models = defaults && isPlainRecord(defaults.models) ? defaults.models : null;
+  const key = `${provider}/*`;
+  if (models && key in models) {
+    delete models[key];
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Backfill hook for providers that were registered before this allowlist
+ * wildcard existed (or via a path that doesn't call `syncProviderConfigToOpenClaw`).
+ * Safe to call repeatedly — it's a no-op once the wildcard is present.
+ */
+export async function ensureProviderModelAllowlistWildcardPersisted(provider: string): Promise<void> {
+  return withConfigLock(async () => {
+    const config = await readOpenClawJson();
+    ensureProviderModelAllowlistWildcard(config, provider);
+    await writeOpenClawJson(config);
+  });
+}
+
 function removeLegacyMoonshotKimiSearchConfig(config: Record<string, unknown>): boolean {
   if (!isPlainRecord(config.tools) || !isPlainRecord(config.tools.web) || !isPlainRecord(config.tools.web.search)) {
     return false;
@@ -2076,8 +2317,9 @@ function ensureMoonshotKimiWebSearchCnBaseUrl(config: Record<string, unknown>, p
  */
 export async function syncProviderConfigToOpenClaw(
   provider: string,
-  modelId: string | undefined,
-  override: RuntimeProviderConfigOverride
+  modelId: string | string[] | undefined,
+  override: RuntimeProviderConfigOverride,
+  _modelKinds?: string[],
 ): Promise<void> {
   await mutateOpenClawConfig((config) => {
     ensureMoonshotKimiWebSearchCnBaseUrl(config, provider);
@@ -2089,10 +2331,11 @@ export async function syncProviderConfigToOpenClaw(
         api: override.api,
         apiKeyEnv: override.apiKeyEnv,
         headers: override.headers,
-        modelIds: modelId ? [modelId] : [],
+        modelIds: Array.isArray(modelId) ? modelId : (modelId ? [modelId] : []),
         mergeExistingModels: true,
         inferRuntimeModelInputs: true,
       });
+      ensureProviderModelAllowlistWildcard(config, provider);
     }
 
     // Ensure extension is enabled for oauth providers to prevent gateway wiping config
@@ -2272,7 +2515,8 @@ export async function setOpenClawDefaultModelWithOverride(
   provider: string,
   modelOverride: string | undefined,
   override: RuntimeProviderConfigOverride,
-  fallbackModels: string[] = []
+  fallbackModels: string[] = [],
+  targetSlot: DefaultModelSlot = 'model',
 ): Promise<void> {
   await mutateOpenClawConfig((config) => {
     ensureMoonshotKimiWebSearchCnBaseUrl(config, provider);
@@ -2288,7 +2532,7 @@ export async function setOpenClawDefaultModelWithOverride(
 
     const agents = (config.agents || {}) as Record<string, unknown>;
     const defaults = (agents.defaults || {}) as Record<string, unknown>;
-    defaults.model = {
+    defaults[targetSlot] = {
       primary: model,
       fallbacks: fallbackModels,
     };
@@ -2936,6 +3180,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
   await mutateOpenClawConfig(async (config) => {
     let modified = false;
+    const legacySkillExtraDirs: string[] = [];
 
     // ── skills section ──────────────────────────────────────────────
     // OpenClaw's Zod schema uses .strict() on the skills object, accepting
@@ -2954,6 +3199,38 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           modified = true;
         }
       }
+      // P8: ClawX only loads managed/bundled/plugin skill roots. Clear extraDirs so
+      // Gateway cannot load workspace/.agents/custom paths that duplicate managed skills.
+      const skillsLoad = skillsObj.load;
+      if (skillsLoad && typeof skillsLoad === 'object' && !Array.isArray(skillsLoad)) {
+        const loadObj = skillsLoad as Record<string, unknown>;
+        if ('extraDirs' in loadObj) {
+          if (Array.isArray(loadObj.extraDirs)) {
+            for (const extraDir of loadObj.extraDirs) {
+              if (typeof extraDir === 'string' && extraDir.trim()) {
+                legacySkillExtraDirs.push(extraDir.trim());
+              }
+            }
+          }
+          console.log('[sanitize] Removing skills.load.extraDirs (ClawX scan policy P8)');
+          delete loadObj.extraDirs;
+          modified = true;
+          if (Object.keys(loadObj).length === 0) {
+            delete skillsObj.load;
+          }
+        }
+      }
+    }
+
+    const legacySkillCleanup = await removeLegacySkillConfigReferences(
+      config,
+      legacySkillExtraDirs,
+    );
+    if (legacySkillCleanup.modified) {
+      modified = true;
+      console.log(
+        `[sanitize] Removed legacy P5–P8 skill config references: ${legacySkillCleanup.removedAliases.join(', ')}`,
+      );
     }
 
     // ── plugins section ──────────────────────────────────────────────
@@ -3086,8 +3363,11 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     // ── tools.profile & sessions.visibility ───────────────────────
-    // OpenClaw 3.8+ requires tools.profile = 'full' and tools.sessions.visibility = 'all'
-    // for ClawX to properly integrate with its updated tool system.
+    // tools.profile = 'full' enables the complete toolset for ClawX.
+    // sessions.visibility = 'tree': each agent can only see sessions it spawned
+    // (its own spawn tree), preventing peer agents from reading each other's history.
+    // Cross-agent messaging (sessions_send) is governed separately by agentToAgent
+    // policy and is unaffected by this setting.
     const toolsConfig = (config.tools as Record<string, unknown> | undefined) || {};
     let toolsModified = false;
 
@@ -3097,8 +3377,8 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     const sessions = (toolsConfig.sessions as Record<string, unknown> | undefined) || {};
-    if (sessions.visibility !== 'all') {
-      sessions.visibility = 'all';
+    if (sessions.visibility !== 'tree') {
+      sessions.visibility = 'tree';
       toolsConfig.sessions = sessions;
       toolsModified = true;
     }
@@ -3275,6 +3555,22 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       skillsObj.workshop = workshop;
       skillsModified = true;
       console.log('[sanitize] Disabled skills.workshop.autonomous for ClawX desktop');
+    }
+
+    const skillsLoad = (
+      skillsObj.load && typeof skillsObj.load === 'object' && !Array.isArray(skillsObj.load)
+        ? { ...(skillsObj.load as Record<string, unknown>) }
+        : null
+    );
+    if (skillsLoad && 'extraDirs' in skillsLoad) {
+      delete skillsLoad.extraDirs;
+      if (Object.keys(skillsLoad).length > 0) {
+        skillsObj.load = skillsLoad;
+      } else {
+        delete skillsObj.load;
+      }
+      skillsModified = true;
+      console.log('[sanitize] Cleared skills.load.extraDirs for ClawX desktop');
     }
 
     const skillEntries = (

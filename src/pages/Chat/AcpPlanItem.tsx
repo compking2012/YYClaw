@@ -1,14 +1,13 @@
 import { ClipboardList } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { PlanEntry } from '@agentclientprotocol/sdk';
-import type { PlanItem } from '@/lib/acp/timeline-types';
+import type { PlanItem, TimelinePlanEntry } from '@/lib/acp/timeline-types';
 import { cn } from '@/lib/utils';
 
-function entryRecord(entry: PlanEntry): Record<string, unknown> {
+function entryRecord(entry: TimelinePlanEntry): Record<string, unknown> {
   return entry && typeof entry === 'object' ? entry as Record<string, unknown> : {};
 }
 
-function entryText(entry: PlanEntry, fallback: string): string {
+function entryText(entry: TimelinePlanEntry, fallback: string): string {
   const record = entryRecord(entry);
   for (const key of ['content', 'title', 'description', 'text', 'message']) {
     const value = record[key];
@@ -17,7 +16,7 @@ function entryText(entry: PlanEntry, fallback: string): string {
   return fallback;
 }
 
-function entryStatusKey(entry: PlanEntry): string | null {
+function entryStatusKey(entry: TimelinePlanEntry): string | null {
   const status = entryRecord(entry).status;
   if (status === 'in_progress') return 'acp.running';
   if (status === 'pending') return 'acp.pending';

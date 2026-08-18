@@ -19,7 +19,8 @@
         "runNow": "今すぐ実行",
         "deleteConfirm": "このタスクを削除してもよろしいですか？",
         "last": "前回",
-        "next": "次回"
+        "next": "次回",
+        "windowRange": "有効期間 {{start}} 〜 {{end}}"
     },
     "dialog": {
         "createTitle": "タスク作成",
@@ -31,6 +32,8 @@
         "messagePlaceholder": "AIに何をさせますか？ 例：今日のニュースと天気のまとめを作成",
         "pickSkill": "スキルを挿入",
         "skillButton": "スキル",
+        "enhancePrompt": "プロンプトを強化",
+        "enhancePromptFailed": "プロンプトの強化に失敗しました: {{error}}",
         "skillPickerTitle": "{{agent}} のクイックスキル",
         "skillSearchPlaceholder": "スキルを検索",
         "skillLoading": "スキルを読み込み中...",
@@ -42,24 +45,36 @@
             "once": "1回のみ"
         },
         "recurrence": {
+            "minutely": "毎分",
             "hourly": "毎時",
             "daily": "毎日",
             "weekdays": "平日",
             "weekly": "毎週",
+            "monthly": "毎月",
             "custom": "カスタム"
         },
+        "minutelyHint": "タスクは毎分1回実行されます。",
         "timeLabel": "時刻",
         "hourColumn": "時",
         "minuteColumn": "分",
         "dateLabel": "日付",
         "weekdayLabel": "曜日",
+        "weekdaysLabel": "曜日（複数選択可）",
+        "dayOfMonthLabel": "毎月の日",
+        "dayOfMonthOption": "{{day}}日",
         "minuteLabel": "毎時の分",
         "cronPlaceholder": "Cron式（例：0 9 * * *）",
+        "cronFieldsHelp": "5つのフィールドは順に：分(0-59) 時(0-23) 日(1-31) 月(1-12) 曜日(0-6、0=日曜)。\n例：0 9 * * * = 毎日9:00；0 9 * * 1,3,5 = 毎週月・水・金の9:00。",
+        "windowTitle": "有効期間",
+        "windowDesc": "この日付範囲内でのみタスクを実行します（開始・終了は空欄可）。アプリ起動中のみ有効です。",
+        "windowStartLabel": "開始日",
+        "windowEndLabel": "終了日",
+        "windowClear": "期間をクリア",
         "usePresets": "プリセットを使用",
         "useCustomCron": "カスタムCronを使用",
         "deliveryTitle": "配信設定",
-        "deliveryDescription": "結果を ClawX 内だけに残すか、外部チャンネルへ送信するかを選びます。",
-        "deliveryModeNone": "ClawX 内のみ",
+        "deliveryDescription": "結果を YYClaw 内だけに残すか、外部チャンネルへ送信するかを選びます。",
+        "deliveryModeNone": "YYClaw 内のみ",
         "deliveryModeNoneDesc": "タスクを実行し、結果はアプリ内だけに残します。",
         "deliveryModeAnnounce": "外部チャンネル",
         "deliveryModeAnnounceDesc": "最終結果を設定済みチャンネルへ送信します。",
@@ -83,7 +98,7 @@
         "deliveryTargetPlaceholderFeishu": "例: user:ou_xxx または chat:oc_xxx",
         "deliveryTargetDesc": "この値は OpenClaw の delivery.to にそのまま保存されます。",
         "deliveryTargetDescFeishu": "Feishu では user:ou_xxx のユーザー宛て、または chat:oc_xxx のグループ宛てを指定できます。",
-        "deliveryTargetDescAuto": "選択したチャンネルアカウントで見つかった送信先から選べます。",
+        "deliveryTargetDescAuto": "おすすめの送信先が自動的に選択されました。変更できます。",
         "deliveryTargetDescFeishuSelect": "利用可能な Feishu ユーザーまたはグループから検証済みの送信先を選択してください。",
         "deliveryTargetDescFeishuAccount": "Channels ページと同じ Feishu アカウント一覧を使い、選択したアカウントに対応するメイン送信先へ配信します。",
         "feishuMainTargetTitle": "Feishu メインアカウント",
@@ -129,7 +144,9 @@
         "failedResolveDeliveryTarget": "既定の送信先を解決できませんでした",
         "discordIdRequired": "DiscordチャンネルIDを入力してください",
         "scheduleRequired": "スケジュールを選択または入力してください",
-        "schedulePast": "選択した時刻は過去です。未来の時刻を選択してください。"
+        "schedulePast": "選択した時刻は過去です。未来の時刻を選択してください。",
+        "weekdayRequired": "曜日を少なくとも1つ選択してください",
+        "windowEndBeforeStart": "終了日は開始日より前にできません"
     },
     "schedule": {
         "everySeconds": "{{count}}秒ごと",
@@ -142,6 +159,8 @@
         "hourlyAt": "毎時 {{minute}}分",
         "monthlyAtDay": "毎月 {{day}}日 {{time}}",
         "dailyAt": "毎日 {{time}}",
+        "windowNotStarted": "開始前",
+        "windowEnded": "終了",
         "unknown": "不明"
     },
     "weekdays": {

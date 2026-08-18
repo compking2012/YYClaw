@@ -17,6 +17,7 @@ function fsPath(filePath: string): string {
 }
 import { getAllSettings } from '../utils/store';
 import { getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
+import { listProviderAccounts } from '../services/providers/provider-store';
 import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
 import {
   getOpenClawConfigDir,
@@ -24,23 +25,31 @@ import {
   getOpenClawEntryPath,
   getOpenClawResolvedDir,
   getOpenClawSkillsDir,
+  getResourcesDir,
   isOpenClawPresent,
 } from '../utils/paths';
 import { getUvMirrorEnv } from '../utils/uv-env';
-import { cleanupDanglingWeChatPluginState, listConfiguredChannelsFromConfig, readOpenClawConfig } from '../utils/channel-config';
-import { sanitizeOpenClawConfig, batchSyncConfigFields } from '../utils/openclaw-auth';
+import { cleanupDanglingWeChatPluginState, listConfiguredChannelsFromConfig, readOpenClawConfig, writeOpenClawConfig } from '../utils/channel-config';
+import { sanitizeOpenClawConfig, batchSyncConfigFields, syncBrowserConfigToOpenClaw } from '../utils/openclaw-auth';
 import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
-import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, resolvePluginNpmPackagePath } from '../utils/plugin-install';
-import { safeRmSync } from '../utils/safe-fs';
-import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
+import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, removePluginMirrorDir, buildCandidateSources, ensurePluginInstalled, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, resolvePluginNpmPackagePath } from '../utils/plugin-install';
+import {
+  CLAWX_GEMINI_IMAGE_PROVIDER_KEY,
+  CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
+} from '../utils/openclaw-image-relay-constants';
+import { syncRequiredClawXImagePlugins } from '../utils/clawx-image-plugin-sync';
+import { resolveRequiredClawXImagePluginIds } from './image-generation-plugin-resolution';
 import {
   ensureOpenClaw2026_7_1UpgradeSnapshot,
   quarantineLegacyUpdateCheckState,
 } from '../utils/openclaw-upgrade-snapshot';
 import { stripSystemdSupervisorEnv } from './config-sync-env';
+import { getPort } from '../utils/config';
+import { getHostApiToken } from '../api/host-api-auth';
+import { withConfigLock } from '../utils/config-mutex';
 import { cleanupAgentsSymlinkedSkills, cleanupStalePluginRuntimeDeps } from './skills-symlink-cleanup';
 import {
   buildPrelaunchMaintenanceCacheKey,
@@ -76,14 +85,315 @@ export interface GatewayPrelaunchSyncSummary {
 const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string }> = {
   dingtalk: { dirName: 'dingtalk', npmName: '@soimy/dingtalk' },
   wecom: { dirName: 'wecom', npmName: '@wecom/wecom-openclaw-plugin' },
-  feishu: { dirName: 'feishu-openclaw-plugin', npmName: '@larksuite/openclaw-lark' },
+  feishu: { dirName: 'openclaw-lark', npmName: '@larksuite/openclaw-lark' },
   discord: { dirName: 'discord', npmName: '@openclaw/discord' },
   qqbot: { dirName: 'qqbot', npmName: '@openclaw/qqbot' },
   whatsapp: { dirName: 'whatsapp', npmName: '@openclaw/whatsapp' },
 
   'openclaw-weixin': { dirName: 'openclaw-weixin', npmName: '@tencent-weixin/openclaw-weixin' },
   [CLAWX_OPENAI_IMAGE_PROVIDER_KEY]: { dirName: CLAWX_OPENAI_IMAGE_PROVIDER_KEY, npmName: 'clawx-openai-image-plugin' },
+  [CLAWX_GEMINI_IMAGE_PROVIDER_KEY]: { dirName: CLAWX_GEMINI_IMAGE_PROVIDER_KEY, npmName: 'clawx-gemini-image-plugin' },
 };
+
+const SESSION_SEND_REMOTE_PLUGIN_ID = 'session-send-remote';
+const FEISHU_IMAGE_SENDER_PLUGIN_ID = 'feishu-image-sender';
+const TOKENJUICE_PLUGIN_ID = 'tokenjuice';
+const SESSION_SEND_REMOTE_REQUIRED_TOOLS = [
+  'session_send_remote',
+  'sessions_send_remote',
+  'session_list_remote',
+  'sessions_list_remote',
+  'session_history_remote',
+  'sessions_history_remote',
+  'session_status_remote',
+  'sessions_status_remote',
+  'shared_workspace_sync',
+  'office_shared_workspace_sync',
+];
+
+export function buildClawXHostApiEnv(port = getPort('CLAWX_HOST_API'), token = getHostApiToken()): Record<string, string> {
+  return {
+    CLAWX_HOST_API_URL: `http://127.0.0.1:${port}`,
+    CLAWX_HOST_API_TOKEN: token,
+  };
+}
+
+function buildSessionSendRemotePluginSources(): string[] {
+  return [
+    join(getResourcesDir(), 'openclaw-plugins', SESSION_SEND_REMOTE_PLUGIN_ID),
+    join(process.cwd(), 'resources', 'openclaw-plugins', SESSION_SEND_REMOTE_PLUGIN_ID),
+    join(app.getAppPath(), 'resources', 'openclaw-plugins', SESSION_SEND_REMOTE_PLUGIN_ID),
+  ];
+}
+
+function sessionSendRemotePluginHasRequiredTools(manifestPath: string): boolean {
+  try {
+    const raw = readFileSync(fsPath(manifestPath), 'utf-8');
+    const parsed = JSON.parse(raw) as { contracts?: { tools?: unknown } };
+    const tools = Array.isArray(parsed.contracts?.tools)
+      ? parsed.contracts.tools.filter((entry): entry is string => typeof entry === 'string')
+      : [];
+    return SESSION_SEND_REMOTE_REQUIRED_TOOLS.every((tool) => tools.includes(tool));
+  } catch {
+    return false;
+  }
+}
+
+function ensureSessionSendRemotePluginInstalled(): void {
+  const targetDir = join(homedir(), '.openclaw', 'extensions', SESSION_SEND_REMOTE_PLUGIN_ID);
+  const targetManifest = join(targetDir, 'openclaw.plugin.json');
+  const isInstalled = existsSync(fsPath(targetManifest));
+  const installedVersion = isInstalled ? readPluginVersion(join(targetDir, 'package.json')) : null;
+  const installedHasRequiredTools = isInstalled ? sessionSendRemotePluginHasRequiredTools(targetManifest) : false;
+  const sourceDir = buildSessionSendRemotePluginSources().find((dir) => existsSync(fsPath(join(dir, 'openclaw.plugin.json'))));
+
+  if (!sourceDir) {
+    logger.warn(`[plugin] ${SESSION_SEND_REMOTE_PLUGIN_ID}: bundled source not found`);
+    return;
+  }
+
+  const sourceVersion = readPluginVersion(join(sourceDir, 'package.json'));
+  if (isInstalled && sourceVersion && installedVersion === sourceVersion && installedHasRequiredTools) {
+    fixupPluginManifest(targetDir);
+    return;
+  }
+
+  try {
+    mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
+    removePluginMirrorDir(targetDir);
+    cpSyncSafe(sourceDir, targetDir);
+    fixupPluginManifest(targetDir);
+    logger.info(`[plugin] Installed ${SESSION_SEND_REMOTE_PLUGIN_ID} plugin${sourceVersion ? `: ${sourceVersion}` : ''}`);
+  } catch (error) {
+    logger.warn(`[plugin] Failed to install ${SESSION_SEND_REMOTE_PLUGIN_ID} plugin:`, error);
+  }
+}
+
+export async function ensureSessionSendRemotePluginConfig(): Promise<void> {
+  await withConfigLock(async () => {
+    const config = await readOpenClawConfig();
+    if (!config.plugins) {
+      config.plugins = {};
+    }
+
+    config.plugins.enabled = true;
+    const allow = Array.isArray(config.plugins.allow)
+      ? config.plugins.allow.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      : [];
+    if (!allow.includes(SESSION_SEND_REMOTE_PLUGIN_ID)) {
+      config.plugins.allow = [...allow, SESSION_SEND_REMOTE_PLUGIN_ID];
+    } else {
+      config.plugins.allow = allow;
+    }
+
+    if (!config.plugins.entries || typeof config.plugins.entries !== 'object') {
+      config.plugins.entries = {};
+    }
+    const entry = config.plugins.entries[SESSION_SEND_REMOTE_PLUGIN_ID] || {};
+    entry.enabled = true;
+    config.plugins.entries[SESSION_SEND_REMOTE_PLUGIN_ID] = entry;
+
+    await writeOpenClawConfig(config);
+  });
+}
+
+function buildFeishuImageSenderPluginSources(): string[] {
+  return [
+    join(getResourcesDir(), 'openclaw-plugins', FEISHU_IMAGE_SENDER_PLUGIN_ID),
+    join(process.cwd(), 'resources', 'openclaw-plugins', FEISHU_IMAGE_SENDER_PLUGIN_ID),
+    join(app.getAppPath(), 'resources', 'openclaw-plugins', FEISHU_IMAGE_SENDER_PLUGIN_ID),
+  ];
+}
+
+function ensureFeishuImageSenderPluginInstalled(): void {
+  const targetDir = join(homedir(), '.openclaw', 'extensions', FEISHU_IMAGE_SENDER_PLUGIN_ID);
+  const targetManifest = join(targetDir, 'openclaw.plugin.json');
+  const isInstalled = existsSync(fsPath(targetManifest));
+  const installedVersion = isInstalled ? readPluginVersion(join(targetDir, 'package.json')) : null;
+  const sourceDir = buildFeishuImageSenderPluginSources().find((dir) => existsSync(fsPath(join(dir, 'openclaw.plugin.json'))));
+
+  if (!sourceDir) {
+    logger.warn(`[plugin] ${FEISHU_IMAGE_SENDER_PLUGIN_ID}: bundled source not found`);
+    return;
+  }
+
+  const sourceVersion = readPluginVersion(join(sourceDir, 'package.json'));
+  if (isInstalled && sourceVersion && installedVersion === sourceVersion) {
+    fixupPluginManifest(targetDir);
+    return;
+  }
+
+  try {
+    mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
+    removePluginMirrorDir(targetDir);
+    cpSyncSafe(sourceDir, targetDir);
+    fixupPluginManifest(targetDir);
+    logger.info(`[plugin] Installed ${FEISHU_IMAGE_SENDER_PLUGIN_ID} plugin${sourceVersion ? `: ${sourceVersion}` : ''}`);
+  } catch (error) {
+    logger.warn(`[plugin] Failed to install ${FEISHU_IMAGE_SENDER_PLUGIN_ID} plugin:`, error);
+  }
+}
+
+export async function ensureFeishuImageSenderPluginConfig(): Promise<void> {
+  await withConfigLock(async () => {
+    const config = await readOpenClawConfig();
+    if (!config.plugins) config.plugins = {};
+    config.plugins.enabled = true;
+
+    const allow = Array.isArray(config.plugins.allow)
+      ? config.plugins.allow.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      : [];
+    config.plugins.allow = allow.includes(FEISHU_IMAGE_SENDER_PLUGIN_ID)
+      ? allow
+      : [...allow, FEISHU_IMAGE_SENDER_PLUGIN_ID];
+
+    if (!config.plugins.entries || typeof config.plugins.entries !== 'object') {
+      config.plugins.entries = {};
+    }
+    const entry = config.plugins.entries[FEISHU_IMAGE_SENDER_PLUGIN_ID] || {};
+    entry.enabled = true;
+    config.plugins.entries[FEISHU_IMAGE_SENDER_PLUGIN_ID] = entry;
+
+    await writeOpenClawConfig(config);
+  });
+}
+
+/**
+ * OpenClaw 2026.7.1 stopped shipping tokenjuice inside its own package
+ * (excluded via `"!dist/extensions/tokenjuice/**"`) and promoted it to an
+ * *external* official plugin whose catalog entry declares
+ * `defaultChoice: "npm"`. That makes a configured-but-uninstalled tokenjuice
+ * fatal: the kernel's startup migration skips the npm-free ClawHub path, shells
+ * out to `npm view @openclaw/tokenjuice`, and when npm is absent the config
+ * preflight throws "refusing to report the gateway ready" — the Gateway never
+ * starts and the whole app is unusable. ClawX therefore ships tokenjuice as a
+ * bundled mirror, exactly like the channel plugins, so no package manager is
+ * ever involved.
+ */
+async function ensureTokenjuicePluginInstalled(): Promise<boolean> {
+  try {
+    const { installed, warning } = await ensurePluginInstalled(
+      TOKENJUICE_PLUGIN_ID,
+      buildCandidateSources(TOKENJUICE_PLUGIN_ID),
+      'Tokenjuice',
+    );
+    if (warning) {
+      logger.warn(`[plugin] ${warning}`);
+    }
+    return installed;
+  } catch (err) {
+    logger.warn(`[plugin] Failed to install ${TOKENJUICE_PLUGIN_ID} plugin:`, err);
+    return false;
+  }
+}
+
+/**
+ * True when the kernel can load tokenjuice without a package manager: either
+ * from our mirror, or from `dist/extensions/` on kernels that still bundle it
+ * (in that case cleanupStaleBuiltInExtensions() deliberately deletes the
+ * mirror, so both locations have to be checked).
+ */
+function isTokenjuicePluginResolvable(): boolean {
+  const mirrored = join(homedir(), '.openclaw', 'extensions', TOKENJUICE_PLUGIN_ID, 'openclaw.plugin.json');
+  if (existsSync(fsPath(mirrored))) return true;
+
+  try {
+    const bundled = join(getOpenClawResolvedDir(), 'dist', 'extensions', TOKENJUICE_PLUGIN_ID, 'openclaw.plugin.json');
+    return existsSync(fsPath(bundled));
+  } catch {
+    return false;
+  }
+}
+
+export async function syncPromptOptimizationPluginConfig(
+  enabled: boolean,
+  options: { pluginInstalled?: boolean } = {},
+): Promise<void> {
+  // Registering a plugin that is not on disk is worse than losing prompt
+  // optimization: the kernel would try to npm-install it during startup
+  // migration and then refuse to report the Gateway ready. So the config entry
+  // is only written when the plugin is genuinely resolvable, and otherwise the
+  // removal branch below cleans up any entry a previous version left behind.
+  const pluginInstalled = options.pluginInstalled ?? isTokenjuicePluginResolvable();
+  const shouldEnable = enabled && pluginInstalled;
+
+  if (enabled && !pluginInstalled) {
+    logger.warn(
+      `[plugin] Prompt optimization is on but the ${TOKENJUICE_PLUGIN_ID} plugin is not installed; `
+      + 'clearing it from openclaw.json so the Gateway can still start.',
+    );
+  }
+
+  await withConfigLock(async () => {
+    const config = await readOpenClawConfig();
+
+    if (shouldEnable) {
+      if (!config.plugins) {
+        config.plugins = {};
+      }
+      config.plugins.enabled = true;
+
+      const allow = Array.isArray(config.plugins.allow)
+        ? config.plugins.allow.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+        : [];
+      config.plugins.allow = allow.includes(TOKENJUICE_PLUGIN_ID)
+        ? allow
+        : [...allow, TOKENJUICE_PLUGIN_ID];
+
+      if (!config.plugins.entries || typeof config.plugins.entries !== 'object') {
+        config.plugins.entries = {};
+      }
+      const entry = config.plugins.entries[TOKENJUICE_PLUGIN_ID] || {};
+      entry.enabled = true;
+      config.plugins.entries[TOKENJUICE_PLUGIN_ID] = entry;
+
+      await writeOpenClawConfig(config);
+      return;
+    }
+
+    if (!config.plugins) return;
+
+    let modified = false;
+    if (Array.isArray(config.plugins.allow)) {
+      const nextAllow = config.plugins.allow.filter((entry) => entry !== TOKENJUICE_PLUGIN_ID);
+      if (nextAllow.length !== config.plugins.allow.length) {
+        modified = true;
+        if (nextAllow.length > 0) {
+          config.plugins.allow = nextAllow;
+        } else {
+          delete config.plugins.allow;
+        }
+      }
+    }
+
+    if (config.plugins.entries && config.plugins.entries[TOKENJUICE_PLUGIN_ID]) {
+      delete config.plugins.entries[TOKENJUICE_PLUGIN_ID];
+      modified = true;
+      if (Object.keys(config.plugins.entries).length === 0) {
+        delete config.plugins.entries;
+      }
+    }
+
+    if (
+      config.plugins.enabled === true
+      && !config.plugins.allow
+      && !config.plugins.entries
+      && Object.keys(config.plugins).length === 1
+    ) {
+      delete config.plugins.enabled;
+      modified = true;
+    }
+
+    if (Object.keys(config.plugins).length === 0) {
+      delete config.plugins;
+      modified = true;
+    }
+
+    if (modified) {
+      await writeOpenClawConfig(config);
+    }
+  });
+}
 
 /**
  * OpenClaw ships some channel plugins as bundled extensions under
@@ -124,7 +434,7 @@ function cleanupStaleBuiltInExtensions(): void {
     if (existsSync(fsPath(extDir))) {
       logger.info(`[plugin] Removing stale built-in extension copy: ${ext}`);
       try {
-        safeRmSync(fsPath(extDir));
+        removePluginMirrorDir(extDir);
       } catch (err) {
         logger.warn(`[plugin] Failed to remove stale extension ${ext}:`, err);
       }
@@ -196,7 +506,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
         logger.info(`[plugin] ${isInstalled ? 'Auto-upgrading' : 'Installing'} ${channelType} plugin${isInstalled ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (bundled)`);
         try {
           mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
-          safeRmSync(fsPath(targetDir));
+          removePluginMirrorDir(targetDir);
           cpSyncSafe(bundledDir, targetDir);
           fixupPluginManifest(targetDir);
         } catch (err) {
@@ -258,7 +568,7 @@ function cleanupUnconfiguredChannelPlugins(configuredChannels: string[]): boolea
 
     logger.info(`[plugin] Removing unconfigured channel plugin: ${channelType} (${dirName})`);
     try {
-      safeRmSync(fsPath(targetDir));
+      removePluginMirrorDir(targetDir);
     } catch (err) {
       logger.warn(`[plugin] Failed to remove unconfigured channel plugin ${channelType}:`, err);
       succeeded = false;
@@ -279,27 +589,34 @@ async function cleanupUnconfiguredChannelPluginInstallRecords(configuredChannels
   }
 }
 
-function resolveImageGenerationPrimary(config: unknown): string | null {
-  if (!config || typeof config !== 'object') return null;
-  const agents = (config as { agents?: unknown }).agents;
-  if (!agents || typeof agents !== 'object') return null;
-  const defaults = (agents as { defaults?: unknown }).defaults;
-  if (!defaults || typeof defaults !== 'object') return null;
-  const imageGenerationModel = (defaults as { imageGenerationModel?: unknown }).imageGenerationModel;
-  if (typeof imageGenerationModel === 'string') return imageGenerationModel.trim() || null;
-  if (imageGenerationModel && typeof imageGenerationModel === 'object') {
-    const primary = (imageGenerationModel as { primary?: unknown }).primary;
-    return typeof primary === 'string' && primary.trim() ? primary.trim() : null;
+/**
+ * One-time migration: the Feishu channel plugin mirror was renamed from the
+ * legacy directory `feishu-openclaw-plugin` to `openclaw-lark` (its real
+ * manifest id). Older installs still have the stale directory under
+ * ~/.openclaw/extensions/, which the Gateway would load as a second, duplicate
+ * Feishu plugin. Remove it once the canonical `openclaw-lark` mirror is present.
+ * Config/SQLite records for the legacy id are already reconciled via the
+ * `legacyPluginIds` list on the trusted-plugin definition.
+ */
+function cleanupLegacyFeishuPluginMirror(): void {
+  const extensionsRoot = join(homedir(), '.openclaw', 'extensions');
+  const legacyDir = join(extensionsRoot, 'feishu-openclaw-plugin');
+  const canonicalDir = join(extensionsRoot, 'openclaw-lark');
+  if (!existsSync(fsPath(legacyDir))) return;
+  if (!existsSync(fsPath(join(canonicalDir, 'openclaw.plugin.json')))) return;
+  try {
+    removePluginMirrorDir(legacyDir);
+    removeTrustedOfficialPluginInstallRecord('feishu-openclaw-plugin');
+    logger.info('[plugin] Removed legacy Feishu plugin mirror (feishu-openclaw-plugin) in favor of openclaw-lark');
+  } catch (err) {
+    logger.warn('[plugin] Failed to remove legacy Feishu plugin mirror:', err);
   }
-  return null;
 }
 
 function withConfiguredImageGenerationPlugins(configuredChannels: string[], rawConfig: unknown): string[] {
   const next = [...configuredChannels];
-  const primary = resolveImageGenerationPrimary(rawConfig);
-  const provider = primary?.includes('/') ? primary.slice(0, primary.indexOf('/')).trim() : primary;
-  if (provider === CLAWX_OPENAI_IMAGE_PROVIDER_KEY && !next.includes(CLAWX_OPENAI_IMAGE_PROVIDER_KEY)) {
-    next.push(CLAWX_OPENAI_IMAGE_PROVIDER_KEY);
+  for (const pluginId of resolveRequiredClawXImagePluginIds(rawConfig)) {
+    if (!next.includes(pluginId)) next.push(pluginId);
   }
   return next;
 }
@@ -474,6 +791,57 @@ export async function syncGatewayConfigBeforeLaunch(
     logger.warn('Failed to clean dangling WeChat plugin state before launch:', err);
   }
 
+  try {
+    ensureSessionSendRemotePluginInstalled();
+    await ensureSessionSendRemotePluginConfig();
+  } catch (err) {
+    logger.warn('Failed to ensure session-send-remote plugin before launch:', err);
+  }
+
+  try {
+    ensureFeishuImageSenderPluginInstalled();
+    await ensureFeishuImageSenderPluginConfig();
+  } catch (err) {
+    logger.warn('Failed to ensure feishu-image-sender plugin before launch:', err);
+  }
+
+  try {
+    // Only attempt the copy-install when the feature is on — an unused mirror
+    // would still be audited by the kernel's plugin preflight on every start.
+    const tokenjuiceInstalled = appSettings.promptOptimizationEnabled
+      ? await ensureTokenjuicePluginInstalled()
+      : false;
+    await syncPromptOptimizationPluginConfig(
+      appSettings.promptOptimizationEnabled,
+      { pluginInstalled: tokenjuiceInstalled },
+    );
+  } catch (err) {
+    logger.warn('Failed to sync prompt optimization plugin config:', err);
+  }
+
+  // Install + enable the ClawX image plugins this config actually needs, chosen
+  // by the image ref's model id. Runs before the plugin-maintenance step below
+  // so `configuredChannels` already includes them on the same start.
+  try {
+    await measureAsync(
+      timingsMs,
+      'imageGenerationPluginSyncMs',
+      () => syncRequiredClawXImagePlugins(),
+    );
+  } catch (err) {
+    logger.warn('Failed to ensure ClawX image generation plugins before launch:', err);
+  }
+
+  // Ensure browser automation + private-network SSRF policy are written to
+  // openclaw.json before launch. OpenClaw ships syncBrowserConfigToOpenClaw but
+  // never calls it, so without this the config is missing and enterprise/internal
+  // browser + web_fetch access to private networks does not work.
+  try {
+    await measureAsync(timingsMs, 'browserConfigSyncMs', syncBrowserConfigToOpenClaw);
+  } catch (err) {
+    logger.warn('Failed to sync browser config to openclaw.json before launch:', err);
+  }
+
   // Remove stale copies of built-in extensions (Discord, Telegram) that
   // override OpenClaw's working built-in plugins and break channel loading.
   try {
@@ -541,6 +909,7 @@ export async function syncGatewayConfigBeforeLaunch(
     // external plugins like WhatsApp fail openKeyedStore at runtime.
     await measureAsync(timingsMs, 'trustedPluginInstallSyncMs', async () => {
       await cleanupUnconfiguredChannelPluginInstallRecords(configuredChannels);
+      cleanupLegacyFeishuPluginMirror();
       await repairTrustedOfficialPluginInstallRecords();
     });
   } catch (err) {
@@ -601,6 +970,27 @@ async function loadProviderEnv(): Promise<{ providerEnv: Record<string, string>;
     }
   }
 
+  // Provider keys are stored under account IDs (e.g. minimaxm25-uuid), not vendor type slugs.
+  try {
+    const accounts = await listProviderAccounts();
+    for (const account of accounts) {
+      if (account.enabled === false) continue;
+      try {
+        const key = await getApiKey(account.id);
+        if (!key) continue;
+        const envVar = getProviderEnvVar(account.vendorId);
+        if (envVar && !providerEnv[envVar]) {
+          providerEnv[envVar] = key;
+          loadedProviderKeyCount++;
+        }
+      } catch (err) {
+        logger.warn(`Failed to load API key for account ${account.id}:`, err);
+      }
+    }
+  } catch (err) {
+    logger.warn('Failed to load provider account keys for environment injection:', err);
+  }
+
   return { providerEnv, loadedProviderKeyCount };
 }
 
@@ -638,7 +1028,10 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
   const entryScript = getOpenClawEntryPath();
 
   if (!isOpenClawPresent()) {
-    throw new Error(`OpenClaw package not found at: ${openclawDir}`);
+    throw new Error(
+      `OpenClaw package not found at: ${openclawDir} `
+      + '(bundled runtime missing from the install directory — reinstall YYClaw to restore it)',
+    );
   }
 
   await measureAsync(timingsMs, 'upgradeSnapshotMs', async () => {
@@ -673,10 +1066,13 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
   ));
 
   if (!existsSync(entryScript)) {
-    throw new Error(`OpenClaw entry script not found at: ${entryScript}`);
+    throw new Error(
+      `OpenClaw entry script not found at: ${entryScript} `
+      + '(bundled runtime incomplete — reinstall YYClaw to restore it)',
+    );
   }
 
-  const gatewayArgs = ['gateway', '--port', String(port), '--token', appSettings.gatewayToken, '--allow-unconfigured'];
+  const gatewayArgs = ['gateway', '--port', String(port), '--allow-unconfigured', '--bind', 'loopback'];
   const mode = app.isPackaged ? 'packaged' : 'dev';
 
   const platform = process.platform;
@@ -711,8 +1107,11 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     ...uvEnv,
     ...proxyEnv,
     OPENCLAW_GATEWAY_TOKEN: appSettings.gatewayToken,
+    OPENCLAW_CONFIG_KEY: appSettings.configKey,
     OPENCLAW_SKIP_CHANNELS: skipChannels ? '1' : '',
     OPENCLAW_NO_RESPAWN: '1',
+    ...buildClawXHostApiEnv(),
+    OPENCLAW_STREAMING: '1',
     // Disable OpenClaw's interactive-shell env snapshot. When the Gateway runs
     // as an Electron utilityProcess, `process.execPath` is the Electron binary,
     // and OpenClaw captures the shell env by spawning `process.execPath -e

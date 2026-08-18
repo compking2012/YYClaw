@@ -388,4 +388,80 @@ test.describe('ClawX chat workspace session list', () => {
       await closeElectronApp(app);
     }
   });
+
+  test('lets long session titles truncate across the full sidebar row', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const nowMs = Date.now();
+    const longSessionTitle = 'A very long session title that should keep going almost to the sidebar edge before truncating';
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', port: 18789, pid: 12345, connectedAt: nowMs },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: {
+            success: true,
+            result: {
+              sessions: [{
+                key: MAIN_SESSION_KEY,
+                displayName: longSessionTitle,
+                updatedAt: nowMs,
+              }],
+            },
+          },
+          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
+            success: true,
+            result: { messages: [] },
+          },
+          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
+            success: true,
+            result: { messages: [] },
+          },
+        },
+        hostApi: {
+          [stableStringify(['/api/gateway/status', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { state: 'running', port: 18789, pid: 12345, connectedAt: nowMs },
+            },
+          },
+          [stableStringify(['/api/agents', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { success: true, agents: [{ id: 'main', name: 'Main' }] },
+            },
+          },
+        },
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
+          throw error;
+        }
+      }
+
+      const sessionButton = page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`);
+      await expect(sessionButton).toBeVisible();
+
+      const rowMetrics = await sessionButton.evaluate((element) => {
+        const styles = window.getComputedStyle(element);
+        return {
+          clientWidth: element.clientWidth,
+          paddingLeft: Number.parseFloat(styles.paddingLeft),
+          paddingRight: Number.parseFloat(styles.paddingRight),
+        };
+      });
+
+      expect(rowMetrics.paddingRight).toBe(rowMetrics.paddingLeft);
+      expect(rowMetrics.clientWidth - rowMetrics.paddingLeft - rowMetrics.paddingRight).toBeGreaterThan(190);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
 });

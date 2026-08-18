@@ -1,17 +1,20 @@
 import { access, lstat, readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { basename, join, relative, resolve } from 'node:path';
-import { homedir } from 'node:os';
+import { basename, join, relative } from 'node:path';
 import YAML from 'yaml';
-import { listAgentsSnapshot } from '../../utils/agent-config';
-import { expandPath, getOpenClawResolvedDir, getOpenClawSkillsDir } from '../../utils/paths';
+import { getOpenClawConfigDir, getOpenClawResolvedDir, getOpenClawSkillsDir } from '../../utils/paths';
 import { getAllSkillConfigs } from '../../utils/skill-config';
 import type { SkillConfigUpdates } from '../../utils/skill-config';
+import { ALLOWED_SKILL_SCAN_SOURCES, listExtensionSkillRoots } from './skill-scan-policy';
 
 export interface LocalSkillMarketplaceMeta {
   provider: string;
   slug?: string;
   installedVersion?: string;
+  versionBase?: string;
+  archiveHash?: string;
+  listingRevision?: string;
+  installedAt?: string;
   manifestPath?: string;
   originPath?: string;
 }
@@ -72,10 +75,28 @@ type ManifestMeta = {
 type PreinstalledMeta = {
   slug?: string;
   version?: string;
+  origin?: string;
+  url?: string;
+};
+
+type ServerMarketplaceMeta = {
+  provider: string;
+  slug?: string;
+  installedVersion?: string;
+  versionBase?: string;
+  category?: string;
+  archiveHash?: string;
+  listingRevision?: string;
+  installedAt?: string;
 };
 
 const MAX_SKILL_FILE_BYTES = 256_000;
 const BUNDLED_OPENCLAW_SKILL_ALLOWLIST = new Set(['skill-creator']);
+const SKILL_MANIFEST_FILENAME = 'SKILL.md';
+// User-uploaded skill zips may nest SKILL.md under an extra folder, so we search a
+// few levels down. Depth/dir caps keep the recursive scan cheap and safe.
+const MAX_NESTED_SKILL_DEPTH = 6;
+const MAX_NESTED_SKILL_DIRS = 2_000;
 
 async function pathExists(targetPath: string): Promise<boolean> {
   try {
@@ -84,6 +105,49 @@ async function pathExists(targetPath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Locate the SKILL.md for an installed skill directory. Prefers a manifest directly
+ * inside `skillDir`; otherwise walks nested directories breadth-first and returns the
+ * shallowest SKILL.md (case-insensitive) so deeply-extracted zips are still detected.
+ */
+async function findSkillManifestPath(skillDir: string): Promise<string | null> {
+  const direct = join(skillDir, SKILL_MANIFEST_FILENAME);
+  if (await pathExists(direct)) return direct;
+
+  const queue: Array<{ dir: string; depth: number }> = [{ dir: skillDir, depth: 0 }];
+  let scannedDirs = 0;
+  while (queue.length > 0) {
+    const { dir, depth } = queue.shift()!;
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    const subDirs: string[] = [];
+    for (const entry of entries) {
+      if (entry.isFile() && /^skill\.md$/i.test(entry.name)) {
+        return join(dir, entry.name);
+      }
+      if (entry.isDirectory()) {
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+        subDirs.push(join(dir, entry.name));
+      }
+    }
+    if (depth >= MAX_NESTED_SKILL_DEPTH) continue;
+    for (const subDir of subDirs) {
+      if (scannedDirs >= MAX_NESTED_SKILL_DIRS) break;
+      scannedDirs += 1;
+      queue.push({ dir: subDir, depth: depth + 1 });
+    }
+  }
+  return null;
+}
+
+export async function directoryContainsSkillManifest(skillDir: string): Promise<boolean> {
+  return (await findSkillManifestPath(skillDir)) != null;
 }
 
 function isInsideRoot(rootPath: string, candidatePath: string): boolean {
@@ -95,16 +159,39 @@ function normalizeKey(value?: string | null): string {
   return (value || '').trim().toLowerCase();
 }
 
-function dedupePaths(paths: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const entry of paths) {
-    const normalized = resolve(entry);
-    if (!normalized || seen.has(normalized)) continue;
-    seen.add(normalized);
-    result.push(normalized);
+/** Canonical skill key from SKILL.md `name` (version is not part of the id). */
+export function buildSkillScanId(name: string, _version?: string): string {
+  return (name || '').trim();
+}
+
+export function canonicalSkillKeyFromRecord(skill: Pick<LocalSkillRecord, 'id' | 'name'>): string {
+  const fromName = normalizeKey(skill.name);
+  if (fromName) return fromName;
+  return normalizeKey(skill.id);
+}
+
+export function collectSkillLookupAliases(
+  skill: Pick<LocalSkillRecord, 'id' | 'slug' | 'name' | 'baseDir' | 'version'>,
+): string[] {
+  const aliases = new Set<string>();
+  const add = (value?: string) => {
+    const key = normalizeKey(value);
+    if (key) aliases.add(key);
+  };
+  const canonical = canonicalSkillKeyFromRecord(skill);
+  add(canonical);
+  add(skill.id);
+  add(skill.slug);
+  add(skill.name);
+  if (skill.baseDir) {
+    const leaf = skill.baseDir.replace(/\\/g, '/').split('/').pop();
+    add(leaf);
   }
-  return result;
+  const trimmedVersion = skill.version?.trim();
+  if (skill.name && trimmedVersion) {
+    add(`${skill.name.trim()}@${trimmedVersion}`);
+  }
+  return [...aliases];
 }
 
 function parseFrontmatter(content: string): Record<string, unknown> {
@@ -230,6 +317,23 @@ async function readPreinstalledMeta(skillDir: string): Promise<PreinstalledMeta 
   return {
     slug: toStringValue(parsed.slug),
     version: toStringValue(parsed.version),
+    origin: toStringValue(parsed.origin),
+    url: toStringValue(parsed.url),
+  };
+}
+
+async function readServerMarketplaceMeta(skillDir: string): Promise<ServerMarketplaceMeta | null> {
+  const parsed = await safeReadJson<Record<string, unknown>>(join(skillDir, '.clawx-server-marketplace.json'));
+  if (!parsed || toStringValue(parsed.provider) !== 'server') return null;
+  return {
+    provider: 'server',
+    slug: toStringValue(parsed.slug),
+    installedVersion: toStringValue(parsed.installedVersion),
+    versionBase: toStringValue(parsed.versionBase),
+    category: toStringValue(parsed.category),
+    archiveHash: toStringValue(parsed.archiveHash),
+    listingRevision: toStringValue(parsed.listingRevision),
+    installedAt: toStringValue(parsed.installedAt),
   };
 }
 
@@ -250,8 +354,8 @@ async function inspectSkillDir(
   skillDir: string,
   configs: Record<string, SkillConfigUpdates>,
 ): Promise<ScannedSkillRecord | null> {
-  const manifestPath = join(skillDir, 'SKILL.md');
-  if (!(await pathExists(manifestPath))) return null;
+  const manifestPath = await findSkillManifestPath(skillDir);
+  if (!manifestPath) return null;
 
   try {
     const skillDirRealPath = await realpath(skillDir);
@@ -261,31 +365,49 @@ async function inspectSkillDir(
 
     const fallbackId = basename(skillDirRealPath);
     const parsedManifest = await parseSkillManifest(manifestPath, fallbackId);
-    const [originMeta, manifestMeta, preinstalledMeta] = await Promise.all([
+    const [originMeta, manifestMeta, preinstalledMeta, serverMarketplaceMeta] = await Promise.all([
       readOriginMeta(skillDirRealPath),
       readManifestMeta(skillDirRealPath),
       readPreinstalledMeta(skillDirRealPath),
+      readServerMarketplaceMeta(skillDirRealPath),
     ]);
 
-    const skillKey = parsedManifest.id || manifestMeta?.slug || originMeta?.slug || fallbackId;
+    const skillKey = parsedManifest.id || manifestMeta?.slug || originMeta?.slug || serverMarketplaceMeta?.slug || fallbackId;
     const rawConfig = configs[skillKey] || {};
     const config: Record<string, unknown> = { ...rawConfig };
-    const version = manifestMeta?.version || parsedManifest.version || originMeta?.installedVersion;
+    const version = serverMarketplaceMeta?.installedVersion ||
+      manifestMeta?.version ||
+      parsedManifest.version ||
+      originMeta?.installedVersion;
     const source = descriptor.source;
-    const isBundled = source === 'openclaw-bundled' || Boolean(preinstalledMeta);
-    const marketplace = originMeta || manifestMeta
+    const isBundled = source === 'openclaw-bundled'
+      || source === 'openclaw-extension'
+      || Boolean(preinstalledMeta)
+      || source === 'openclaw-plugin';
+    const marketplace = serverMarketplaceMeta
       ? {
-          provider: originMeta?.provider || (manifestMeta ? 'manifest' : source),
-          slug: originMeta?.slug || manifestMeta?.slug || preinstalledMeta?.slug || fallbackId,
+          provider: 'server',
+          slug: serverMarketplaceMeta.slug || manifestMeta?.slug || preinstalledMeta?.slug || fallbackId,
           installedVersion: version,
-          manifestPath: manifestMeta ? join(skillDirRealPath, 'manifest.json') : undefined,
-          originPath: originMeta ? join(skillDirRealPath, '.clawhub', 'origin.json') : undefined,
+          versionBase: serverMarketplaceMeta.versionBase,
+          category: serverMarketplaceMeta.category,
+          archiveHash: serverMarketplaceMeta.archiveHash,
+          listingRevision: serverMarketplaceMeta.listingRevision,
+          installedAt: serverMarketplaceMeta.installedAt,
         }
-      : undefined;
+      : originMeta || manifestMeta
+        ? {
+            provider: originMeta?.provider || (manifestMeta ? 'manifest' : source),
+            slug: originMeta?.slug || manifestMeta?.slug || preinstalledMeta?.slug || fallbackId,
+            installedVersion: version,
+            manifestPath: manifestMeta ? join(skillDirRealPath, 'manifest.json') : undefined,
+            originPath: originMeta ? join(skillDirRealPath, '.clawhub', 'origin.json') : undefined,
+          }
+        : undefined;
 
     return {
       id: skillKey,
-      slug: originMeta?.slug || manifestMeta?.slug || preinstalledMeta?.slug || fallbackId,
+      slug: originMeta?.slug || manifestMeta?.slug || serverMarketplaceMeta?.slug || preinstalledMeta?.slug || fallbackId,
       name: parsedManifest.name,
       description: parsedManifest.description,
       enabled: rawConfig.enabled !== false,
@@ -353,49 +475,71 @@ async function scanRoot(
   return items.filter((item): item is ScannedSkillRecord => item != null);
 }
 
-async function buildDescriptors(): Promise<SourceDescriptor[]> {
-  const agentsSnapshot = await listAgentsSnapshot();
-  const workspaces = dedupePaths(
-    agentsSnapshot.agents
-      .map((agent) => expandPath(agent.workspace || ''))
-      .filter(Boolean),
-  );
+async function listPluginSkillSlugs(): Promise<Set<string> | undefined> {
+  const pluginSkillsRoot = join(getOpenClawConfigDir(), 'plugin-skills');
+  try {
+    const entries = await readdir(pluginSkillsRoot, { withFileTypes: true });
+    const slugs = entries
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map((entry) => entry.name);
+    return slugs.length > 0 ? new Set(slugs) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
-  return [
-    ...workspaces.map((workspace) => ({
-      root: join(workspace, 'skills'),
-      source: 'openclaw-workspace',
-      priority: 0,
-    })),
-    ...workspaces.map((workspace) => ({
-      root: join(workspace, '.agents', 'skills'),
-      source: 'agents-skills-project',
-      priority: 1,
-    })),
-    {
-      root: join(homedir(), '.agents', 'skills'),
-      source: 'agents-skills-personal',
-      priority: 2,
-    },
+async function buildDescriptors(_agentWorkspaces?: string[]): Promise<SourceDescriptor[]> {
+  // Intentionally ignore agent workspaces / ~/.agents/skills: user-visible skill
+  // discovery is limited to managed + bundled + extensions + plugin-skills (P1–P4).
+  void _agentWorkspaces;
+  void ALLOWED_SKILL_SCAN_SOURCES;
+  const [bundledPluginSlugs, extensionRoots] = await Promise.all([
+    listPluginSkillSlugs(),
+    listExtensionSkillRoots(),
+  ]);
+
+  const descriptors: SourceDescriptor[] = [
     {
       root: getOpenClawSkillsDir(),
       source: 'openclaw-managed',
-      priority: 3,
+      // Lower priority wins in mergeScannedSkills — managed overrides bundled/extension/plugin.
+      priority: 0,
     },
     {
       root: join(getOpenClawResolvedDir(), 'skills'),
       source: 'openclaw-bundled',
-      priority: 4,
+      priority: 1,
       allowedSkillSlugs: BUNDLED_OPENCLAW_SKILL_ALLOWLIST,
     },
   ];
+
+  for (const extensionRoot of extensionRoots) {
+    descriptors.push({
+      root: extensionRoot,
+      source: 'openclaw-extension',
+      priority: 2,
+    });
+  }
+
+  if (bundledPluginSlugs) {
+    descriptors.push({
+      root: join(getOpenClawConfigDir(), 'plugin-skills'),
+      source: 'openclaw-plugin',
+      priority: 3,
+      allowedSkillSlugs: bundledPluginSlugs,
+    });
+  }
+
+  return descriptors;
 }
 
 function mergeScannedSkills(skills: ScannedSkillRecord[]): LocalSkillRecord[] {
   const byKey = new Map<string, ScannedSkillRecord>();
 
   for (const skill of skills) {
-    const key = normalizeKey(skill.id || skill.slug || skill.name || skill.baseDir);
+    // Dedupe by SKILL.md canonical name (fallback id) so same-name skills from
+    // managed vs bundled collapse to a single list entry (managed wins).
+    const key = canonicalSkillKeyFromRecord(skill) || normalizeKey(skill.baseDir);
     if (!key) continue;
     const existing = byKey.get(key);
     if (!existing || skill.priority < existing.priority) {
@@ -419,9 +563,13 @@ function mergeScannedSkills(skills: ScannedSkillRecord[]): LocalSkillRecord[] {
     .map(({ priority: _priority, ...skill }) => skill);
 }
 
-export async function listLocalSkills(): Promise<LocalSkillRecord[]> {
+type ListLocalSkillsOptions = {
+  agentWorkspaces?: string[];
+};
+
+export async function listLocalSkills(options?: ListLocalSkillsOptions): Promise<LocalSkillRecord[]> {
   const [descriptors, configs] = await Promise.all([
-    buildDescriptors(),
+    buildDescriptors(options?.agentWorkspaces),
     getAllSkillConfigs(),
   ]);
 

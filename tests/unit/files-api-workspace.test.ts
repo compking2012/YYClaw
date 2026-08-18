@@ -144,6 +144,40 @@ describe('workspace-scoped files api', () => {
     expect(await readdir(outsideDir)).toEqual([]);
   });
 
+  it('stages files when the state dir root is a symlink to another directory', async () => {
+    const { StagedAttachmentRegistry } = await import('../../electron/services/attachment-access');
+    const { createFilesApi } = await import('../../electron/services/files-api');
+    const stagedAttachments = new StagedAttachmentRegistry();
+
+    // Users legitimately symlink `~/.openclaw` to another volume. The staging
+    // init must follow that top-level symlink instead of rejecting it.
+    const realStateDir = join(testDir, 'real-openclaw');
+    await mkdir(realStateDir);
+    const linkedStateDir = join(testDir, 'linked-openclaw');
+    await symlink(realStateDir, linkedStateDir);
+
+    const previous = process.env.OPENCLAW_STATE_DIR;
+    process.env.OPENCLAW_STATE_DIR = linkedStateDir;
+    try {
+      const api = createFilesApi({ stagedAttachments });
+      const buffered = await api.stageBuffer({
+        base64: Buffer.from('linked staging').toString('base64'),
+        fileName: 'linked.txt',
+        mimeType: 'text/plain',
+      });
+      const [pathResult] = await api.stagePaths({ filePaths: [join(workspaceRoot, 'hello.txt')] });
+
+      const canonicalStateDir = await realpath(realStateDir);
+      for (const stagedPath of [buffered.stagedPath, pathResult.stagedPath]) {
+        expect(stagedPath).toContain(join('media', 'outbound', 'clawx-staging'));
+        expect(await realpath(stagedPath)).toContain(canonicalStateDir);
+      }
+    } finally {
+      if (previous === undefined) delete process.env.OPENCLAW_STATE_DIR;
+      else process.env.OPENCLAW_STATE_DIR = previous;
+    }
+  });
+
   it('lists, opens, and reveals a regular workspace file through scoped services', async () => {
     const canonicalTarget = await realpath(join(workspaceRoot, 'hello.txt'));
     const ref = { workspaceRoot, relativePath: 'hello.txt' };

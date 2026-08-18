@@ -30,6 +30,7 @@ const loggerMock = vi.hoisted(() => ({
   info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
+  debug: vi.fn(),
 }));
 
 const storeMock = vi.hoisted(() => ({
@@ -42,6 +43,24 @@ vi.mock('@electron/utils/logger', () => ({
 
 vi.mock('@electron/utils/store', () => ({
   getSetting: storeMock.getSetting,
+}));
+
+vi.mock('@electron/utils/openclaw-cli', () => ({
+  getOpenClawEmbeddedForkSpec: () => ({
+    modulePath: '/tmp/openclaw/openclaw.mjs',
+    args: ['acp'],
+    options: {
+      cwd: '/tmp/openclaw',
+      env: {
+        OPENCLAW_NO_RESPAWN: '1',
+        OPENCLAW_EMBEDDED_IN: 'ClawX',
+        OPENCLAW_EXEC_SHELL_SNAPSHOT: '0',
+      },
+      execArgv: [],
+      stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+      windowsHide: true,
+    },
+  }),
 }));
 
 vi.mock('@agentclientprotocol/sdk', () => ({
@@ -86,16 +105,20 @@ function createPassthroughAccessRegistry() {
   };
 }
 
-async function createService(connection = createConnection(), accessRegistry = createPassthroughAccessRegistry()) {
+async function createService(
+  connection = createConnection(),
+  accessRegistry = createPassthroughAccessRegistry(),
+  gateway?: { isConnected: () => boolean; rpc: ReturnType<typeof vi.fn> },
+) {
   const send = vi.fn();
   const { AcpChatService } = await import('../../electron/services/acp-chat-service');
   const service = new AcpChatService(
     { webContents: { send } } as never,
     accessRegistry as never,
     connection as never,
-    undefined,
+    gateway as never,
   );
-  return { service, connection, send, accessRegistry };
+  return { service, connection, send, accessRegistry, gateway };
 }
 
 function createFakeChild() {
@@ -148,10 +171,12 @@ function createDeferred<T>() {
 
 describe('AcpChatService', () => {
   beforeEach(() => {
+    storeMock.getSetting.mockResolvedValue('clawx-test-gateway-token');
     vi.clearAllMocks();
     acpSdkMock.state.connectionForSpawn = undefined;
     childProcessMock.state.child = undefined;
-    storeMock.getSetting.mockResolvedValue('clawx-test-gateway-token');
+    childProcessMock.fork.mockImplementation(() => childProcessMock.state.child as never);
+    childProcessMock.spawn.mockImplementation(() => childProcessMock.state.child as never);
   });
 
   it('forks the embedded OpenClaw entry for ACP instead of spawning a public CLI wrapper', async () => {
@@ -164,10 +189,10 @@ describe('AcpChatService', () => {
 
     expect(childProcessMock.spawn).not.toHaveBeenCalled();
     expect(childProcessMock.fork).toHaveBeenCalledWith(
-      expect.stringContaining('openclaw.mjs'),
+      '/tmp/openclaw/openclaw.mjs',
       ['acp'],
       expect.objectContaining({
-        cwd: expect.stringContaining('openclaw'),
+        cwd: '/tmp/openclaw',
         execArgv: [],
         stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
         windowsHide: true,
@@ -180,24 +205,80 @@ describe('AcpChatService', () => {
     );
   });
 
-  it('passes the authoritative ClawX Gateway token to the ACP child environment', async () => {
-    const { service } = await createSpawnedService();
-
-    await expect(service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' })).resolves.toEqual({
-      success: true,
-      generation: 1,
-    });
-
-    expect(storeMock.getSetting).toHaveBeenCalledWith('gatewayToken');
-    expect(childProcessMock.fork).toHaveBeenCalledWith(
-      expect.stringContaining('openclaw.mjs'),
-      ['acp'],
-      expect.objectContaining({
-        env: expect.objectContaining({
-          OPENCLAW_GATEWAY_TOKEN: 'clawx-test-gateway-token',
-          OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS: '600000',
+  it('waits for Gateway ready before spawning ACP', async () => {
+    vi.useFakeTimers();
+    try {
+      const connection = createConnection();
+      let gatewayReady = false;
+      const gateway = {
+        isConnected: () => true,
+        getStatus: () => ({
+          state: gatewayReady ? 'running' : 'starting',
+          port: 18789,
+          gatewayReady,
         }),
-      }),
+        rpc: vi.fn(),
+      };
+      const send = vi.fn();
+      const child = createFakeChild();
+      acpSdkMock.state.connectionForSpawn = connection;
+      childProcessMock.state.child = child;
+      const { AcpChatService } = await import('../../electron/services/acp-chat-service');
+      const service = new AcpChatService(
+        { webContents: { send } } as never,
+        createPassthroughAccessRegistry() as never,
+        undefined,
+        gateway as never,
+      );
+
+      const loadPromise = service.loadSession({
+        sessionKey: 'agent:pi:s1',
+        workspaceRoot: '/repo',
+        cwd: '/repo',
+      });
+
+      expect(childProcessMock.fork).not.toHaveBeenCalled();
+      gatewayReady = true;
+      await vi.advanceTimersByTimeAsync(250);
+      await expect(loadPromise).resolves.toEqual({ success: true, generation: 1 });
+      expect(childProcessMock.fork).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('maps Node engines stderr into an actionable loadSession error without retrying', async () => {
+    const connection = createConnection();
+    const send = vi.fn();
+    const child = createFakeChild();
+    acpSdkMock.state.connectionForSpawn = connection;
+    childProcessMock.state.child = child;
+    connection.initialize.mockImplementation(async () => {
+      child.stderr.write(
+        'openclaw: Node.js >=22.22.3 <23, >=24.15.0 <25, or >=25.9.0 is required (current: v22.19.0).\n',
+      );
+      await Promise.resolve();
+      throw new Error('ACP process exited with code 1');
+    });
+    const { AcpChatService } = await import('../../electron/services/acp-chat-service');
+    const service = new AcpChatService(
+      { webContents: { send } } as never,
+      createPassthroughAccessRegistry() as never,
+      undefined,
+      undefined,
+    );
+
+    await expect(service.loadSession({
+      sessionKey: 'agent:pi:s1',
+      workspaceRoot: '/repo',
+      cwd: '/repo',
+    })).resolves.toEqual({
+      success: false,
+      error: expect.stringContaining('Node.js >=22.22.3'),
+    });
+    expect(childProcessMock.fork).toHaveBeenCalledTimes(1);
+    expect(loggerMock.info).not.toHaveBeenCalledWith(
+      expect.stringContaining('auto-approving local device requests and retrying'),
     );
   });
 
@@ -253,6 +334,43 @@ describe('AcpChatService', () => {
       _meta: { sessionKey: 'agent:pi:session-123', prefixCwd: true },
     });
     expect(connection.loadSession).not.toHaveBeenCalled();
+  });
+
+  it('authorizes creation only for the managed default workspace of a fresh session', async () => {
+    const defaultRegistry = createPassthroughAccessRegistry();
+    const { service: defaultService } = await createService(createConnection(), defaultRegistry);
+
+    await defaultService.loadSession({
+      sessionKey: 'agent:pi:session-default',
+      workspaceRoot: '~/.openclaw/workspace',
+      cwd: '~/.openclaw/workspace',
+      createIfMissing: true,
+    });
+
+    expect(defaultRegistry.prepareGrant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceRoot: '~/.openclaw/workspace',
+        executionCwd: '~/.openclaw/workspace',
+      }),
+      { createWorkspaceRoot: true },
+    );
+
+    const customRegistry = createPassthroughAccessRegistry();
+    const { service: customService } = await createService(createConnection(), customRegistry);
+    await customService.loadSession({
+      sessionKey: 'agent:pi:session-custom',
+      workspaceRoot: '/missing/custom-workspace',
+      cwd: '/missing/custom-workspace',
+      createIfMissing: true,
+    });
+
+    expect(customRegistry.prepareGrant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceRoot: '/missing/custom-workspace',
+        executionCwd: '/missing/custom-workspace',
+      }),
+      { createWorkspaceRoot: false },
+    );
   });
 
   it('routes fresh-session prompts through the ACP session id returned by session/new', async () => {
@@ -753,8 +871,9 @@ describe('AcpChatService', () => {
     const firstLoad = service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     const secondLoad = service.loadSession({ sessionKey: 'agent:pi:s2', workspaceRoot: '/repo', cwd: '/repo' });
 
-    await Promise.resolve();
-    expect(connection.initialize).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(connection.initialize).toHaveBeenCalledTimes(1);
+    });
 
     initialized.resolve(createInitResponse());
     await expect(Promise.all([firstLoad, secondLoad])).resolves.toHaveLength(2);
@@ -1168,6 +1287,44 @@ describe('AcpChatService', () => {
 
     expect(connection.cancel).toHaveBeenCalledWith({ sessionId: 'agent:pi:s1' });
     await expect(pending).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+  });
+
+  it('best-effort aborts the Gateway session alongside ACP cancel so LLM/tools stop', async () => {
+    const gateway = {
+      isConnected: () => true,
+      rpc: vi.fn().mockResolvedValue({}),
+    };
+    const { service, connection } = await createService(createConnection(), createPassthroughAccessRegistry(), gateway);
+
+    await service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+    await service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'search' });
+
+    await expect(service.cancelSession({ sessionKey: 'agent:pi:s1' })).resolves.toEqual({
+      success: true,
+      generation: 1,
+    });
+
+    expect(connection.cancel).toHaveBeenCalledWith({ sessionId: 'agent:pi:s1' });
+    expect(gateway.rpc).toHaveBeenCalledWith('chat.abort', { sessionKey: 'agent:pi:s1' }, 5_000);
+  });
+
+  it('still attempts Gateway abort when ACP cancel fails', async () => {
+    const connection = createConnection();
+    connection.cancel.mockRejectedValueOnce(new Error('acp cancel boom'));
+    const gateway = {
+      isConnected: () => true,
+      rpc: vi.fn().mockResolvedValue({}),
+    };
+    const { service } = await createService(connection, createPassthroughAccessRegistry(), gateway);
+
+    await service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+    await service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'search' });
+
+    await expect(service.cancelSession({ sessionKey: 'agent:pi:s1' })).resolves.toEqual({
+      success: false,
+      error: 'acp cancel boom',
+    });
+    expect(gateway.rpc).toHaveBeenCalledWith('chat.abort', { sessionKey: 'agent:pi:s1' }, 5_000);
   });
 
   it('builds ACP prompt blocks from message and media', async () => {

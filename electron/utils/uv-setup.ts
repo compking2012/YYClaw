@@ -41,13 +41,19 @@ function resolveUvBin(): { bin: string; source: 'bundled' | 'path' | 'bundled-fa
 
   // Dev mode or missing bundled binary — check system PATH
   const found = findUvInPathSync();
-  if (found) return { bin: 'uv', source: 'path' };
+  if (found) {
+    const pathBin = process.platform === 'win32' ? 'uv.exe' : 'uv';
+    return { bin: pathBin, source: 'path' };
+  }
 
   if (existsSync(bundled)) {
     return { bin: bundled, source: 'bundled-fallback' };
   }
 
-  return { bin: 'uv', source: 'path' };
+  throw new Error(
+    `uv not found: bundled binary missing at ${bundled} and not in system PATH. ` +
+    `On Windows, run "pnpm run uv:download:win" before building so the installer includes uv.exe.`
+  );
 }
 
 function findUvInPathSync(): boolean {
@@ -64,11 +70,15 @@ function findUvInPathSync(): boolean {
  * Check if uv is available (either bundled or in system PATH)
  */
 export async function checkUvInstalled(): Promise<boolean> {
-  const { bin, source } = resolveUvBin();
-  if (source === 'bundled' || source === 'bundled-fallback') {
-    return existsSync(bin);
+  try {
+    const { bin, source } = resolveUvBin();
+    if (source === 'bundled' || source === 'bundled-fallback') {
+      return existsSync(bin);
+    }
+    return findUvInPathSync();
+  } catch {
+    return false;
   }
-  return findUvInPathSync();
 }
 
 /**
@@ -88,7 +98,12 @@ export async function installUv(): Promise<void> {
  * Check if a managed Python 3.12 is ready and accessible
  */
 export async function isPythonReady(): Promise<boolean> {
-  const { bin: uvBin } = resolveUvBin();
+  let uvBin: string;
+  try {
+    uvBin = resolveUvBin().bin;
+  } catch {
+    return false;
+  }
   const useShell = needsWinShell(uvBin);
 
   return new Promise<boolean>((resolve) => {

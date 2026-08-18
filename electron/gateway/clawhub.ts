@@ -7,6 +7,7 @@ import path from 'path';
 import { shell } from 'electron';
 import { getOpenClawConfigDir, ensureDir } from '../utils/paths';
 import { removeSkillConfig } from '../utils/skill-config';
+import { removeExistingSkillDir } from '../services/skills-marketplace-client';
 
 export interface MarketplaceSearchParams {
     query: string;
@@ -17,10 +18,13 @@ export interface MarketplaceInstallParams {
     slug: string;
     version?: string;
     force?: boolean;
+    /** When true, overwrite same-name managed skills after UI confirm. */
+    overwriteSameName?: boolean;
 }
 
 export interface MarketplaceUninstallParams {
     slug: string;
+    baseDir?: string;
 }
 
 export interface MarketplaceSkillResult {
@@ -49,6 +53,11 @@ export interface MarketplaceProvider {
     getCapability(): Promise<{ mode: string; canSearch: boolean; canInstall: boolean; reason?: string }>;
     search(params: MarketplaceSearchParams): Promise<MarketplaceSkillResult[]>;
     install(params: MarketplaceInstallParams): Promise<void>;
+}
+
+export interface ClawHubUpdateParams {
+    slug?: string;
+    all?: boolean;
 }
 
 export class ClawHubService {
@@ -106,16 +115,32 @@ export class ClawHubService {
         throw new Error('Marketplace install is disabled');
     }
 
+    async update(params: ClawHubUpdateParams): Promise<void> {
+        if (params.slug) {
+            await this.install({ slug: params.slug, force: true });
+        }
+    }
+
     /**
      * Uninstall a managed skill and remove its stored config.
      */
     async uninstall(params: ClawHubUninstallParams): Promise<void> {
         const fsPromises = fs.promises;
 
-        const skillDir = path.join(this.workDir, 'skills', params.slug);
+        const skillsRoot = path.join(this.workDir, 'skills');
+        let skillDir = path.join(skillsRoot, params.slug);
+        const preferredBaseDir = params.baseDir?.trim();
+        if (preferredBaseDir) {
+            const relativePath = path.relative(path.resolve(skillsRoot), path.resolve(preferredBaseDir));
+            if (relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
+                skillDir = preferredBaseDir;
+            }
+        }
         if (fs.existsSync(skillDir)) {
             console.log(`Deleting skill directory: ${skillDir}`);
-            await fsPromises.rm(skillDir, { recursive: true, force: true });
+            if (!removeExistingSkillDir(skillDir)) {
+                throw new Error(`Failed to remove skill directory: ${skillDir}`);
+            }
         }
 
         const lockFile = path.join(this.workDir, '.clawhub', 'lock.json');

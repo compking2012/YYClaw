@@ -1,5 +1,8 @@
 import type {
   AgentCreatePayload,
+  AgentUpdateDefaultModelsPayload,
+  AgentUpdateModelPayload,
+  AgentUpdateAutoSelectPayload,
   AgentUpdatePayload,
   AcpTraceRecordPayload,
   AttachmentFileRef,
@@ -14,6 +17,8 @@ import type {
   FilePreviewTreeOptions,
   FileReadBinaryOptions,
   ImageGenerationSettingsPayload,
+  LegacyFetchPayload,
+  LegacyFetchResult,
   MediaThumbnailEntry,
   OpenClawDoctorMode,
   OpenClawDoctorResult,
@@ -26,18 +31,30 @@ import type {
   ProviderValidationPayload,
   ReadAttachmentBinaryPayload,
   ResolveAttachmentPayload,
+  SessionMaintenancePayload,
   SaveImagePayload,
   SettingsKey,
   SettingsSnapshot,
   SettingsValue,
   ShellOpenExternalPayload,
+  ShellOpenAuthWindowPayload,
   ShellPathPayload,
   SkillQuickAccessPayload,
   SkillUpdateConfigPayload,
   SkillUpdatePayload,
+  SkillUiSchemaPayload,
+  SkillUiActionPayload,
+  SkillUploadMarketplacePayload,
+  SkillPublishMetaPayload,
+  SkillUnlistPayload,
+  SkillCancelReviewPayload,
+  FileSaveAsPayload,
+  SaveAttachmentAsPayload,
   UpdateChannel,
   WorkspaceContextInput,
   WorkspaceFileRef,
+  GatewayControlUiPayload,
+  ChatSendWithMediaPayload,
 } from '@shared/host-api/contract';
 import type { WebBrowserNavigatePayload } from '@shared/web-browser';
 import type {
@@ -50,6 +67,8 @@ import type { CronJobCreateInput, CronJobUpdateInput } from '@shared/types/cron'
 import { invokeHost } from './host-api-client';
 
 export type {
+  ChatSendWithMediaPayload,
+  ChatSendWithMediaResult,
   AttachmentAccessError,
   AttachmentFileRef,
   AttachmentOpenHandler,
@@ -109,6 +128,15 @@ export const hostApi = {
       ...(await invokeHost('app', 'openClawDoctor', { mode })),
       mode,
     }),
+    sessionMaintenance: () => invokeHost('app', 'sessionMaintenance'),
+    saveSessionMaintenance: (patch: SessionMaintenancePayload) => (
+      invokeHost('app', 'saveSessionMaintenance', patch)
+    ),
+    controlUiEnabled: () => invokeHost('app', 'controlUiEnabled'),
+    setControlUiEnabled: (enabled: boolean) => (
+      invokeHost('app', 'setControlUiEnabled', { enabled })
+    ),
+    openclawVersion: () => invokeHost('app', 'openclawVersion'),
   },
   openclaw: {
     status: () => invokeHost('openclaw', 'status'),
@@ -117,8 +145,11 @@ export const hostApi = {
   },
   shell: {
     openExternal: (url: string) => invokeHost('shell', 'openExternal', { url } satisfies ShellOpenExternalPayload),
+    openAuthWindow: (url: string, title?: string, intent?: 'feishu-credentials' | 'feishu-delete') =>
+      invokeHost('shell', 'openAuthWindow', { url, title, intent } satisfies ShellOpenAuthWindowPayload),
     showItemInFolder: (path: string) => invokeHost('shell', 'showItemInFolder', { path } satisfies ShellPathPayload),
     openPath: (path: string) => invokeHost('shell', 'openPath', { path } satisfies ShellPathPayload),
+    readClipboardText: () => invokeHost('shell', 'readClipboardText'),
   },
   webBrowser: {
     navigate: (url: string) => invokeHost('webBrowser', 'navigate', { url } satisfies WebBrowserNavigatePayload),
@@ -138,6 +169,7 @@ export const hostApi = {
     maximize: () => invokeHost('window', 'maximize'),
     close: () => invokeHost('window', 'close'),
     isMaximized: () => invokeHost('window', 'isMaximized'),
+    ensureKeyboardFocus: () => invokeHost('window', 'ensureKeyboardFocus'),
   },
   updates: {
     status: () => invokeHost('updates', 'status'),
@@ -167,7 +199,7 @@ export const hostApi = {
     stop: () => invokeHost('gateway', 'stop'),
     restart: () => invokeHost('gateway', 'restart'),
     health: (probe = false) => invokeHost('gateway', 'health', { probe }),
-    controlUi: () => invokeHost('gateway', 'controlUi'),
+    controlUi: (view?: GatewayControlUiPayload['view']) => invokeHost('gateway', 'controlUi', { view }),
     rpc: <T = unknown>(method: string, params?: unknown, timeoutMs?: number) => (
       invokeHost('gateway', 'rpc', { method, params, timeoutMs }) as Promise<T>
     ),
@@ -210,9 +242,25 @@ export const hostApi = {
     cancelLogin: (channelType: string, input?: { accountId?: string }) => (
       invokeHost('channels', 'cancelLogin', { channelType, ...input })
     ),
+    feishuCandidateIcons: () => invokeHost('channels', 'feishuCandidateIcons'),
+    feishuMyApps: () => invokeHost('channels', 'feishuMyApps'),
+    feishuAppInfo: (input: { appId: string; appSecret: string }) => (
+      invokeHost('channels', 'feishuAppInfo', input)
+    ),
+    feishuAutoCreate: (input: { appName: string; iconBase64?: string; iconMimeType?: string }) => (
+      invokeHost('channels', 'feishuAutoCreate', input)
+    ),
+    feishuUpdateApp: (input: { appId: string; appSecret: string; appName: string; iconBase64?: string; iconMimeType?: string }) => (
+      invokeHost('channels', 'feishuUpdateApp', input)
+    ),
+    feishuDeleteApp: (input: { appId: string }) => invokeHost('channels', 'feishuDeleteApp', input),
+    feishuRetryLarkCli: (input: { appId: string; appSecret: string }) => (
+      invokeHost('channels', 'feishuRetryLarkCli', input)
+    ),
   },
   agents: {
-    list: () => invokeHost('agents', 'list'),
+    list: (opts?: { reconcile?: boolean }) =>
+      invokeHost('agents', 'list', opts?.reconcile === false ? { reconcile: false } : {}),
     create: (input: AgentCreatePayload) => invokeHost('agents', 'create', input),
     update: (id: string, input: Omit<AgentUpdatePayload, 'id'>) => (
       invokeHost('agents', 'update', {
@@ -220,9 +268,20 @@ export const hostApi = {
         ...input,
       })
     ),
-    updateModel: (id: string, modelRef: string | null) => (
-      invokeHost('agents', 'updateModel', { id, modelRef })
+    updateId: (id: string, newId: string) => invokeHost('agents', 'updateId', { id, newId }),
+    updateModel: (id: string, modelRef: string | null, targetSlot?: AgentUpdateModelPayload['targetSlot']) => (
+      invokeHost('agents', 'updateModel', { id, modelRef, targetSlot })
     ),
+    updateDefaultModels: (models: AgentUpdateDefaultModelsPayload['models']) => (
+      invokeHost('agents', 'updateDefaultModels', { models })
+    ),
+    updateAutoSelect: (
+      id: string,
+      update: { autoSelectModel?: AgentUpdateAutoSelectPayload['autoSelectModel']; optimizationProfile?: AgentUpdateAutoSelectPayload['optimizationProfile']; sensitiveMode?: boolean },
+    ) => (
+      invokeHost('agents', 'updateAutoSelect', { id, ...update })
+    ),
+    setDefault: (id: string) => invokeHost('agents', 'setDefault', { id }),
     delete: (id: string) => invokeHost('agents', 'delete', { id }),
     assignChannel: (id: string, channelType: string) => (
       invokeHost('agents', 'assignChannel', { id, channelType })
@@ -230,6 +289,15 @@ export const hostApi = {
     removeChannel: (id: string, channelType: string) => (
       invokeHost('agents', 'removeChannel', { id, channelType })
     ),
+    updateGlobalSkills: (skills: string[]) => invokeHost('agents', 'updateGlobalSkills', { skills }),
+    generateText: (input: {
+      agentId?: string;
+      system: string;
+      input: string;
+      temperature?: number;
+      maxOutputTokens?: number;
+      timeoutMs?: number;
+    }) => invokeHost('agents', 'generateText', input),
   },
   diagnostics: {
     gatewaySnapshot: () => invokeHost('diagnostics', 'gatewaySnapshot'),
@@ -308,6 +376,8 @@ export const hostApi = {
     listTree: (path: string, opts?: FilePreviewTreeOptions) => (
       invokeHost('files', 'listTree', { path, opts })
     ),
+    saveAs: (input: FileSaveAsPayload) => invokeHost('files', 'saveAs', input),
+    saveAttachmentAs: (input: SaveAttachmentAsPayload) => invokeHost('files', 'saveAttachmentAs', input),
     resolveWorkspaceContext: (input: WorkspaceContextInput) => (
       invokeHost('files', 'resolveWorkspaceContext', input)
     ),
@@ -350,7 +420,9 @@ export const hostApi = {
     ),
   },
   sessions: {
-    delete: (id: string) => invokeHost('sessions', 'delete', { id }),
+    delete: (id: string, workflowRunIds?: string[]) => (
+      invokeHost('sessions', 'delete', { id, ...(workflowRunIds?.length ? { workflowRunIds } : {}) })
+    ),
     rename: (id: string, title: string) => (
       invokeHost('sessions', 'rename', { id, title })
     ),
@@ -363,6 +435,7 @@ export const hostApi = {
     ),
   },
   chat: {
+    sendWithMedia: (input: ChatSendWithMediaPayload) => invokeHost('chat', 'sendWithMedia', input),
     loadAcpSession: (input: AcpChatLoadPayload) => invokeHost('chat', 'loadAcpSession', input),
     sendAcpPrompt: (input: AcpChatPromptPayload) => invokeHost('chat', 'sendAcpPrompt', input),
     cancelAcpSession: (input: AcpChatCancelPayload) => invokeHost('chat', 'cancelAcpSession', input),
@@ -393,7 +466,13 @@ export const hostApi = {
     clawhubCapability: () => invokeHost('skills', 'clawhubCapability'),
     clawhubList: () => invokeHost('skills', 'clawhubList'),
     clawhubSearch: (input: ClawHubSearchPayload) => invokeHost('skills', 'clawhubSearch', input),
-    clawhubInstall: (input: { slug: string; version?: string }) => invokeHost('skills', 'clawhubInstall', input),
+    clawhubInstall: (input: {
+      slug: string;
+      version?: string;
+      baseDir?: string;
+      workspace?: string;
+      sessionAgentId?: string;
+    }) => invokeHost('skills', 'clawhubInstall', input),
     clawhubUninstall: (input: { slug: string }) => invokeHost('skills', 'clawhubUninstall', input),
     clawhubOpenSkillReadme: (input: { skillKey?: string; slug?: string; baseDir?: string }) => (
       invokeHost('skills', 'clawhubOpenSkillReadme', input)
@@ -401,12 +480,145 @@ export const hostApi = {
     clawhubOpenSkillPath: (input: { skillKey?: string; slug?: string; baseDir?: string }) => (
       invokeHost('skills', 'clawhubOpenSkillPath', input)
     ),
+    marketplaceList: (input?: { query?: string; limit?: number; category?: string }) => (
+      invokeHost('skills', 'marketplaceList', input)
+    ),
+    marketplaceSearch: (input: { query?: string; limit?: number; category?: string }) => (
+      invokeHost('skills', 'marketplaceSearch', input)
+    ),
+    marketplaceInstall: (input: {
+      slug?: string;
+      name?: string;
+      version?: string;
+      archiveHash?: string;
+      listingRevision?: string;
+      versionBase?: string;
+      category?: string;
+      baseDir?: string;
+      workspace?: string;
+      sessionAgentId?: string;
+      overwriteSameName?: boolean;
+    }) => invokeHost('skills', 'marketplaceInstall', input),
+    marketplaceUninstall: (input: { slug?: string; name?: string; baseDir?: string }) => (
+      invokeHost('skills', 'marketplaceUninstall', input)
+    ),
+    updateAgentsMappingBatch: (updates: Array<{ skillId: string; agentIds: string[] }>) => (
+      invokeHost('skills', 'updateAgentsMappingBatch', { updates })
+    ),
+    getUiSchema: (input: SkillUiSchemaPayload) => invokeHost('skills', 'getUiSchema', input),
+    executeUiAction: (input: SkillUiActionPayload) => invokeHost('skills', 'executeUiAction', input),
+    listPublishedMarketplace: () => invokeHost('skills', 'listPublishedMarketplace'),
+    getPublishMeta: (input: SkillPublishMetaPayload) => invokeHost('skills', 'getPublishMeta', input),
+    uploadMarketplaceZip: (input: SkillUploadMarketplacePayload) => (
+      invokeHost('skills', 'uploadMarketplaceZip', input)
+    ),
+    listMarketplaceReviewRequests: () => invokeHost('skills', 'listMarketplaceReviewRequests'),
+    requestMarketplaceUnlist: (input: SkillUnlistPayload) => (
+      invokeHost('skills', 'requestMarketplaceUnlist', input)
+    ),
+    cancelMarketplaceReviewRequest: (input: SkillCancelReviewPayload) => (
+      invokeHost('skills', 'cancelMarketplaceReviewRequest', input)
+    ),
   },
   usage: {
     recentTokenHistory: (limit?: number) => (
       invokeHost('usage', 'recentTokenHistory', { limit })
     ),
   },
+  adminConsole: {
+    sessionSendRemote: (input: Record<string, unknown>) => (
+      invokeHost('adminConsole', 'sessionSendRemote', input)
+    ),
+    sessionListRemote: (input: Record<string, unknown>) => (
+      invokeHost('adminConsole', 'sessionListRemote', input)
+    ),
+    sessionHistoryRemote: (input: Record<string, unknown>) => (
+      invokeHost('adminConsole', 'sessionHistoryRemote', input)
+    ),
+    sessionStatusRemote: (input: Record<string, unknown>) => (
+      invokeHost('adminConsole', 'sessionStatusRemote', input)
+    ),
+    sharedWorkspaceSync: (input: Record<string, unknown>) => (
+      invokeHost('adminConsole', 'sharedWorkspaceSync', input)
+    ),
+  },
+  voice: {
+    configStatus: () => invokeHost('voice', 'configStatus'),
+    selections: () => invokeHost('voice', 'selections'),
+    transcribe: (input: { audioBase64: string; mimeType?: string; language?: string }) => (
+      invokeHost('voice', 'transcribe', input)
+    ),
+    ttsAudio: (input: { text: string; provider?: string; voiceId?: string; modelId?: string }) => (
+      invokeHost('voice', 'ttsAudio', input)
+    ),
+    setTtsAccount: (input: { accountId: string; model?: string }) => invokeHost('voice', 'setTtsAccount', input),
+    clearTtsAccount: () => invokeHost('voice', 'clearTtsAccount'),
+    setTranscriptionAccount: (input: { accountId: string; model?: string }) => (
+      invokeHost('voice', 'setTranscriptionAccount', input)
+    ),
+    clearTranscriptionAccount: () => invokeHost('voice', 'clearTranscriptionAccount'),
+  },
+  workspace: {
+    agents: () => invokeHost('workspace', 'agents'),
+    tree: (input: { agentId?: string; includeHidden?: boolean }) => invokeHost('workspace', 'tree', input),
+    rebuild: (input: { agentId: string }) => invokeHost('workspace', 'rebuild', input),
+    deleteFile: (input: { agentId?: string; path: string }) => invokeHost('workspace', 'deleteFile', input),
+  },
+  promptOptimization: {
+    activeRun: () => invokeHost('promptOptimization', 'activeRun'),
+    registerRun: (input: { sessionKey: string; runId: string }) => (
+      invokeHost('promptOptimization', 'registerRun', input)
+    ),
+    record: (input: { runId: string; before_chars?: number; after_chars?: number; saved_chars?: number }) => (
+      invokeHost('promptOptimization', 'record', input)
+    ),
+    summary: (input: { runId: string }) => invokeHost('promptOptimization', 'summary', input),
+  },
+  workflow: {
+    list: () => invokeHost('workflow', 'list'),
+    start: (input: { defId: string; input?: unknown }) => invokeHost('workflow', 'start', input),
+    resume: (input: { runId: string }) => invokeHost('workflow', 'resume', input),
+    retry: (input: { runId: string }) => invokeHost('workflow', 'retry', input),
+    abort: (input: { runId: string }) => invokeHost('workflow', 'abort', input),
+    status: (input: { runId: string }) => invokeHost('workflow', 'status', input),
+    startDynamic: (input: { task?: string; definition?: Record<string, unknown>; input?: Record<string, unknown>; skills?: Array<{ name: string; description?: string }> }) => (
+      invokeHost('workflow', 'startDynamic', input)
+    ),
+  },
 };
 
 export type HostApi = typeof hostApi;
+
+export async function hostApiFetch<T = unknown>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (init?.headers instanceof Headers) {
+    init.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
+  } else if (Array.isArray(init?.headers)) {
+    for (const [key, value] of init.headers) {
+      headers[key] = value;
+    }
+  } else if (init?.headers) {
+    Object.assign(headers, init.headers as Record<string, string>);
+  }
+
+  const payload: LegacyFetchPayload = {
+    path,
+    method: init?.method,
+    headers,
+    body: typeof init?.body === 'string' ? init.body : undefined,
+  };
+  const response = await invokeHost('legacy', 'fetch', payload) as LegacyFetchResult;
+  if (response.status < 200 || response.status >= 300) {
+    const body = response.body;
+    const message = body && typeof body === 'object' && 'error' in body
+      ? String((body as { error?: unknown }).error)
+      : `Host API request failed: ${response.status}`;
+    throw new Error(message);
+  }
+  if (response.status === 204 || response.body === undefined) {
+    return undefined as T;
+  }
+  return response.body as T;
+}

@@ -123,6 +123,38 @@ describe('attachment access boundary', () => {
     } as never)).resolves.toMatchObject({ ok: true });
   });
 
+  it('moves a freshly generated image into the workspace generated-images dir', async () => {
+    const access = getAccess();
+    const generatedDir = join(configDir, 'media', 'tool-image-generation');
+    await mkdir(generatedDir, { recursive: true });
+    const original = join(generatedDir, 'great_wall---abc123.png');
+    await writeFile(original, 'generated-bytes');
+    const dest = join(workspaceRoot, 'generated-images', 'great_wall---abc123.png');
+
+    const result = await access.resolveAttachment({ ref: ref(original) });
+    expect(result).toMatchObject({ ok: true, target: { kind: 'local', scope: 'workspace' } });
+    await expect(stat(dest)).resolves.toBeDefined();
+    await expect(stat(original)).rejects.toThrow();
+
+    // Re-resolving the original media path after the move still resolves to the
+    // workspace copy (reload path: source gone, destination present).
+    const again = await access.resolveAttachment({ ref: ref(original) });
+    expect(again).toMatchObject({ ok: true, target: { kind: 'local', scope: 'workspace' } });
+    const bytes = await access.readAttachmentBinary({ ref: ref(original) });
+    expect(bytes).toMatchObject({ ok: true });
+  });
+
+  it('does not relocate ordinary media files outside tool-image-generation', async () => {
+    const access = getAccess();
+    const stateImage = join(stateDir, 'media', 'state.png');
+
+    const result = await access.resolveAttachment({ ref: ref(stateImage) });
+    expect(result).toMatchObject({ ok: true, target: { kind: 'local', scope: 'openclaw-media' } });
+    // Untouched: still in the media dir, nothing copied into the workspace.
+    await expect(stat(stateImage)).resolves.toBeDefined();
+    await expect(stat(join(workspaceRoot, 'generated-images'))).rejects.toThrow();
+  });
+
   it('resolves OpenClaw media roots and files outside declared roots', async () => {
     const access = getAccess();
 

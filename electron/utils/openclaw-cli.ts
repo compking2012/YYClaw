@@ -11,11 +11,73 @@ import {
   symlinkSync,
   unlinkSync,
 } from 'node:fs';
-import { spawn, type ForkOptions } from 'node:child_process';
+import { spawn, spawnSync, type ForkOptions } from 'node:child_process';
 import { homedir } from 'node:os';
 import { delimiter, join, dirname } from 'node:path';
 import { getOpenClawDir, getOpenClawEntryPath } from './paths';
 import { logger } from './logger';
+
+/** Keep in sync with node_modules/openclaw/openclaw.mjs engine gate. */
+export const OPENCLAW_SUPPORTED_NODE_RANGE = '>=22.22.3 <23, >=24.15.0 <25, or >=25.9.0';
+
+const MIN_NODE_22 = { major: 22, minor: 22, patch: 3 };
+const MIN_NODE_24 = { major: 24, minor: 15, patch: 0 };
+const MIN_NODE_25 = { major: 25, minor: 9, patch: 0 };
+
+type NodeVersion = { major: number; minor: number; patch: number };
+
+function parseNodeVersion(rawVersion: string): NodeVersion {
+  const [majorRaw = '0', minorRaw = '0', patchRaw = '0'] = rawVersion.trim().replace(/^v/i, '').split('.');
+  return {
+    major: Number(majorRaw) || 0,
+    minor: Number(minorRaw) || 0,
+    patch: Number(patchRaw) || 0,
+  };
+}
+
+function isAtLeastNodeVersion(version: NodeVersion, minimum: NodeVersion): boolean {
+  if (version.major !== minimum.major) return version.major > minimum.major;
+  if (version.minor !== minimum.minor) return version.minor > minimum.minor;
+  return version.patch >= minimum.patch;
+}
+
+/** Same acceptance policy as OpenClaw's openclaw.mjs launcher. */
+export function isSupportedOpenClawNodeVersion(rawVersion: string): boolean {
+  const version = parseNodeVersion(rawVersion);
+  if (version.major === MIN_NODE_22.major) return isAtLeastNodeVersion(version, MIN_NODE_22);
+  if (version.major === MIN_NODE_24.major) return isAtLeastNodeVersion(version, MIN_NODE_24);
+  if (version.major === MIN_NODE_25.major) return isAtLeastNodeVersion(version, MIN_NODE_25);
+  return version.major > MIN_NODE_25.major;
+}
+
+function readNodeVersionFromExecutable(
+  execPath: string,
+  electronRunAsNode: boolean,
+): string | null {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  if (electronRunAsNode) {
+    env.ELECTRON_RUN_AS_NODE = '1';
+  } else {
+    delete env.ELECTRON_RUN_AS_NODE;
+  }
+  try {
+    const result = spawnSync(
+      execPath,
+      ['-e', 'process.stdout.write(process.versions.node)'],
+      {
+        env,
+        encoding: 'utf8',
+        timeout: 5_000,
+        windowsHide: true,
+      },
+    );
+    if (result.status !== 0) return null;
+    const version = String(result.stdout || '').trim();
+    return /^\d+\.\d+\.\d+/.test(version) ? version : null;
+  } catch {
+    return null;
+  }
+}
 
 // ── Quoting helpers ──────────────────────────────────────────────────────────
 
@@ -196,29 +258,82 @@ export function getOpenClawCliSpawnSpec(): OpenClawCliSpawnSpec {
   return { command: 'node', args: [entryPath] };
 }
 
-function getOpenClawEmbeddedExecPath(): { execPath: string; electronRunAsNode: boolean } {
-  if (!app.isPackaged) {
-    const nodeExecPath = getDevNodeExecPath();
-    if (nodeExecPath) return { execPath: nodeExecPath, electronRunAsNode: false };
-    if (process.versions?.electron) {
-      throw new Error('Node executable not found on PATH for embedded OpenClaw launch');
+function resolveElectronEmbeddedExecPath(): { execPath: string; electronRunAsNode: boolean } {
+  // Prefer the macOS Helper binary: it is LSUIElement and does not bounce a
+  // second Dock/Terminal icon the way the main Electron binary does under
+  // ELECTRON_RUN_AS_NODE (see getNodeExecForCli).
+  if (process.platform === 'darwin') {
+    const helperPath = app.isPackaged
+      ? getPackagedMacOSHelperPath()
+      : getDevMacOSElectronHelperPath();
+    if (helperPath) {
+      return { execPath: helperPath, electronRunAsNode: true };
     }
-  }
-
-  if (app.isPackaged && process.platform === 'win32') {
-    const bundledNode = getPackagedWindowsNodePath();
-    if (bundledNode) return { execPath: bundledNode, electronRunAsNode: false };
-  }
-
-  if (app.isPackaged && process.platform === 'darwin') {
-    const helperPath = getPackagedMacOSHelperPath();
-    if (!helperPath) {
+    if (app.isPackaged) {
       throw new Error('ClawX Helper executable not found for embedded OpenClaw launch');
     }
-    return { execPath: helperPath, electronRunAsNode: true };
+  }
+  return {
+    execPath: process.execPath,
+    electronRunAsNode: Boolean(process.versions?.electron),
+  };
+}
+
+/**
+ * Pick a Node/Electron executable that satisfies OpenClaw's engines gate.
+ * Dev prefers a compliant PATH node; otherwise falls back to Electron's
+ * embedded Node (same family Gateway utilityProcess uses).
+ */
+export function getOpenClawEmbeddedExecPath(): { execPath: string; electronRunAsNode: boolean } {
+  if (!app.isPackaged) {
+    const nodeExecPath = getDevNodeExecPath();
+    if (nodeExecPath) {
+      const version = readNodeVersionFromExecutable(nodeExecPath, false);
+      if (version && isSupportedOpenClawNodeVersion(version)) {
+        logger.info(`[openclaw-cli] embedded runtime: PATH node ${nodeExecPath} (v${version})`);
+        return { execPath: nodeExecPath, electronRunAsNode: false };
+      }
+      if (version) {
+        logger.warn(
+          `[openclaw-cli] PATH Node v${version} does not satisfy OpenClaw engines (${OPENCLAW_SUPPORTED_NODE_RANGE}); using Electron runtime`,
+        );
+      } else {
+        logger.warn(
+          '[openclaw-cli] Unable to probe PATH Node version; using Electron runtime when available',
+        );
+      }
+    }
+    if (process.versions?.electron) {
+      const resolved = resolveElectronEmbeddedExecPath();
+      logger.info(
+        `[openclaw-cli] embedded runtime: Electron ${resolved.execPath} (node ${process.versions.node ?? 'unknown'})`,
+      );
+      return resolved;
+    }
+    throw new Error(
+      nodeExecPath
+        ? `No OpenClaw-compatible Node runtime found (${OPENCLAW_SUPPORTED_NODE_RANGE})`
+        : 'Node executable not found on PATH for embedded OpenClaw launch',
+    );
   }
 
-  return { execPath: process.execPath, electronRunAsNode: Boolean(process.versions?.electron) };
+  if (process.platform === 'win32') {
+    const bundledNode = getPackagedWindowsNodePath();
+    if (bundledNode) {
+      const version = readNodeVersionFromExecutable(bundledNode, false);
+      if (version && isSupportedOpenClawNodeVersion(version)) {
+        logger.info(`[openclaw-cli] embedded runtime: bundled node ${bundledNode} (v${version})`);
+        return { execPath: bundledNode, electronRunAsNode: false };
+      }
+      logger.warn(
+        '[openclaw-cli] Bundled node.exe is incompatible with OpenClaw engines; using Electron runtime',
+      );
+    }
+  }
+
+  const resolved = resolveElectronEmbeddedExecPath();
+  logger.info(`[openclaw-cli] embedded runtime: Electron ${resolved.execPath}`);
+  return resolved;
 }
 
 export function getOpenClawEmbeddedForkSpec(args: string[] = []): OpenClawEmbeddedForkSpec {
@@ -284,6 +399,16 @@ function getPackagedMacOSHelperPath(): string | null {
     helperName,
   );
   return existsSync(helperPath) ? helperPath : null;
+}
+
+/** Unpacked Electron.app Helper — same Node as Gateway, no Dock icon in dev. */
+function getDevMacOSElectronHelperPath(): string | null {
+  if (process.platform !== 'darwin' || app.isPackaged) return null;
+  const helperPath = join(
+    dirname(process.execPath),
+    '../Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper',
+  );
+  return fileExists(helperPath) ? helperPath : null;
 }
 
 // ── macOS / Linux install ────────────────────────────────────────────────────
@@ -493,10 +618,20 @@ export async function autoInstallCliIfNeeded(
 
 // ── Completion helpers ───────────────────────────────────────────────────────
 
-function getNodeExecForCli(): string {
+function getNodeExecForCli(): { execPath: string; electronRunAsNode: boolean } {
+  // In dev, prefer a real Node binary from PATH. Spawning the Electron dev
+  // binary (process.execPath) — even with ELECTRON_RUN_AS_NODE=1 — makes macOS
+  // register and bounce a second dock icon on every CLI invocation. The
+  // embedded fork path already avoids this the same way.
+  if (!app.isPackaged) {
+    const devNode = getDevNodeExecPath();
+    if (devNode) return { execPath: devNode, electronRunAsNode: false };
+  }
+  // Packaged macOS: the LSUIElement Helper runs as Node without a dock icon.
   const helperPath = getPackagedMacOSHelperPath();
-  if (helperPath) return helperPath;
-  return process.execPath;
+  if (helperPath) return { execPath: helperPath, electronRunAsNode: true };
+  // Fallback: current binary; run it as Node if it's Electron.
+  return { execPath: process.execPath, electronRunAsNode: Boolean(process.versions?.electron) };
 }
 
 export function generateCompletionCache(): void {
@@ -505,12 +640,12 @@ export function generateCompletionCache(): void {
   const entryPath = getOpenClawEntryPath();
   if (!existsSync(entryPath)) return;
 
-  const execPath = getNodeExecForCli();
+  const { execPath: nodeExec, electronRunAsNode } = getNodeExecForCli();
 
-  const child = spawn(execPath, [entryPath, 'completion', '--write-state'], {
+  const child = spawn(nodeExec, [entryPath, 'completion', '--write-state'], {
     env: {
       ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
+      ...(electronRunAsNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
       OPENCLAW_NO_RESPAWN: '1',
       OPENCLAW_EMBEDDED_IN: 'ClawX',
     },
@@ -539,15 +674,15 @@ export function installCompletionToProfile(): void {
   const entryPath = getOpenClawEntryPath();
   if (!existsSync(entryPath)) return;
 
-  const execPath = getNodeExecForCli();
+  const { execPath: nodeExec, electronRunAsNode } = getNodeExecForCli();
 
   const child = spawn(
-    execPath,
+    nodeExec,
     [entryPath, 'completion', '--install', '-y'],
     {
       env: {
         ...process.env,
-        ELECTRON_RUN_AS_NODE: '1',
+        ...(electronRunAsNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
         OPENCLAW_NO_RESPAWN: '1',
         OPENCLAW_EMBEDDED_IN: 'ClawX',
       },
@@ -569,3 +704,107 @@ export function installCompletionToProfile(): void {
     logger.warn('Failed to install completion to shell profile:', err);
   });
 }
+
+import { execFile } from "child_process";
+import crypto from "crypto";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
+
+export async function execOpenclaw(args: string[]): Promise<{ stdout: string; stderr: string }> {
+  const { execPath, electronRunAsNode } = getNodeExecForCli();
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    FORCE_COLOR: "0",
+  };
+  if (electronRunAsNode) env.ELECTRON_RUN_AS_NODE = "1";
+  else delete env.ELECTRON_RUN_AS_NODE;
+
+  const entryPath = getOpenClawEntryPath();
+
+  return execFileAsync(execPath, [entryPath, ...args], {
+    maxBuffer: 10 * 1024 * 1024,
+    env,
+    windowsHide: true,
+  });
+}
+
+export function parseJsonFromMixedOutput(output: string): any {
+  for (let i = 0; i < output.length; i++) {
+    if (output[i] !== "{") continue;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let j = i; j < output.length; j++) {
+      const ch = output[j];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === "\"") inString = false;
+        continue;
+      }
+      if (ch === "\"") {
+        inString = true;
+        continue;
+      }
+      if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          const candidate = output.slice(i, j + 1).trim();
+          try {
+            return JSON.parse(candidate);
+          } catch {
+            break;
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+export function parseOpenclawJsonOutput(stdout: string, stderr = ""): any {
+  const trimmed = stdout.trim();
+  if (trimmed) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      // Fallback below.
+    }
+  }
+  return parseJsonFromMixedOutput(`${stdout}\n${stderr}`);
+}
+
+export function resolveConfigSnapshotHash(snapshot: { hash?: string; raw?: string | null } | null | undefined): string | null {
+  const hash = snapshot?.hash;
+  if (typeof hash === "string" && hash.trim()) return hash.trim();
+  if (typeof snapshot?.raw !== "string") return null;
+  return crypto.createHash("sha256").update(snapshot.raw).digest("hex");
+}
+
+export async function callOpenclawGateway(method: string, params: Record<string, unknown> = {}, timeoutMs = 10000): Promise<any> {
+  try {
+    const { stdout, stderr } = await execOpenclaw([
+      "gateway",
+      "call",
+      method,
+      "--json",
+      "--timeout",
+      String(timeoutMs),
+      "--params",
+      JSON.stringify(params),
+    ]);
+    const parsed = parseOpenclawJsonOutput(stdout, stderr);
+    if (parsed == null) {
+      throw new Error(`Failed to parse Gateway response for ${method}`);
+    }
+    return parsed;
+  } catch (err: any) {
+    const stderr = typeof err?.stderr === "string" ? err.stderr.trim() : "";
+    const stdout = typeof err?.stdout === "string" ? err.stdout.trim() : "";
+    const message = stderr || stdout || err?.message || `Gateway call failed: ${method}`;
+    throw new Error(message);
+  }
+}
+

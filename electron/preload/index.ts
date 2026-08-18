@@ -13,6 +13,13 @@ const DYNAMIC_CHANNEL_EVENT_RE = /^channel:[a-z0-9_-]+-(?:qr|success|error)$/i;
 
 function isValidEventChannel(channel: string): boolean {
   return validStaticEventChannels.has(channel)
+    || channel === 'gateway:port-conflict'
+    || channel === 'gateway:talk-event'
+    || channel === 'channels:accounts-changed'
+    || channel === 'providers:snapshot-changed'
+    || channel.startsWith('office:')
+    || channel.startsWith('workflow:')
+    || channel.startsWith('skill:')
     || DYNAMIC_CHANNEL_EVENT_RE.test(channel)
     || channel.startsWith('ext:');
 }
@@ -29,6 +36,8 @@ const electronAPI = {
       const validChannels = [
         // Gateway
         'gateway:status',
+        'gateway:getPendingPortConflict',
+        'gateway:resolve-conflict',
         // OpenClaw
         'openclaw:status',
         // Shell
@@ -42,6 +51,7 @@ const electronAPI = {
         'app:version',
         'app:name',
         'app:platform',
+        'app:openclawVersion',
         'app:request',
         // Window controls
         'window:minimize',
@@ -92,6 +102,11 @@ const electronAPI = {
         // OpenClaw extras
         'openclaw:getSkillsDir',
         'openclaw:getCliCommand',
+        // Skill marketplace publish/unlist (dedicated WebSocket upload)
+        'skills:uploadMarketplaceZipWs',
+        'skills:listPublishedMarketplaceSkills',
+        'skills:listMarketplaceReviewRequests',
+        'skills:requestMarketplaceUnlist',
       ];
 
       if (validChannels.includes(channel)) {

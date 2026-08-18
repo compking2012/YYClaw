@@ -24,17 +24,20 @@ test.describe('ClawX gateway lifecycle resilience', () => {
 
     // Navigate through all major pages to verify nothing crashes
     // when the gateway is not running.
-    await page.getByTestId('sidebar-nav-models').click();
-    await expect(page.getByTestId('models-page')).toBeVisible();
+    await page.getByTestId('sidebar-nav-settings').click();
+    await page.getByTestId('settings-tab-models').click();
+    await expect(page.getByTestId('models-tab')).toBeVisible();
 
     await page.getByTestId('sidebar-nav-agents').click();
     await expect(page.getByTestId('agents-page')).toBeVisible();
 
-    await page.getByTestId('sidebar-nav-channels').click();
-    await expect(page.getByTestId('channels-page')).toBeVisible();
+    await page.getByTestId('sidebar-nav-settings').click();
+
+    await page.getByTestId('settings-tab-channels').click();
+    await expect(page.getByTestId('channels-tab')).toBeVisible();
 
     await page.getByTestId('sidebar-nav-settings').click();
-    await expect(page.getByTestId('settings-page')).toBeVisible();
+    await expect(page.getByTestId('settings-tab')).toBeVisible();
 
     // Navigate back to chat — the gateway status indicator should be visible
     await page.getByTestId('sidebar-new-chat').click();
@@ -77,8 +80,9 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     await page.waitForTimeout(500);
 
     // Verify navigation still works after status transitions
-    await page.getByTestId('sidebar-nav-models').click();
-    await expect(page.getByTestId('models-page')).toBeVisible();
+    await page.getByTestId('sidebar-nav-settings').click();
+    await page.getByTestId('settings-tab-models').click();
+    await expect(page.getByTestId('models-tab')).toBeVisible();
 
     // Transition 3: running → error (simulates the bug scenario where
     // gateway becomes unreachable after in-process restart)
@@ -120,7 +124,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
 
     // Final navigation check to confirm app is still healthy after full lifecycle
     await page.getByTestId('sidebar-nav-settings').click();
-    await expect(page.getByTestId('settings-page')).toBeVisible();
+    await expect(page.getByTestId('settings-tab')).toBeVisible();
     await page.getByTestId('sidebar-new-chat').click();
     await expect(page.getByTestId('main-layout')).toBeVisible();
   });
@@ -188,16 +192,20 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     await expect(page.getByTestId('agents-page')).toBeVisible();
     await expect(page.getByText(oldWarningCopy)).toHaveCount(0);
 
-    await page.getByTestId('sidebar-nav-channels').click();
-    await expect(page.getByTestId('channels-page')).toBeVisible();
+    await page.getByTestId('sidebar-nav-settings').click();
+
+    await page.getByTestId('settings-tab-channels').click();
+    await expect(page.getByTestId('channels-tab')).toBeVisible();
     await expect(page.getByText(oldWarningCopy)).toHaveCount(0);
 
     await page.getByTestId('sidebar-nav-cron').click();
     await expect(page.getByTestId('cron-page')).toBeVisible();
     await expect(page.getByText(oldWarningCopy)).toHaveCount(0);
 
-    await page.getByTestId('sidebar-nav-skills').click();
-    await expect(page.getByTestId('skills-page')).toBeVisible();
+    await page.getByTestId('sidebar-nav-settings').click();
+
+    await page.getByTestId('settings-tab-skills').click();
+    await expect(page.getByTestId('skills-tab')).toBeVisible();
     await expect(page.getByTestId('skills-gateway-banner')).toHaveCount(0);
 
     await electronApp.evaluate(({ BrowserWindow }) => {

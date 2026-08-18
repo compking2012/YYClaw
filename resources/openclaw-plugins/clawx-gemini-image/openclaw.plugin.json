@@ -1,0 +1,28 @@
+{
+  "id": "clawx-gemini-image",
+  "name": "ClawX Gemini Image",
+  "description": "Independent Gemini-native (generateContent) image generation provider managed by ClawX.",
+  "version": "0.2.0",
+  "entry": "index.mjs",
+  "enabledByDefault": false,
+  "contracts": {
+    "imageGenerationProviders": [
+      "clawx-gemini-image"
+    ]
+  },
+  "imageGenerationProviderMetadata": {
+    "clawx-gemini-image": {
+      "capabilities": [
+        "image"
+      ],
+      "defaultModels": {
+        "image": "gemini-3.1-flash-image"
+      }
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

@@ -543,7 +543,7 @@ test.describe('ACP media attachments', () => {
       await expect(thumbnail).toBeVisible();
       await expect(thumbnail).toHaveAttribute('alt', 'photo.png');
       const [bubbleBox, thumbnailBox] = await Promise.all([
-        userMessage.locator('.bg-brand').first().boundingBox(),
+        userMessage.locator('div.rounded-2xl').first().boundingBox(),
         thumbnail.locator('..').boundingBox(),
       ]);
       expect(bubbleBox).not.toBeNull();

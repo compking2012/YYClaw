@@ -1,6 +1,20 @@
 {
   "title": "设置",
-  "subtitle": "配置您的 ClawX 体验",
+  "subtitle": "配置您的 $t(common:appName) 体验",
+  "close": "关闭",
+  "tabs": {
+    "general": "通用",
+    "voice": "语音",
+    "gateway": "网关",
+    "developer": "开发者",
+    "updates": "更新",
+    "about": "关于",
+    "models": "模型",
+    "usage": "用量",
+    "channels": "频道",
+    "skills": "技能",
+    "memory": "记忆"
+  },
   "appearance": {
     "title": "通用",
     "description": "自定义外观和风格",
@@ -11,10 +25,16 @@
     "language": "语言",
     "menuLanguageUpdated": "菜单语言已更新",
     "launchAtStartup": "开机自动启动",
-    "launchAtStartupDesc": "登录系统后自动启动 ClawX"
+    "launchAtStartupDesc": "登录系统后自动启动 $t(common:appName)",
+    "officeCollaboration": "协作",
+    "officeCollaborationDesc": "在侧栏显示「协作」入口，并启用多角色团队与项目 API（默认关闭）",
+    "officeCollaborationGatewayWait": "等待网关启动后重试",
+    "officeCollaborationApplying": "正在同步网关配置并重启，请稍候…",
+    "officeCollaborationEnabledOk": "协作已开启，网关已按非流式模式重启",
+    "officeCollaborationDisabledOk": "协作已关闭，网关已恢复流式输出"
   },
   "aiProviders": {
-    "title": "AI 模型提供商",
+    "title": "模型",
     "description": "配置 AI 模型提供商和 API 密钥",
     "overview": {
       "title": "提供商账户",
@@ -38,13 +58,36 @@
     "notRequired": "非必填",
     "empty": {
       "title": "未配置提供商",
-      "desc": "添加 AI 提供商以开始使用 ClawX",
+      "desc": "添加 AI 提供商以开始使用 $t(common:appName)",
       "cta": "添加您的第一个提供商"
+    },
+    "modelKind": {
+      "text": "纯文本",
+      "image": "图像理解",
+      "image_generate": "图像生成",
+      "music_generate": "音乐生成",
+      "video_generate": "视频生成",
+      "tts": "语音合成",
+      "transcription": "语音转写",
+      "realtime": "实时语音"
+    },
+    "kindParams": {
+      "default": "默认",
+      "voice": "音色",
+      "voiceId": "音色 ID",
+      "format": "音频格式",
+      "responseFormat": "音频格式",
+      "speed": "语速",
+      "vol": "音量",
+      "pitch": "音调",
+      "sampleRate": "采样率",
+      "language": "语言"
     },
     "dialog": {
       "title": "添加 AI 提供商",
       "desc": "配置新的 AI 模型提供商",
       "displayName": "显示名称",
+      "addModelType": "添加类型",
       "apiKey": "API 密钥",
       "apiKeyConfigured": "这个 provider 已经保存了 API key。",
       "apiKeyMissing": "这个 provider 还没有保存 API key。",
@@ -62,7 +105,7 @@
       "protocol": "协议",
       "advancedConfig": "高级配置",
       "userAgent": "User-Agent",
-      "userAgentPlaceholder": "ClawX/1.0",
+      "userAgentPlaceholder": "YYClaw/1.0",
       "fallbackModels": "回退模型",
       "fallbackProviders": "跨 Provider 回退",
       "fallbackModelIds": "同 Provider 回退模型 ID",
@@ -74,8 +117,7 @@
       "add": "添加提供商",
       "save": "保存",
       "customDoc": "查看文档",
-      "validate": "验证",
-      "failed": "失败"
+      "validate": "验证"
     },
     "card": {
       "default": "默认",
@@ -106,6 +148,7 @@
       "invalidKey": "无效的 API 密钥",
       "modelRequired": "需要模型 ID",
       "minimaxConflict": "不能同时添加 MiniMax 国际站和国内站的服务商。",
+      "remoteCatalogFailed": "在线服务商列表加载失败，已显示当前可用的目录。",
       "zaiConflict": "不能同时添加 Z.AI 国际站和国内站的服务商。"
     },
     "oauth": {
@@ -138,7 +181,7 @@
     "appLogs": "应用日志",
     "openFolder": "打开文件夹",
     "autoStart": "自动启动网关",
-    "autoStartDesc": "ClawX 启动时自动启动网关",
+    "autoStartDesc": "$t(common:appName) 启动时自动启动网关",
     "proxyTitle": "代理",
     "proxyDesc": "让 Electron 和 Gateway 的网络请求都走本地代理客户端。",
     "proxyServer": "代理服务器",
@@ -157,13 +200,26 @@
     "proxySaved": "代理设置已保存",
     "proxySaveFailed": "保存代理设置失败"
   },
+  "integrations": {
+    "title": "集成",
+    "larkCli": "飞书 CLI",
+    "larkCliDesc": "连接官方飞书 CLI 以启用飞书相关技能。",
+    "larkCliStatus": "状态",
+    "larkCliConnect": "连接飞书 CLI",
+    "larkCliReconnect": "重新连接",
+    "larkCliNotConfigured": "未配置",
+    "larkCliConfigured": "已配置",
+    "larkCliConnecting": "请在浏览器中完成授权...",
+    "larkCliSuccess": "飞书 CLI 连接成功",
+    "larkCliFailed": "飞书 CLI 连接失败"
+  },
   "updates": {
     "title": "更新",
-    "description": "保持 ClawX 最新",
+    "description": "保持 $t(common:appName) 最新",
     "autoCheck": "自动检查更新",
     "autoCheckDesc": "启动时检查更新",
-    "autoDownload": "更新提示",
-    "autoDownloadDesc": "发现新版本时显示通知；仅在您选择更新后才下载",
+    "autoDownload": "自动更新",
+    "autoDownloadDesc": "自动下载并安装更新",
     "status": {
       "checking": "正在检查更新...",
       "downloading": "正在下载更新...",
@@ -184,25 +240,46 @@
       "retry": "重试",
       "check": "检查更新"
     },
+    "toast": {
+      "unknownVersion": "新版本",
+      "availableTitle": "发现新版本",
+      "availableDescription": "版本 {{version}} 已可用。现在下载吗？",
+      "downloadedTitle": "更新已就绪",
+      "downloadedDescription": "版本 {{version}} 已下载完成，可以安装。"
+    },
     "currentVersion": "当前版本",
     "whatsNew": "更新内容：",
     "errorDetails": "错误详情：",
-    "toast": {
-      "availableTitle": "ClawX 有新版本可用",
-      "availableDescription": "v{{version}} 已可下载。准备好后可开始下载。",
-      "downloadedTitle": "ClawX 更新已就绪",
-      "downloadedDescription": "v{{version}} 已下载完成。重启即可安装。",
-      "unknownVersion": "新版本"
-    },
-    "help": "ClawX 会自动检查更新，并在下载或安装前提示您确认。"
+    "help": "开启自动更新后，更新将自动下载并安装。"
   },
   "advanced": {
     "title": "高级",
     "description": "高级选项",
     "devMode": "开发者模式",
-    "devModeDesc": "显示开发者工具和快捷方式",
+    "devModeDesc": "显示高级设置：诊断、网关代理、遥测与 Doctor",
+    "devModeUnlocked": "开发者模式已解锁",
+    "promptOptimization": "Prompt 优化",
+    "promptOptimizationDesc": "对 LLM 请求执行无损 Prompt 压缩，并在每轮对话底部显示节省的字符数。仅当同时开启开发者模式时，才会将调试数据写入 llm_dump。重启 Gateway 后生效。",
+    "autoWorkflow": "自动分解为工作流",
+    "autoWorkflowDesc": "开启后，单个 Agent 回合若像多步骤任务，会被自动拆解为工作流执行。默认关闭——保持关闭则始终按普通对话回复。",
     "telemetry": "匿名使用数据",
-    "telemetryDesc": "允许提供匿名的基础使用数据，用于改进 ClawX"
+    "telemetryDesc": "允许提供匿名的基础使用数据，用于改进 $t(common:appName)",
+    "sessionMaintenanceModeWarn": "仅告警",
+    "sessionMaintenanceModeEnforce": "强制执行（自动删除，默认）",
+    "sessionMaintenance": "会话自动清理策略",
+    "sessionMaintenanceDesc": "配置 openclaw.json 中的 session.maintenance。agents 目录下的会话转录是只追加的，可能达到数 GB；强制执行模式让 Gateway 自动剪除过期/超额的会话。留空则使用 OpenClaw 默认值。",
+    "sessionMaintenanceMode": "模式",
+    "sessionMaintenancePruneAfter": "过期阈值（如 30d、12h）",
+    "sessionMaintenanceMaxEntries": "最大条目数",
+    "sessionMaintenanceMaxDiskBytes": "磁盘预算上限（如 500mb）",
+    "sessionMaintenanceHint": "模式默认为强制执行，Gateway 会按自身计划自动剪除；设为仅告警可关闭自动删除。留空的字段回退到 OpenClaw 默认值。",
+    "sessionMaintenanceSaved": "自动清理策略已保存",
+    "sessionMaintenanceSaveFailed": "保存自动清理策略失败",
+    "farmApiBearerToken": "Farm API 令牌（Bearer）",
+    "farmApiBearerTokenDesc": "管理端登录后的访问令牌（与网页控制台相同），用于通过 WebSocket 将技能 ZIP 上架到服务端 `/api/v1/admin/workspace-skills/upload-ws`。",
+    "farmApiBearerTokenPlaceholder": "粘贴 access token（可选）",
+    "farmApiBearerTokenSave": "保存令牌",
+    "farmApiBearerTokenSaved": "已保存"
   },
   "developer": {
     "title": "开发者",
@@ -211,6 +288,13 @@
     "consoleDesc": "访问原生 OpenClaw 管理界面",
     "openConsole": "打开开发者控制台",
     "consoleNote": "使用注入的网关令牌打开控制台",
+    "controlUiDesc": "OpenClaw 网页控制台。开启后会在 openclaw.json 中将 gateway.controlUi.enabled 设为 true。",
+    "controlUiOpen": "打开",
+    "controlUiRestartHint": "更改后需重启 Gateway 才能生效。",
+    "controlUiEnabled": "已开启 OpenClaw 控制台",
+    "controlUiDisabled": "已关闭 OpenClaw 控制台",
+    "controlUiSaveFailed": "保存 OpenClaw 控制台开关失败",
+    "controlUiOpenFailed": "打开 OpenClaw 控制台失败",
     "gatewayToken": "网关令牌",
     "gatewayTokenDesc": "如果需要，将此粘贴到控制台设置中",
     "tokenUnavailable": "令牌不可用",
@@ -260,12 +344,21 @@
   },
   "about": {
     "title": "关于",
-    "appName": "ClawX",
+    "appName": "$t(common:appName)",
     "tagline": "图形化 AI 助手",
-    "basedOn": "基于 OpenClaw",
+    "basedOn": "基于 OpenClaw {{version}}",
     "version": "版本 {{version}}",
     "docs": "官网",
     "github": "GitHub",
     "faq": "常见问题"
+  },
+  "voice": {
+    "title": "语音",
+    "autoRead": "自动朗读回复",
+    "autoReadDesc": "助手回复完成后自动朗读。",
+    "inputMode": "语音输入模式",
+    "inputModeDesc": "转写会把语音转换为文字填入输入框。",
+    "modeDictation": "转写",
+    "modeConversation": "连续对话"
   }
 }

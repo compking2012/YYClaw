@@ -41,6 +41,54 @@ describe('workspace context helpers', () => {
     })).toEqual({ cwd: '/repo/global', source: 'global', readOnly: false });
   });
 
+  it('prefers the agent workspace over the global workspace for local sessions', () => {
+    expect(resolveEffectiveWorkspace({
+      session: { createdLocally: true },
+      agentWorkspace: '~/.openclaw/workspace-code2',
+      globalWorkspace: '/repo/global',
+    })).toEqual({ cwd: '~/.openclaw/workspace-code2', source: 'agent', readOnly: false });
+  });
+
+  it('lets an explicit pick beat the agent workspace for a local session', () => {
+    expect(resolveEffectiveWorkspace({
+      session: { createdLocally: true },
+      agentWorkspace: '~/.openclaw/workspace-code2',
+      globalWorkspace: '/repo/global',
+      explicitWorkspace: '/repo/picked',
+    })).toEqual({ cwd: '/repo/picked', source: 'explicit', readOnly: false });
+  });
+
+  it('respects an explicit pick when there is no agent workspace', () => {
+    expect(resolveEffectiveWorkspace({
+      session: { createdLocally: true },
+      globalWorkspace: '/repo/global',
+      explicitWorkspace: '/repo/picked',
+    })).toEqual({ cwd: '/repo/picked', source: 'explicit', readOnly: false });
+  });
+
+  it('ignores an explicit pick once the session is bound', () => {
+    expect(resolveEffectiveWorkspace({
+      session: { workspacePath: '/repo/bound' },
+      explicitWorkspace: '/repo/picked',
+    })).toEqual({ cwd: '/repo/bound', source: 'session', readOnly: true });
+  });
+
+  it('still prefers the session cwd over the agent workspace', () => {
+    expect(resolveEffectiveWorkspace({
+      session: { workspacePath: '/repo/from-openclaw' },
+      agentWorkspace: '~/.openclaw/workspace-code2',
+      globalWorkspace: '/repo/global',
+    })).toEqual({ cwd: '/repo/from-openclaw', source: 'session', readOnly: true });
+  });
+
+  it('falls back to the agent workspace for existing remote sessions without a cwd', () => {
+    expect(resolveEffectiveWorkspace({
+      session: { key: 'agent:code2:session-old' },
+      agentWorkspace: '~/.openclaw/workspace-code2',
+      globalWorkspace: '/repo/global',
+    })).toEqual({ cwd: '~/.openclaw/workspace-code2', source: 'agent', readOnly: true });
+  });
+
   it('falls back to default for sessions without recoverable cwd', () => {
     expect(resolveEffectiveWorkspace({
       session: { key: 'agent:main:session-old' },

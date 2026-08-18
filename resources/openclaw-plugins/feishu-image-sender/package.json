@@ -1,0 +1,16 @@
+{
+  "name": "feishu-image-sender-plugin",
+  "version": "0.1.2",
+  "description": "Send a local image file to the current Feishu chat by uploading it to an image_key and sending an image message.",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "openclaw": {
+    "extensions": [
+      "./index.mjs"
+    ]
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  }
+}

@@ -2,7 +2,7 @@
  * Skill Config Utilities
  * Skill configuration reads and coordinated mutations for openclaw.json.
  */
-import { readFile, writeFile, mkdir, readdir, rm } from 'fs/promises';
+import { readFile, writeFile, mkdir, cp, readdir, rm } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -29,10 +29,22 @@ interface OpenClawConfig {
     [key: string]: unknown;
 }
 
+type PreinstalledSkillSource = 'git' | 'npx';
+
 interface PreinstalledSkillSpec {
     slug: string;
+    source?: PreinstalledSkillSource;
     version?: string;
     autoEnable?: boolean;
+    /** Platforms this skill should be deployed on; omitted = all platforms. */
+    platform?: NodeJS.Platform[];
+    // git source
+    repo?: string;
+    repoPath?: string;
+    ref?: string;
+    // npx source (standalone `skills` CLI)
+    url?: string;
+    skill?: string;
 }
 
 interface PreinstalledManifest {
@@ -53,6 +65,10 @@ interface PreinstalledMarker {
     slug: string;
     version: string;
     installedAt: string;
+    /** Origin of the preinstalled skill (git repo vs npx `skills` CLI). */
+    origin?: PreinstalledSkillSource;
+    /** For npx-sourced skills, the `skills add` argument used at build time. */
+    url?: string;
 }
 
 /**
@@ -68,23 +84,11 @@ async function readConfig(): Promise<OpenClawConfig> {
 }
 
 async function setSkillsEnabled(skillKeys: string[], enabled: boolean): Promise<void> {
-    if (skillKeys.length === 0) {
-        return;
-    }
-    await mutateOpenClawConfig((config) => {
-        const skillConfig = config as OpenClawConfig;
-        if (!skillConfig.skills) {
-            skillConfig.skills = {};
-        }
-        if (!skillConfig.skills.entries) {
-            skillConfig.skills.entries = {};
-        }
-        for (const skillKey of skillKeys) {
-            const entry = skillConfig.skills.entries[skillKey] || {};
-            entry.enabled = enabled;
-            skillConfig.skills.entries[skillKey] = entry;
-        }
-    });
+  if (skillKeys.length === 0) {
+    return;
+  }
+  const { applyBulkSkillEnabledState } = await import('./agent-config');
+  await applyBulkSkillEnabledState(skillKeys, enabled);
 }
 
 /**
@@ -128,10 +132,7 @@ async function applySkillConfigUpdates(
 
         const entry = config.skills.entries[skillKey] || {};
 
-        if (update.enabled !== undefined) {
-            entry.enabled = update.enabled;
-        }
-
+        // skills.entries[].enabled is derived from agents.list[].skills; ignore direct writes.
         if (update.apiKey !== undefined) {
             const trimmed = update.apiKey.trim();
             if (trimmed) {
@@ -336,6 +337,14 @@ export async function ensureBuiltinSkillsInstalled(): Promise<void> {
 const PREINSTALLED_MANIFEST_NAME = 'preinstalled-manifest.json';
 const PREINSTALLED_MARKER_NAME = '.clawx-preinstalled.json';
 
+/** Whether a preinstalled spec applies to the current OS (empty/omitted = all). */
+function matchesCurrentPlatform(platform?: NodeJS.Platform[]): boolean {
+    if (!Array.isArray(platform) || platform.length === 0) {
+        return true;
+    }
+    return platform.includes(process.platform);
+}
+
 async function readPreinstalledManifest(): Promise<PreinstalledSkillSpec[]> {
     const candidates = [
         join(getResourcesDir(), 'skills', PREINSTALLED_MANIFEST_NAME),
@@ -353,7 +362,9 @@ async function readPreinstalledManifest(): Promise<PreinstalledSkillSpec[]> {
         if (!Array.isArray(parsed.skills)) {
             return [];
         }
-        return parsed.skills.filter((s): s is PreinstalledSkillSpec => Boolean(s?.slug));
+        return parsed.skills
+            .filter((s): s is PreinstalledSkillSpec => Boolean(s?.slug))
+            .filter((s) => matchesCurrentPlatform(s.platform));
     } catch (error) {
         logger.warn('Failed to read preinstalled-skills manifest:', error);
         return [];
@@ -410,13 +421,51 @@ async function tryReadMarker(markerPath: string): Promise<PreinstalledMarker | n
     }
 }
 
+async function writeBundledSkillMarker(
+    targetDir: string,
+    slug: string,
+    version = 'bundled',
+    extra?: { origin?: PreinstalledSkillSource; url?: string },
+): Promise<void> {
+    const markerPayload: PreinstalledMarker = {
+        source: 'clawx-preinstalled',
+        slug,
+        version,
+        installedAt: new Date().toISOString(),
+        ...(extra?.origin ? { origin: extra.origin } : {}),
+        ...(extra?.url ? { url: extra.url } : {}),
+    };
+    await writeFile(
+        join(targetDir, PREINSTALLED_MARKER_NAME),
+        `${JSON.stringify(markerPayload, null, 2)}\n`,
+        'utf-8',
+    );
+}
+
+/** Tag shipped skills as built-in unless the user installed them from the server marketplace. */
+async function ensureBundledSkillMarker(
+    targetDir: string,
+    slug: string,
+    version = 'bundled',
+    extra?: { origin?: PreinstalledSkillSource; url?: string },
+): Promise<void> {
+    const markerPath = join(targetDir, PREINSTALLED_MARKER_NAME);
+    if (existsSync(markerPath)) {
+        return;
+    }
+    if (existsSync(join(targetDir, '.clawx-server-marketplace.json'))) {
+        return;
+    }
+    await writeBundledSkillMarker(targetDir, slug, version, extra);
+}
+
 /**
  * Ensure third-party preinstalled skills (bundled in app resources) are
  * deployed to ~/.openclaw/skills/<slug>/ as full directories.
  *
  * Policy:
  * - If skill is missing locally, install it.
- * - If local skill exists without our marker, treat as user-managed and never overwrite.
+ * - If local skill exists without our marker, backfill the marker when it is not a server marketplace install.
  * - If marker exists with same version, skip.
  * - If marker exists with a different version, skip by default to avoid overwriting edits.
  */
@@ -455,7 +504,11 @@ export async function ensurePreinstalledSkillsInstalled(): Promise<void> {
 
         if (existsSync(targetManifest)) {
             if (!marker) {
-                logger.info(`Skipping user-managed skill: ${spec.slug}`);
+                await ensureBundledSkillMarker(targetDir, spec.slug, desiredVersion, {
+                    origin: spec.source,
+                    url: spec.url,
+                });
+                logger.info(`Backfilled bundled marker for preinstalled skill: ${spec.slug}`);
                 continue;
             }
             if (marker.version === desiredVersion) {
@@ -468,13 +521,10 @@ export async function ensurePreinstalledSkillsInstalled(): Promise<void> {
         try {
             await mkdir(targetDir, { recursive: true });
             await cpAsyncSafe(sourceDir, targetDir);
-            const markerPayload: PreinstalledMarker = {
-                source: 'clawx-preinstalled',
-                slug: spec.slug,
-                version: desiredVersion,
-                installedAt: new Date().toISOString(),
-            };
-            await writeFile(markerPath, `${JSON.stringify(markerPayload, null, 2)}\n`, 'utf-8');
+            await writeBundledSkillMarker(targetDir, spec.slug, desiredVersion, {
+                origin: spec.source,
+                url: spec.url,
+            });
             if (spec.autoEnable) {
                 toEnable.push(spec.slug);
             }
@@ -490,5 +540,183 @@ export async function ensurePreinstalledSkillsInstalled(): Promise<void> {
         } catch (error) {
             logger.warn('Failed to auto-enable preinstalled skills:', error);
         }
+    }
+}
+
+function normalizeBootstrapSkillKey(value?: string): string {
+    return (value || '').trim().toLowerCase();
+}
+
+function isSkillKeyInAllowlist(
+    skillKey: string,
+    allowlistedKeys: Iterable<string>,
+    aliasToId: Map<string, string>,
+): boolean {
+    const canonical = aliasToId.get(normalizeBootstrapSkillKey(skillKey))
+        || normalizeBootstrapSkillKey(skillKey);
+    for (const key of allowlistedKeys) {
+        const candidate = aliasToId.get(normalizeBootstrapSkillKey(key))
+            || normalizeBootstrapSkillKey(key);
+        if (candidate === canonical) {
+            return true;
+        }
+    }
+    return false;
+}
+
+type AgentsAllowlistConfig = {
+    defaults?: { skills?: unknown };
+    list?: Array<Record<string, unknown> & { skills?: unknown }>;
+};
+
+function collectConfiguredSkillAllowlistKeys(config: OpenClawConfig): string[] {
+    const keys: string[] = [];
+    const agents = (config.agents && typeof config.agents === 'object'
+        ? config.agents
+        : {}) as AgentsAllowlistConfig;
+    const defaults = agents.defaults;
+    if (defaults && typeof defaults === 'object' && Array.isArray(defaults.skills)) {
+        keys.push(...defaults.skills.filter((skill): skill is string => typeof skill === 'string'));
+    }
+    const list = agents.list;
+    if (Array.isArray(list)) {
+        for (const agent of list) {
+            if (!agent || typeof agent !== 'object' || !Array.isArray(agent.skills)) {
+                continue;
+            }
+            keys.push(...agent.skills.filter((skill): skill is string => typeof skill === 'string'));
+        }
+    }
+    return keys;
+}
+
+/** Preinstall bootstrap disable must not strip user-configured global/per-agent allowlists. */
+export function filterPreinstallSlugsForBootstrapDisable(
+    slugs: string[],
+    allowlistedKeys: string[],
+    aliasToId: Map<string, string>,
+): string[] {
+    return slugs
+        .filter((slug) => !slug.startsWith('lark-'))
+        .filter((slug) => !isSkillKeyInAllowlist(slug, allowlistedKeys, aliasToId));
+}
+
+/** Whether the user (or migration) has already established the allowlist-based skills model. */
+export function hasEstablishedSkillsAllowlist(config: OpenClawConfig): boolean {
+    const agents = (config.agents && typeof config.agents === 'object'
+        ? config.agents
+        : {}) as AgentsAllowlistConfig;
+    const defaults = agents.defaults;
+    if (defaults && typeof defaults === 'object' && Array.isArray(defaults.skills)) {
+        return true;
+    }
+    const list = agents.list;
+    if (!Array.isArray(list)) {
+        return false;
+    }
+    return list.some(
+        (agent) => agent && typeof agent === 'object'
+            && Object.prototype.hasOwnProperty.call(agent, 'skills'),
+    );
+}
+
+/** Seed bundled lark skills into global defaults on first bootstrap only. */
+export async function ensureLarkSkillsInGlobalDefaults(larkSlugs: string[]): Promise<void> {
+    const normalized = [...new Set(
+        larkSlugs.map((slug) => slug.trim().toLowerCase()).filter(Boolean),
+    )];
+    if (normalized.length === 0) {
+        return;
+    }
+
+    const config = await readConfig();
+    if (hasEstablishedSkillsAllowlist(config)) {
+        return;
+    }
+
+    const { setDefaultAgentSkills } = await import('./global-agent-skills');
+    await setDefaultAgentSkills(normalized);
+}
+
+/**
+ * Disable all pre-installed built-in skills in openclaw.json except lark-* skills,
+ * and ensure lark-* skills are enabled. Used at app startup.
+ */
+export async function disableAllBuiltinSkillsExceptLark(): Promise<void> {
+    const [skills, config] = await Promise.all([
+        readPreinstalledManifest(),
+        readConfig(),
+    ]);
+    const { listLocalSkills } = await import('../services/skills/local-skill-service');
+    const { buildSkillAliasToCanonicalIdMap } = await import('./skill-entries-sync');
+    const { extractAgentWorkspacesFromEntries } = await import('./agent-workspaces');
+    const agents = (config.agents && typeof config.agents === 'object'
+        ? config.agents
+        : {}) as AgentsAllowlistConfig;
+    const agentEntries = Array.isArray(agents.list) ? agents.list : [];
+    const localSkills = await listLocalSkills({
+        agentWorkspaces: extractAgentWorkspacesFromEntries(agentEntries),
+    });
+    const aliasToId = buildSkillAliasToCanonicalIdMap(localSkills);
+    const slugsToDisable = filterPreinstallSlugsForBootstrapDisable(
+        skills.map((spec) => spec.slug).filter(Boolean),
+        collectConfiguredSkillAllowlistKeys(config),
+        aliasToId,
+    );
+    if (slugsToDisable.length > 0) {
+        await setSkillsEnabled(slugsToDisable, false);
+    }
+    
+    // Enable all bundled lark skills
+    const bundledDir = join(getResourcesDir(), 'skills-bundled');
+    if (existsSync(bundledDir)) {
+        const { readdir } = await import('fs/promises');
+        try {
+            const entries = await readdir(bundledDir, { withFileTypes: true });
+            const larkSlugs = entries
+                .filter(e => e.isDirectory() && e.name.startsWith('lark-'))
+                .map(e => e.name);
+            if (larkSlugs.length > 0) {
+                await ensureLarkSkillsInGlobalDefaults(larkSlugs);
+            }
+        } catch (e) {
+            logger.warn('Failed to read bundled skills directory:', e);
+        }
+    }
+}
+
+/**
+ * Deploy the bundled lark skills from resources/skills-bundled/
+ * to ~/.openclaw/skills/. Idempotent; overwrites with bundled content when present.
+ */
+export async function ensureBundledLarkCliInstalled(): Promise<void> {
+    const bundledDir = join(getResourcesDir(), 'skills-bundled');
+    if (!existsSync(bundledDir)) {
+        logger.info('Bundled skills directory not found, skipping install:', bundledDir);
+        return;
+    }
+    
+    const targetRoot = join(homedir(), '.openclaw', 'skills');
+    await mkdir(targetRoot, { recursive: true });
+    
+    const { readdir } = await import('fs/promises');
+    try {
+        const entries = await readdir(bundledDir, { withFileTypes: true });
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                const sourceDir = join(bundledDir, entry.name);
+                const sourceManifest = join(sourceDir, 'SKILL.md');
+                if (!existsSync(sourceManifest)) {
+                    continue;
+                }
+                
+                const targetDir = join(targetRoot, entry.name);
+                await cp(sourceDir, targetDir, { recursive: true, force: true });
+                await ensureBundledSkillMarker(targetDir, entry.name);
+                logger.info(`Installed bundled skill: ${entry.name} ->`, targetDir);
+            }
+        }
+    } catch (error) {
+        logger.warn('Failed to install bundled skills:', error);
     }
 }

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * npm/pnpm `version` lifecycle hook: runs after package.json is bumped, before
- * `git tag`. Aborts if the target tag already exists locally or on origin so we
- * never fail late on `fatal: tag 'vX.Y.Z' already exists` or a rejected push.
+ * `git tag`. Aborts if the target tag already exists so we never fail late on
+ * `fatal: tag 'vX.Y.Z' already exists`.
  */
 import { readFileSync } from 'node:fs';
-import { execFileSync, execSync } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,7 +18,6 @@ function readPackageVersion() {
 
 const version = process.env.npm_package_version || readPackageVersion();
 const tag = `v${version}`;
-const skipRemote = process.env.SKIP_RELEASE_REMOTE_CHECK === '1';
 
 function localTagExists(t) {
   try {
@@ -26,17 +25,6 @@ function localTagExists(t) {
     return true;
   } catch {
     return false;
-  }
-}
-
-function remoteTagExists(t) {
-  try {
-    const out = execFileSync('git', ['ls-remote', '--tags', 'origin', `refs/tags/${t}`], {
-      encoding: 'utf8',
-    }).trim();
-    return out.length > 0;
-  } catch {
-    return null;
   }
 }
 
@@ -54,32 +42,4 @@ Typical fixes:
   process.exit(1);
 }
 
-if (!skipRemote) {
-  const onRemote = remoteTagExists(tag);
-  if (onRemote === null) {
-    console.error(`
-Release version check failed: could not query origin for refs/tags/${tag}.
-
-Ensure \`origin\` exists and you can reach the network, run
-\`pnpm run preversion\` / \`git fetch origin --tags\`, then retry.
-
-To skip this check (offline only): SKIP_RELEASE_REMOTE_CHECK=1
-`);
-    process.exit(1);
-  }
-  if (onRemote) {
-    console.error(`
-Release version check failed: tag ${tag} already exists on origin.
-
-Bump to a version that is not on the remote yet (see \`git ls-remote --tags origin\`).
-`);
-    process.exit(1);
-  }
-}
-
-if (skipRemote) {
-  console.log('Release version OK (remote check skipped): tag is not present locally.');
-  process.exit(0);
-}
-
-console.log(`Release version OK: tag ${tag} is not present locally and not on origin.`);
+console.log(`Release version OK: tag ${tag} is not present locally yet.`);

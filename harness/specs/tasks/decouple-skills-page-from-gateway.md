@@ -12,6 +12,7 @@ touchedAreas:
   - electron/main/index.ts
   - electron/services/skills/**
   - electron/utils/skill-config.ts
+  - electron/utils/agent-config.ts
   - electron/extensions/builtin/index.ts
   - electron/extensions/builtin/clawhub-marketplace.ts
   - electron/extensions/types.ts
@@ -36,11 +37,14 @@ touchedAreas:
   - tests/unit/clawhub-service.test.ts
   - tests/unit/local-skill-service.test.ts
   - tests/unit/skill-config-bundled-defaults.test.ts
+  - tests/unit/skill-allowlist-mutations.test.ts
+  - tests/unit/server-marketplace-identity.test.ts
   - tests/unit/skills-errors.test.ts
   - tests/unit/skills-page-gateway-readiness.test.tsx
   - tests/unit/skills-store-fetch-parallel.test.ts
 expectedUserBehavior:
-  - Skills renders local managed/workspace/.agents skills even when Gateway is stopped.
+  - Skills renders local managed, bundled, extension, and plugin skills even when Gateway is stopped.
+  - Workspace, `.agents`, and `skills.load.extraDirs` do not participate in user-visible skill discovery.
   - Skills refreshes local data immediately and merges Gateway runtime status later when available.
   - Enabling and disabling skills updates openclaw.json without requiring Gateway RPC.
   - Managed skill config writes go through Host API instead of direct Gateway RPC.
@@ -60,6 +64,8 @@ requiredTests:
   - tests/unit/clawhub-service.test.ts
   - tests/unit/local-skill-service.test.ts
   - tests/unit/skill-config-bundled-defaults.test.ts
+  - tests/unit/skill-allowlist-mutations.test.ts
+  - tests/unit/server-marketplace-identity.test.ts
   - tests/unit/skills-errors.test.ts
   - tests/unit/skills-page-gateway-readiness.test.tsx
   - tests/unit/skills-store-fetch-parallel.test.ts
@@ -70,6 +76,8 @@ acceptance:
   - Gateway skills.status becomes a best-effort runtime merge, not a hard dependency for initial rendering.
   - Enabling/disabling skills writes skills.entries.<skillKey>.enabled in openclaw.json via Host API.
   - Gateway-offline local scan includes the allowlisted bundled OpenClaw skill `skill-creator`.
+  - Server-marketplace ZIP identity is resolved before same-name confirmation; catalog aliases cannot bypass a matching `SKILL.md` name.
+  - A confirmed managed replacement applies stale alias migration for agent allowlists, defaults, and `skills.entries` in one config write.
   - Non-allowlisted bundled OpenClaw skills are physically trimmed from the active OpenClaw runtime (dev + packaged), and stale openclaw.json entries for those removed bundled skills are pruned.
   - Packaged OpenClaw bundles physically keep only the allowlisted bundled skill `skill-creator`.
   - Uninstalling a managed skill removes skills.entries.<skillKey> instead of preserving stale config.

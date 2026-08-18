@@ -19,7 +19,7 @@
         "addProvider": "プロバイダー追加",
         "addChannel": "チャンネル追加",
         "createCron": "定期タスク作成",
-        "installSkill": "スキルをインストール",
+        "installSkill": "スキルをインストール/アンインストール",
         "openChat": "チャットを開く",
         "settings": "設定",
         "devConsole": "開発者コンソール"
@@ -34,6 +34,7 @@
     "recentTokenHistory": {
         "title": "最近のトークン使用量",
         "description": "モデル/プロバイダー使用情報を含む、最近のアシスタント応答とツール結果を表示します。",
+        "configuredOnlyHint": "現在プロバイダーに設定されているモデルのみ集計します。モデルを削除すると過去の使用量は非表示になり、再追加すると再集計されます。",
         "loading": "トークン使用履歴を読み込み中...",
         "empty": "トークン使用履歴はまだありません",
         "groupByModel": "モデル別",
@@ -46,6 +47,9 @@
         "inputShort": "入力",
         "outputShort": "出力",
         "cacheShort": "キャッシュ",
+        "cacheReadShort": "キャッシュ読取",
+        "cacheWriteShort": "キャッシュ書込",
+        "hitRate": "ヒット {{value}}%",
         "page": "{{current}} / {{total}} ページ",
         "prev": "前へ",
         "next": "次へ",
@@ -83,7 +87,7 @@
         "clearConfirmTitle": "画像生成設定をクリアしますか？",
         "clearConfirmMessage": "カスタム画像エンドポイント、モデル設定、保存済み API キーを削除します。チャットプロバイダーには影響しません。",
         "clearConfirmAction": "クリア",
-        "testPrompt": "白背景に小さな赤い円、ミニマルなフラットイラスト。",
+        "testPrompt": "水彩画: 午後の暖かな光の中、窓辺で眠るオレンジのトラ猫。",
         "toast": {
             "saved": "画像生成設定を保存しました",
             "cleared": "画像生成設定をクリアしました",
@@ -110,5 +114,33 @@
             "relayModelRequired": "モデル名が必要です",
             "relayModelInvalid": "gpt-image-2 のようなモデル名のみを入力してください。provider/model は入力しないでください。"
         }
+    },
+    "voiceModels": {
+        "title": "音声モデル",
+        "subtitle": "音声認識・音声合成・リアルタイム音声のプロバイダーを設定します。",
+        "loading": "音声プロバイダーを読み込み中…",
+        "unavailable": "音声プロバイダーを利用できません。Gateway を起動して再試行してください。",
+        "noProviders": "この機能に利用できるプロバイダーがありません。",
+        "provider": "プロバイダー",
+        "providerPlaceholder": "プロバイダーを選択",
+        "model": "モデル",
+        "modelPlaceholder": "既定",
+        "voice": "ボイス",
+        "voicePlaceholder": "ボイス ID または名前",
+        "apiKey": "API キー",
+        "apiKeyPlaceholder": "空欄の場合は既存のキーを再利用",
+        "apiKeyHint": "OpenClaw の設定に保存されます。空欄の場合は設定済みプロバイダーのキーを再利用します。",
+        "save": "保存",
+        "saved": "保存しました",
+        "saveFailed": "保存に失敗しました：{{error}}",
+        "selectProviderFirst": "先にプロバイダーを選択してください",
+        "ttsTitle": "音声合成（TTS）",
+        "ttsDescription": "返信を読み上げるボイス。",
+        "sttTitle": "音声認識（ASR）",
+        "sttDescription": "音声入力用の文字起こしモデル。",
+        "realtimeTitle": "リアルタイム会話",
+        "realtimeDescription": "連続音声会話のプロバイダー。",
+        "baseUrl": "ベース URL",
+        "baseUrlPlaceholder": "https://api.openai.com/v1"
     }
 }

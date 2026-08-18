@@ -77,18 +77,27 @@ try {
   }
   echo`  ✅ Created ${generatedCount} Linux PNG icons`;
 
-  // 5. Generate macOS Tray Icon Template
-  echo`📍 Generating macOS tray icon template...`;
-  const TRAY_SVG_SOURCE = path.join(ICONS_DIR, 'tray-icon-template.svg');
-  
-  if (fs.existsSync(TRAY_SVG_SOURCE)) {
-    await sharp(TRAY_SVG_SOURCE)
-      .resize(22, 22)
+  // 5. Generate macOS Tray Icon Template (monochrome silhouette from icon.svg)
+  // macOS status bar icons are template images: only the alpha channel matters,
+  // macOS tints them (black in light menu bar, white in dark). We build a pure-black
+  // silhouette preserving icon.svg's alpha so it stays a clean monochrome template.
+  echo`📍 Generating macOS tray icon template from icon.svg...`;
+  for (const { size, name } of [
+    { size: 22, name: 'tray-icon-Template.png' },
+    { size: 44, name: 'tray-icon-Template@2x.png' },
+  ]) {
+    const alpha = await sharp(SVG_SOURCE)
+      .resize(size, size)
+      .ensureAlpha()
+      .extractChannel('alpha')
+      .toBuffer();
+    await sharp({
+      create: { width: size, height: size, channels: 3, background: { r: 0, g: 0, b: 0 } },
+    })
+      .joinChannel(alpha)
       .png()
-      .toFile(path.join(ICONS_DIR, 'tray-icon-Template.png'));
-    echo`  ✅ Created tray-icon-Template.png (22x22)`;
-  } else {
-    echo`  ⚠️  tray-icon-template.svg not found, skipping tray icon generation`;
+      .toFile(path.join(ICONS_DIR, name));
+    echo`  ✅ Created ${name} (${size}x${size})`;
   }
 
   echo`\n✨ Icon generation complete! Files located in: ${ICONS_DIR}`;

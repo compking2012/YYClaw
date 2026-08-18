@@ -6,12 +6,16 @@ import { create } from 'zustand';
 import type {
   ProviderAccount,
   ProviderConfig,
+  ProviderTypeInfo,
   ProviderVendorInfo,
   ProviderWithKeyInfo,
 } from '@/lib/providers';
-import { normalizeProviderApiKeyInput } from '@/lib/providers';
+import { fetchRemoteProviders, normalizeProviderApiKeyInput } from '@/lib/providers';
 import { hostApi } from '@/lib/host-api';
 import { fetchProviderSnapshot } from '@/lib/provider-accounts';
+import { useSettingsStore } from '@/stores/settings';
+import { toast } from '@/lib/toast';
+import i18n from '@/i18n';
 
 // Re-export types for consumers that imported from here
 export type {
@@ -21,6 +25,16 @@ export type {
   ProviderWithKeyInfo,
 } from '@/lib/providers';
 export type { ProviderSnapshot } from '@/lib/provider-accounts';
+
+function providerTypeInfoToVendor(info: ProviderTypeInfo): ProviderVendorInfo {
+  return {
+    ...info,
+    category: info.category ?? (info.id === 'custom' ? 'custom' : 'compatible'),
+    supportedAuthModes: info.supportedAuthModes ?? (info.requiresApiKey === false ? ['local'] : ['api_key']),
+    defaultAuthMode: info.defaultAuthMode ?? (info.requiresApiKey === false ? 'local' : 'api_key'),
+    supportsMultipleAccounts: info.supportsMultipleAccounts ?? info.id !== 'ollama',
+  };
+}
 
 interface ProviderState {
   statuses: ProviderWithKeyInfo[];
@@ -32,7 +46,7 @@ interface ProviderState {
 
   // Actions
   init: () => Promise<void>;
-  refreshProviderSnapshot: () => Promise<void>;
+  refreshProviderSnapshot: (options?: { notifyOnRemoteFailure?: boolean }) => Promise<{ remoteCatalogOk: boolean }>;
   createAccount: (account: ProviderAccount, apiKey?: string) => Promise<void>;
   removeAccount: (accountId: string) => Promise<void>;
   validateAccountApiKey: (
@@ -79,25 +93,56 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     await get().refreshProviderSnapshot();
   },
 
-  refreshProviderSnapshot: async () => {
+  refreshProviderSnapshot: async (options?: { notifyOnRemoteFailure?: boolean }) => {
     set({ loading: true, error: null });
-    
+
+    const allowLocalFallback = useSettingsStore.getState().devModeUnlocked;
+    // Whether the provider catalog could be loaded. In dev mode the local
+    // fallback counts as OK; in non-dev mode an online failure makes this false
+    // so callers (e.g. "Add provider") can avoid opening the dialog.
+    let remoteCatalogOk = true;
+
     try {
       const snapshot = await fetchProviderSnapshot();
-      
-      set({ 
+      let vendors = snapshot.vendors ?? [];
+      try {
+        const remote = await fetchRemoteProviders({ allowLocalFallback });
+        if (remote.source === 'remote') {
+          vendors = remote.providers
+            .filter((provider) => !provider.hidden)
+            .map(providerTypeInfoToVendor);
+        }
+      } catch (remoteError) {
+        // Reached only in non-dev mode: the online catalog failed and the local
+        // fallback is disabled. Keep the host-provided vendors as the available
+        // catalog. Only prompt when this refresh was triggered by an explicit
+        // user action (e.g. "Add provider") so background/startup refreshes stay
+        // silent instead of spamming the toast.
+        remoteCatalogOk = false;
+        console.warn('Failed to fetch remote provider catalog (online-only mode).', remoteError);
+        if (options?.notifyOnRemoteFailure) {
+          toast.error(i18n.t('settings:aiProviders.toast.remoteCatalogFailed'));
+        }
+      }
+
+      set({
         statuses: snapshot.statuses ?? [],
         accounts: snapshot.accounts ?? [],
-        vendors: snapshot.vendors ?? [],
+        vendors,
         defaultAccountId: snapshot.defaultAccountId ?? null,
-        loading: false 
+        loading: false
       });
     } catch (error) {
+      remoteCatalogOk = false;
       set({ error: String(error), loading: false });
     }
+
+    return { remoteCatalogOk };
   },
 
-  fetchProviders: async () => get().refreshProviderSnapshot(),
+  fetchProviders: async () => {
+    await get().refreshProviderSnapshot();
+  },
 
   // Legacy ProviderConfig-shaped alias kept for backward compatibility
   // with any stale caller. Internally projects the legacy config payload

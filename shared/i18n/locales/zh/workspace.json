@@ -1,0 +1,21 @@
+{
+    "title": "工作空间",
+    "subtitle": "浏览和预览智能体工作空间中的文件",
+    "refresh": "刷新",
+    "revealInFinder": "在 Finder 中显示",
+    "revealInExplorer": "在资源管理器中显示",
+    "revealInFileManager": "在文件管理器中打开",
+    "selectFileToPreview": "选择一个文件进行预览",
+    "binaryNotSupported": "无法预览二进制文件",
+    "emptyWorkspace": "工作空间为空",
+    "noAgents": "暂无智能体",
+    "noAgentsHint": "请先创建一个智能体后再查看工作空间",
+    "viewPersonaSettings": "人格设定",
+    "viewWorkspaceFiles": "工作区文件",
+    "rebuildPersona": "重建人格模板",
+    "showHidden": "显示隐藏文件",
+    "hideHidden": "隐藏隐藏文件",
+    "showInFileManager": "在文件管理器中显示",
+    "deleteFileConfirm": "确定要删除 {{path}} 吗？此操作不可恢复。",
+    "deleteTitle": "删除确认"
+}

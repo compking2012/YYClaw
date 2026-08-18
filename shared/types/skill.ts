@@ -39,6 +39,12 @@ export interface QuickAccessSkill {
   sourceLabel: string;
   manifestPath: string;
   baseDir: string;
+  /** True when this SKILL.md is workflow-shaped (frontmatter opt-in or body heuristic). */
+  workflow?: boolean;
+  /** Ordered step titles parsed from the SKILL.md body (only when `workflow`). */
+  workflowSteps?: { title: string }[];
+  /** Human-friendly card title (SKILL.md H1 / frontmatter name), when `workflow`. */
+  workflowTitle?: string;
 }
 
 /**

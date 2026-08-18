@@ -1,6 +1,15 @@
 import type { ProviderAccount, ProviderConfig, ProviderType } from '../../shared/providers/types';
+import { normalizeProviderAccountModelField } from '../../shared/providers/normalize-account-model';
 import { getProviderDefinition } from '../../shared/providers/registry';
 import { getClawXProviderStore } from './store-instance';
+
+function sanitizeProviderAccount(account: ProviderAccount): ProviderAccount {
+  const model = normalizeProviderAccountModelField(account.model);
+  if (model === account.model) {
+    return account;
+  }
+  return { ...account, model };
+}
 
 
 function inferAuthMode(type: ProviderType): ProviderAccount['authMode'] {
@@ -28,9 +37,11 @@ export function providerConfigToAccount(
     baseUrl: config.baseUrl,
     apiProtocol: config.apiProtocol || (config.type === 'custom' || config.type === 'ollama'
       ? 'openai-completions'
-      : getProviderDefinition(config.type)?.providerConfig?.api),
+      : getProviderDefinition(config.type)?.apiProtocol),
     headers: config.headers,
-    model: config.model,
+    model: normalizeProviderAccountModelField(config.model),
+    modelType: config.modelType,
+    modelParams: config.modelParams,
     fallbackModels: config.fallbackModels,
     fallbackAccountIds: config.fallbackProviderIds,
     enabled: config.enabled,
@@ -49,6 +60,8 @@ export function providerAccountToConfig(account: ProviderAccount): ProviderConfi
     apiProtocol: account.apiProtocol,
     headers: account.headers,
     model: account.model,
+    modelType: account.modelType,
+    modelParams: account.modelParams,
     fallbackModels: account.fallbackModels,
     fallbackProviderIds: account.fallbackAccountIds,
     enabled: account.enabled,
@@ -59,20 +72,37 @@ export function providerAccountToConfig(account: ProviderAccount): ProviderConfi
 
 export async function listProviderAccounts(): Promise<ProviderAccount[]> {
   const store = await getClawXProviderStore();
-  const accounts = store.get('providerAccounts') as Record<string, ProviderAccount> | undefined;
-  return Object.values(accounts ?? {});
+  const raw = (store.get('providerAccounts') ?? {}) as Record<string, ProviderAccount>;
+  const repaired: Record<string, ProviderAccount> = {};
+  let changed = false;
+  for (const [id, account] of Object.entries(raw)) {
+    const next = sanitizeProviderAccount(account);
+    repaired[id] = next;
+    if (next !== account) changed = true;
+  }
+  if (changed) {
+    store.set('providerAccounts', repaired);
+  }
+  return Object.values(repaired);
 }
 
 export async function getProviderAccount(accountId: string): Promise<ProviderAccount | null> {
   const store = await getClawXProviderStore();
   const accounts = store.get('providerAccounts') as Record<string, ProviderAccount> | undefined;
-  return accounts?.[accountId] ?? null;
+  const account = accounts?.[accountId];
+  if (!account) return null;
+  const sanitized = sanitizeProviderAccount(account);
+  if (sanitized !== account) {
+    accounts[accountId] = sanitized;
+    store.set('providerAccounts', accounts);
+  }
+  return sanitized;
 }
 
 export async function saveProviderAccount(account: ProviderAccount): Promise<void> {
   const store = await getClawXProviderStore();
   const accounts = (store.get('providerAccounts') ?? {}) as Record<string, ProviderAccount>;
-  accounts[account.id] = account;
+  accounts[account.id] = sanitizeProviderAccount(account);
   store.set('providerAccounts', accounts);
 }
 

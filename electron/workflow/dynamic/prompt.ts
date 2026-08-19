@@ -1,8 +1,8 @@
 /**
  * Prompt for decomposing a single user task into a dynamic workflow.
  *
- * Single-agent oriented: produces SUB-TASK steps (not roles, unlike the office
- * multi-agent generator). The model also acts as the suitability triage — it
+ * Single-agent oriented: produces SUB-TASK steps rather than per-role steps.
+ * The model also acts as the suitability triage — it
  * returns `suitable:false` when the task is a simple one-shot Q&A with no clear
  * multi-step path, so the caller can fall back to a normal chat reply.
  */

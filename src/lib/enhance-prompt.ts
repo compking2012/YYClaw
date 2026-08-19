@@ -1,6 +1,6 @@
 /**
  * Prompt template for the "enhance prompt" button available in the main
- * composer, the cron task editor, and the office collaboration dialog. Takes
+ * composer and the cron task editor. Takes
  * the user's rough draft and rewrites it into a clearer, more actionable
  * prompt. The actual model call happens over `hostApi.agents.generateText`
  * (which uses the target agent's currently configured text model), mirroring

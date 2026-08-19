@@ -68,6 +68,7 @@ build/
 artifacts/
 .delivery/
 docs/pr-session-notes-*.md
+docs/superpowers/
 
 .cursor/
 .claude/

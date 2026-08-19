@@ -25,13 +25,7 @@
     "language": "Language",
     "menuLanguageUpdated": "Menu language updated",
     "launchAtStartup": "Launch at system startup",
-    "launchAtStartupDesc": "Automatically launch $t(common:appName) when you log in",
-    "officeCollaboration": "Office collaboration",
-    "officeCollaborationDesc": "Show the Office Collaboration sidebar entry and enable team/project APIs (off by default)",
-    "officeCollaborationGatewayWait": "Wait for the gateway to finish starting, then try again",
-    "officeCollaborationApplying": "Syncing gateway settings and restarting, please wait…",
-    "officeCollaborationEnabledOk": "Office collaboration enabled; gateway restarted in non-streaming mode",
-    "officeCollaborationDisabledOk": "Office collaboration disabled; gateway restored streaming output"
+    "launchAtStartupDesc": "Automatically launch $t(common:appName) when you log in"
   },
   "aiProviders": {
     "title": "Models",

@@ -180,8 +180,8 @@ export function applyGatewaySessionsChanged(
       return { sessions, applied: false, requiresReload: true };
     }
     const inserted = normalizeGatewaySessionRow({ ...nested, key });
-    // Honor VITE_SHOW_OFFICE_SESSIONS / workflow hiding at the incremental
-    // catalog boundary (sessions.list already filters via isSidebarHiddenSessionKey).
+    // Honor workflow / legacy-office hiding at the incremental catalog boundary
+    // (sessions.list already filters via isSidebarHiddenSessionKey).
     if (isSidebarHiddenSessionKey(inserted.key) || !shouldIncludeSessionInSidebarList(inserted)) {
       return { sessions, applied: false, requiresReload: false };
     }

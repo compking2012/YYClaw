@@ -44,14 +44,13 @@ section below. Add new features to this table first, then to **Core Features**.
 | 7 | Skill System | System Settings → Skills | Local-first browse / install / enable-disable, Corperation server marketplace, disabled ClawHub |
 | 8 | Cron Automation | `/cron` | Scheduled AI tasks with external delivery config and run history |
 | 9 | Deterministic Workflow Engine | `/workflows` | XState-based deterministic multi-step orchestration (dev-gated) |
-| 10 | Office Collaboration | `/office` | Multi-agent room collaboration on deliverables (feature-gated) |
-| 11 | Agent Workspace | Chat right sidebar + per-agent Persona modal | File-tree browser and preview of the agent workspace; persona/memory files edited per-agent |
-| 12 | Image Generation | `/image-generation` | Dedicated OpenAI-compatible image endpoint (dev-gated) |
-| 13 | OpenClaw Dreams (Memory) | System Settings → Memory | `memory-core` dreaming: status, diary, maintenance |
-| 14 | System Settings | System Settings modal (sidebar footer) | General / Gateway / Voice / Update / Developer / Doctor; plus Models / Channels / Skills / Memory tabs |
-| 15 | System Integration | App shell / tray | Single-instance, tray, launch-at-startup, auto-update |
-| 16 | Gateway Lifecycle | Background + status | Embedded OpenClaw supervision, health, conflict resolution |
-| 17 | Theming & Localization | Global | Light/dark/system themes; `en` / `zh` / `ja` / `ru` |
+| 10 | Agent Workspace | Chat right sidebar + per-agent Persona modal | File-tree browser and preview of the agent workspace; persona/memory files edited per-agent |
+| 11 | Image Generation | `/image-generation` | Dedicated OpenAI-compatible image endpoint (dev-gated) |
+| 12 | OpenClaw Dreams (Memory) | System Settings → Memory | `memory-core` dreaming: status, diary, maintenance |
+| 13 | System Settings | System Settings modal (sidebar footer) | General / Gateway / Voice / Update / Developer / Doctor; plus Models / Channels / Skills / Memory tabs |
+| 14 | System Integration | App shell / tray | Single-instance, tray, launch-at-startup, auto-update |
+| 15 | Gateway Lifecycle | Background + status | Embedded OpenClaw supervision, health, conflict resolution |
+| 16 | Theming & Localization | Global | Light/dark/system themes; `en` / `zh` / `ja` / `ru` |
 
 ---
 
@@ -253,21 +252,7 @@ section below. Add new features to this table first, then to **Core Features**.
   the single constrained model step talks to the configured provider directly,
   bypassing the agent loop.
 
-### 10. Office Multi-Agent Collaboration
-
-- **Route / Entry:** `/office` (feature-gated by `officeCollaborationEnabled`).
-- **Summary:** A higher-level collaboration surface where multiple agents work
-  together in rooms on project deliverables, distinct from the generic workflow
-  engine.
-- **Capabilities:**
-  - Room/mention orchestration and task running across roles.
-  - Role/scenario setup and editors (including a LangGraph custom workflow
-    editor and visual preview).
-  - Project deliverable filesystem handling and Office ↔ session history sync.
-- **Constraints & Notes:** Exposed via `/api/office/*` only when enabled; the
-  enable toggle requires a stable Gateway state.
-
-### 11. Agent Workspace
+### 10. Agent Workspace
 
 - **Route / Entry:** `/workspace`.
 - **Summary:** Browse and preview the OpenClaw agent workspace as a file tree.
@@ -276,7 +261,7 @@ section below. Add new features to this table first, then to **Core Features**.
   components).
 - **Constraints & Notes:** Backed by the OpenClaw workspace tree/file routes.
 
-### 12. Image Generation
+### 11. Image Generation
 
 - **Route / Entry:** `/image-generation` (dev-mode gated).
 - **Summary:** A dedicated, independent OpenAI-compatible image-generation
@@ -286,7 +271,7 @@ section below. Add new features to this table first, then to **Core Features**.
   service while chat continues on the normal OpenAI provider.
 - **Constraints & Notes:** Visible only in developer mode.
 
-### 13. OpenClaw Dreams
+### 12. OpenClaw Dreams
 
 - **Route / Entry:** `/dreams` (always available in the sidebar).
 - **Summary:** Manage OpenClaw `memory-core` "dreaming" — background memory
@@ -296,14 +281,14 @@ section below. Add new features to this table first, then to **Core Features**.
 - **Constraints & Notes:** Requires a running Gateway and the dreaming plugin
   configured on the OpenClaw side.
 
-### 14. Settings
+### 13. Settings
 
 - **Route / Entry:** `/settings/*`.
 - **Summary:** Centralized configuration grouped into sections.
 - **Capabilities:**
   - **General** — theme (light/dark/system), language, **Launch at system
-    startup**, dev-mode unlock, optional feature toggles (Office collaboration,
-    prompt optimization, telemetry).
+    startup**, dev-mode unlock, optional feature toggles (prompt
+    optimization, telemetry).
   - **Gateway** — Gateway auto-start, **Proxy** (proxy server, bypass rules, and
     developer-mode HTTP/HTTPS/ALL_PROXY overrides), Control-UI access.
   - **Voice** — input mode (dictation/conversation) and TTS auto-read.
@@ -316,7 +301,7 @@ section below. Add new features to this table first, then to **Core Features**.
   immediately and restarts the Gateway; proxy is synced to OpenClaw's Telegram
   channel config when enabled.
 
-### 15. System Integration
+### 14. System Integration
 
 - **Route / Entry:** App shell, OS tray, window controls.
 - **Summary:** Native desktop integration that keeps a single, well-behaved app
@@ -333,7 +318,7 @@ section below. Add new features to this table first, then to **Core Features**.
   `/Applications` (not the mounted DMG). The Gateway listener on
   `127.0.0.1:18789` must remain single-owner.
 
-### 16. Gateway Lifecycle & Reliability
+### 15. Gateway Lifecycle & Reliability
 
 - **Route / Entry:** Background; surfaced through status indicators and dialogs.
 - **Summary:** Automatic supervision of the embedded OpenClaw Gateway so users
@@ -351,7 +336,7 @@ section below. Add new features to this table first, then to **Core Features**.
 - **Constraints & Notes:** The main process is the sole owner of the Gateway
   WebSocket; the renderer reaches it only through Main-owned proxy channels.
 
-### 17. Theming & Localization
+### 16. Theming & Localization
 
 - **Route / Entry:** Global (`Settings → General`).
 - **Summary:** Adaptive appearance and full multi-language support.
@@ -386,9 +371,9 @@ section below. Add new features to this table first, then to **Core Features**.
 | Cron        |                                                           |
 | Workflows*  |   +---------------------------------------------------+   |
 | Workspace   |   | Composer: @agent  /skill  [model ▾]  [🎙️]  [Send] |   |
-| Office*     |   +---------------------------------------------------+   |
-| Dreams      |                                                           |
-| Settings    |   (* dev-mode / feature-gated entries)                    |
+| Dreams      |   +---------------------------------------------------+   |
+| Settings    |                                                           |
+|             |   (* dev-mode gated entries)                              |
 +-------------+-----------------------------------------------------------+
 | Gateway status: connecting / ready / error                              |
 +-------------------------------------------------------------------------+
@@ -410,8 +395,7 @@ section below. Add new features to this table first, then to **Core Features**.
   (to avoid OpenClaw config-health `.clobbered` conflicts); reading historical
   encrypted configs (`CLAWX_ENCRYPTED_v1:`) is still supported.
 - **Single Gateway owner:** Only one process may listen on `127.0.0.1:18789`.
-- **Feature gating:** Workflows and Image Generation are dev-mode gated; Office
-  collaboration is gated by `officeCollaborationEnabled`.
+- **Feature gating:** Workflows and Image Generation are dev-mode gated.
 
 ## Reliability & Performance Targets
 

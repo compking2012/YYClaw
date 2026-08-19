@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { configureSidebarOfficeSessionVisibility } from '../../shared/internal-session';
 import {
   ensureSessionEntryForSidebar,
   pinActiveCurrentSessionKey,
@@ -9,14 +8,16 @@ import {
 } from '../../src/stores/chat/sidebar-session-list';
 import type { ChatSession } from '../../src/stores/chat/types';
 
+/** Legacy Office room key — Office was removed, but these keys stay filtered. */
 const OFFICE_KEY = 'agent:pm:office:task:proj-1:role:dev:node:gen-0';
+const WORKFLOW_KEY = 'wf:r1:step';
 const MAIN_KEY = 'agent:main:main';
 const USER_KEY = 'agent:main:session-1';
 
 describe('resolveSidebarSessionListState', () => {
   const deduped: ChatSession[] = [{ key: MAIN_KEY }, { key: USER_KEY }];
 
-  it('keeps hidden office current key and never injects it into the sidebar list', () => {
+  it('keeps a hidden legacy office current key and never injects it into the sidebar list', () => {
     const result = resolveSidebarSessionListState({
       currentSessionKey: OFFICE_KEY,
       localSessions: [{ key: OFFICE_KEY }],
@@ -28,7 +29,6 @@ describe('resolveSidebarSessionListState', () => {
   });
 
   it('does not fallback away from a hidden current key even when it is missing from the gateway list', () => {
-    configureSidebarOfficeSessionVisibility(false);
     const result = resolveSidebarSessionListState({
       currentSessionKey: OFFICE_KEY,
       localSessions: [],
@@ -39,16 +39,15 @@ describe('resolveSidebarSessionListState', () => {
     expect(result.sessionsWithCurrent).toEqual([{ key: MAIN_KEY }]);
   });
 
-  it('injects office current key when office session visibility is enabled', () => {
-    configureSidebarOfficeSessionVisibility(true);
+  it('keeps a hidden workflow current key out of the sidebar list', () => {
     const result = resolveSidebarSessionListState({
-      currentSessionKey: OFFICE_KEY,
+      currentSessionKey: WORKFLOW_KEY,
       localSessions: [],
       dedupedSessions: [{ key: MAIN_KEY }],
       defaultSessionKey: MAIN_KEY,
     });
-    expect(result.nextSessionKey).toBe(OFFICE_KEY);
-    expect(result.sessionsWithCurrent.map((session) => session.key)).toEqual([MAIN_KEY, OFFICE_KEY]);
+    expect(result.nextSessionKey).toBe(WORKFLOW_KEY);
+    expect(result.sessionsWithCurrent).toEqual([{ key: MAIN_KEY }]);
   });
 
   it('injects a visible pending local session that is missing from the gateway list', () => {
@@ -77,29 +76,12 @@ describe('resolveSidebarSessionListState', () => {
     expect(result.nextSessionKey).toBe(MAIN_KEY);
     expect(result.sessionsWithCurrent.map((session) => session.key)).toEqual([MAIN_KEY, USER_KEY]);
   });
-
-  it('keeps gateway-listed office sessions when visibility is enabled and user stays on main', () => {
-    configureSidebarOfficeSessionVisibility(true);
-    const result = resolveSidebarSessionListState({
-      currentSessionKey: MAIN_KEY,
-      localSessions: [{ key: MAIN_KEY }],
-      dedupedSessions: [{ key: MAIN_KEY }, { key: OFFICE_KEY }],
-      defaultSessionKey: MAIN_KEY,
-    });
-    expect(result.nextSessionKey).toBe(MAIN_KEY);
-    expect(result.sessionsWithCurrent.map((session) => session.key)).toEqual([MAIN_KEY, OFFICE_KEY]);
-  });
 });
 
 describe('shouldInjectSessionIntoSidebar', () => {
-  it('rejects office keys when visibility is disabled', () => {
-    configureSidebarOfficeSessionVisibility(false);
+  it('rejects legacy office and workflow keys', () => {
     expect(shouldInjectSessionIntoSidebar(OFFICE_KEY, [{ key: MAIN_KEY }])).toBe(false);
-  });
-
-  it('allows office keys when visibility is enabled', () => {
-    configureSidebarOfficeSessionVisibility(true);
-    expect(shouldInjectSessionIntoSidebar(OFFICE_KEY, [{ key: MAIN_KEY }])).toBe(true);
+    expect(shouldInjectSessionIntoSidebar(WORKFLOW_KEY, [{ key: MAIN_KEY }])).toBe(false);
   });
 
   it('rejects already-listed keys', () => {
@@ -109,19 +91,10 @@ describe('shouldInjectSessionIntoSidebar', () => {
 });
 
 describe('ensureSessionEntryForSidebar', () => {
-  it('never adds hidden sessions to the sidebar list when visibility is disabled', () => {
-    configureSidebarOfficeSessionVisibility(false);
+  it('never adds hidden sessions to the sidebar list', () => {
     const sessions = [{ key: MAIN_KEY }];
     expect(ensureSessionEntryForSidebar(sessions, OFFICE_KEY)).toEqual(sessions);
-  });
-
-  it('adds office sessions when visibility is enabled', () => {
-    configureSidebarOfficeSessionVisibility(true);
-    const sessions = [{ key: MAIN_KEY }];
-    expect(ensureSessionEntryForSidebar(sessions, OFFICE_KEY)).toEqual([
-      { key: MAIN_KEY },
-      { key: OFFICE_KEY, displayName: OFFICE_KEY },
-    ]);
+    expect(ensureSessionEntryForSidebar(sessions, WORKFLOW_KEY)).toEqual(sessions);
   });
 
   it('adds visible sessions when missing', () => {
@@ -134,18 +107,12 @@ describe('ensureSessionEntryForSidebar', () => {
 });
 
 describe('pinActiveCurrentSessionKey', () => {
-  it('preserves hidden office current key even when resolved next differs', () => {
-    configureSidebarOfficeSessionVisibility(false);
+  it('preserves a hidden current key even when resolved next differs', () => {
     expect(pinActiveCurrentSessionKey(OFFICE_KEY, MAIN_KEY)).toBe(OFFICE_KEY);
+    expect(pinActiveCurrentSessionKey(WORKFLOW_KEY, MAIN_KEY)).toBe(WORKFLOW_KEY);
   });
 
-  it('preserves visible office current key even when resolved next differs', () => {
-    configureSidebarOfficeSessionVisibility(true);
-    expect(pinActiveCurrentSessionKey(OFFICE_KEY, MAIN_KEY)).toBe(OFFICE_KEY);
-  });
-
-  it('uses resolved next for visible non-office sessions', () => {
-    configureSidebarOfficeSessionVisibility(true);
+  it('uses resolved next for visible sessions', () => {
     expect(pinActiveCurrentSessionKey('agent:main:missing', MAIN_KEY)).toBe(MAIN_KEY);
   });
 });
@@ -155,7 +122,7 @@ describe('pruneHiddenSessionActivity', () => {
     expect(pruneHiddenSessionActivity({
       [MAIN_KEY]: 100,
       [OFFICE_KEY]: 200,
-      'wf:r1:step': 300,
+      [WORKFLOW_KEY]: 300,
     })).toEqual({ [MAIN_KEY]: 100 });
   });
 });

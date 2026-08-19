@@ -319,23 +319,6 @@
   -webkit-app-region: no-drag;
 }
 
-.office-form-scroll {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  contain: paint;
-}
-
-.office-form-scroll-section {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 480px;
-}
-
-.office-form-scroll-row {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 220px;
-}
-
 /* Smooth transitions */
 .transition-theme {
   @apply transition-colors duration-200;

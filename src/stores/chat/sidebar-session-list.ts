@@ -1,5 +1,4 @@
-import { isSidebarHiddenSessionKey, isOfficeSidebarSessionVisibilityEnabled } from '../../../shared/internal-session';
-import { isOfficeSessionKey } from '../../../shared/office-session';
+import { isSidebarHiddenSessionKey } from '../../../shared/internal-session';
 import { isClawXDesktopSessionKey } from './session-key-utils';
 import { pickStartupSessionFallback } from './session-selection';
 import type { ChatSession } from './types';
@@ -20,10 +19,9 @@ export interface ResolveSidebarSessionListResult {
  * Resolve sidebar session list + active key after Gateway `sessions.list`.
  *
  * Rules:
- * - Workflow sub-sessions are always excluded upstream via `isSidebarHiddenSessionKey`.
- * - Office sessions are excluded when `VITE_SHOW_OFFICE_SESSIONS=false`, otherwise treated like normal sessions.
- * - Hidden current keys (incl. office when hidden) are never injected and never fallback-replaced.
- * - Visible active office keys missing from the gateway list are kept and injected.
+ * - Workflow sub-sessions (and legacy Office rooms) are always excluded upstream
+ *   via `isSidebarHiddenSessionKey`.
+ * - Hidden current keys are never injected and never fallback-replaced.
  */
 export function resolveSidebarSessionListState({
   currentSessionKey,
@@ -42,10 +40,7 @@ export function resolveSidebarSessionListState({
 
   if (!dedupedSessions.some((session) => session.key === nextSessionKey) && dedupedSessions.length > 0) {
     const hasLocalPendingSession = localSessions.some((session) => session.key === nextSessionKey);
-    const keepActiveMissingOfficeKey = nextSessionKey === currentSessionKey
-      && isOfficeSessionKey(nextSessionKey)
-      && isOfficeSidebarSessionVisibilityEnabled();
-    if (!hasLocalPendingSession && !keepActiveMissingOfficeKey) {
+    if (!hasLocalPendingSession) {
       const fallbackKey = pickStartupSessionFallback(nextSessionKey, dedupedSessions);
       if (fallbackKey) {
         nextSessionKey = fallbackKey;
@@ -63,18 +58,12 @@ export function resolveSidebarSessionListState({
   return { nextSessionKey, sessionsWithCurrent };
 }
 
-/** Keep the active internal/hidden or visible office session during background list refresh. */
+/** Keep the active internal/hidden session during background list refresh. */
 export function pinActiveCurrentSessionKey(
   rawCurrentSessionKey: string,
   resolvedNextSessionKey: string,
 ): string {
   if (isSidebarHiddenSessionKey(rawCurrentSessionKey)) {
-    return rawCurrentSessionKey;
-  }
-  if (
-    isOfficeSidebarSessionVisibilityEnabled()
-    && isOfficeSessionKey(rawCurrentSessionKey)
-  ) {
     return rawCurrentSessionKey;
   }
   return resolvedNextSessionKey;

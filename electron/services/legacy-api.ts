@@ -9,7 +9,6 @@ import { handleAgentRoutes } from '../api/routes/agents';
 import { handleChannelRoutes } from '../api/routes/channels';
 import { handleSettingsRoutes } from '../api/routes/settings';
 import { handleSkillRoutes } from '../api/routes/skills';
-import { handleOfficeRoutes } from '../api/routes/office';
 import { getWorkflowEngine } from '../workflow';
 import type { HostApiContext } from '../api/context';
 import type { LegacyFetchPayload, LegacyFetchResult } from '@shared/host-api/contract';
@@ -110,7 +109,6 @@ export function createLegacyApi(ctx: LegacyApiContext): CompleteHostServiceRegis
     handleChannelRoutes,
     handleSettingsRoutes,
     handleSkillRoutes,
-    handleOfficeRoutes,
   ];
 
   return {

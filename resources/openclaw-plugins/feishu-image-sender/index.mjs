@@ -10,7 +10,7 @@ import os from 'node:os';
  * generated image file to the CURRENT Feishu chat.
  *
  * Why this exists: the native `MEDIA:<path>` outbound path does not reliably
- * upload office-agent reply media to a Feishu image_key (the reply is dropped /
+ * upload agent reply media to a Feishu image_key (the reply is dropped /
  * degraded to a `📎 <path>` text link). This tool does the upload+send
  * explicitly via the Feishu OpenAPI, so image delivery no longer depends on the
  * flaky native dispatch:

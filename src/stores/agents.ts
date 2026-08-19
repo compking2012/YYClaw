@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { hostApi } from '@/lib/host-api';
-import { applyOfficeDisplayCacheFromStore } from '@/lib/office-display-cache-data';
 import type { ChannelType } from '@/types/channel';
 import type { AgentSummary, AgentsSnapshot } from '@/types/agent';
 
@@ -92,7 +91,6 @@ export const useAgentsStore = create<AgentsState>((set) => ({
         ...applySnapshot(snapshot),
         loading: false,
       });
-      applyOfficeDisplayCacheFromStore();
     } catch (error) {
       set({ loading: false, error: String(error) });
     }

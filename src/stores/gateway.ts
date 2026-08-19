@@ -5,10 +5,6 @@
 import { create } from 'zustand';
 import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
-import {
-  handleGatewayStatusTransitionForOfficeCache,
-  isGatewayReadyForOffice,
-} from '@/lib/office-gateway-cache-trigger';
 import type { GatewayNotification, GatewayHealth, GatewayStatus } from '../types/gateway';
 import type { ChatRuntimeEvent } from '../../shared/chat-runtime-events';
 import type { GatewaySessionsChangedPayload } from './chat/session-catalog';
@@ -406,18 +402,12 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
       try {
         const status = await hostApi.gateway.status();
         set({ status, isInitialized: true });
-        handleGatewayStatusTransitionForOfficeCache(
-          { state: 'stopped' },
-          status,
-        );
         synchronizeGatewaySessionCatalog(status);
 
         if (!gatewayEventUnsubscribers) {
           const unsubscribers: Array<() => void> = [];
           unsubscribers.push(hostEvents.onGatewayStatus((payload) => {
-            const prev = get().status;
             set({ status: payload });
-            handleGatewayStatusTransitionForOfficeCache(prev, payload);
             synchronizeGatewaySessionCatalog(payload);
 
             // Trigger cron repair when gateway becomes ready
@@ -493,15 +483,12 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
                 const stateChanged = latest.state !== current.state;
                 const runtimeChanged = getGatewayRuntimeIdentity(latest) !== getGatewayRuntimeIdentity(current);
                 const readinessChanged = latest.gatewayReady !== current.gatewayReady;
-                const readyChanged =
-                  isGatewayReadyForOffice(current) !== isGatewayReadyForOffice(latest);
                 if (stateChanged) {
                   console.info(
                     `[gateway-store] reconciled stale state: ${current.state} → ${latest.state}`,
                   );
                 }
-                if (stateChanged || runtimeChanged || readinessChanged || readyChanged) {
-                  handleGatewayStatusTransitionForOfficeCache(current, latest);
+                if (stateChanged || runtimeChanged || readinessChanged) {
                   set({ status: latest });
                 }
                 synchronizeGatewaySessionCatalog(latest);
@@ -517,10 +504,8 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
         try {
           const refreshed = await hostApi.gateway.status();
           const current = get().status;
-          const readyChanged =
-            isGatewayReadyForOffice(current) !== isGatewayReadyForOffice(refreshed);
-          if (refreshed.state !== current.state || readyChanged) {
-            handleGatewayStatusTransitionForOfficeCache(current, refreshed);
+          const readinessChanged = refreshed.gatewayReady !== current.gatewayReady;
+          if (refreshed.state !== current.state || readinessChanged) {
             set({ status: refreshed });
           }
           synchronizeGatewaySessionCatalog(refreshed);

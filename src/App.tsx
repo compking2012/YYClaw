@@ -19,7 +19,6 @@ import { ImageGenerationPage } from './pages/ImageGeneration';
 import { MemorySettings } from './pages/Dreams';
 import { SystemSettingsTab } from './pages/Settings';
 import { Workflows } from './pages/Workflows';
-import { OfficeRouteGuard } from './pages/Office/OfficeRouteGuard';
 import { Login } from './pages/Login';
 import { Setup } from './pages/Setup';
 import { useSettingsStore } from './stores/settings';
@@ -224,7 +223,6 @@ function App() {
               element={devModeUnlocked ? <MemorySettings /> : <Navigate to="/" replace />}
             />
             <Route path="/workflows" element={devModeUnlocked ? <Workflows /> : <Navigate to="/" replace />} />
-            <Route path="/office" element={<OfficeRouteGuard />} />
             <Route path="/settings/*" element={<SystemSettingsTab />} />
             {extraRoutes.map((r) => (
               <Route key={r.path} path={r.path} element={<r.component />} />

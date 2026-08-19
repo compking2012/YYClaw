@@ -505,10 +505,8 @@ describe('chat session actions', () => {
     expect(next.sessionLastActivity[officeKey]).toBeUndefined();
   });
 
-  it('loadSessions surfaces gateway office sessions when visibility is enabled', async () => {
+  it('loadSessions filters gateway-listed legacy office sessions out of the sidebar', async () => {
     const officeKey = 'agent:pm:office:task:proj-1:role:dev:node:gen-0';
-    const { configureSidebarOfficeSessionVisibility } = await import('../../shared/internal-session');
-    configureSidebarOfficeSessionVisibility(true);
     const { createSessionActions } = await import('@/stores/chat/session-actions');
     const h = makeHarness({
       currentSessionKey: 'agent:main:main',
@@ -530,6 +528,6 @@ describe('chat session actions', () => {
 
     const next = h.read();
     expect(next.currentSessionKey).toBe('agent:main:main');
-    expect(next.sessions.map((session) => session.key)).toEqual(['agent:main:main', officeKey]);
+    expect(next.sessions.map((session) => session.key)).toEqual(['agent:main:main']);
   });
 });

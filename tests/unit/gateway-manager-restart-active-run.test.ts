@@ -23,7 +23,7 @@ vi.mock('@electron/utils/logger', () => ({
 /**
  * Covers "Gateway restart must not sever an in-flight chat run": a restart
  * triggered while a run is executing (e.g. saving a provider/settings change)
- * should defer until the run ends, mirroring the existing Office-execution
+ * should defer until the run ends, mirroring the previous Office-execution
  * deferral, instead of killing the WS connection mid-run.
  */
 describe('GatewayManager restart deferral for active chat runs', () => {

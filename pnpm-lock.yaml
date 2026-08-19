@@ -7441,10 +7441,6 @@ packages:
     engines: {node: '>= 12.17.0'}
     hasBin: true
 
-ignoredOptionalDependencies:
-  - '@langchain/langgraph'
-  - p-finally
-
 snapshots:
 
   7zip-bin@5.2.0: {}
@@ -12578,7 +12574,7 @@ snapshots:
   libsignal@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7:
     dependencies:
       curve25519-js: 0.0.4
-      protobufjs: 7.5.8
+      protobufjs: 7.6.5
 
   lie@3.3.0:
     dependencies:

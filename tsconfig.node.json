@@ -31,5 +31,5 @@
     }
   },
   "include": ["electron", "shared", "shared/**/*.json", "vite.config.ts", "types/**/*.d.ts", "src/types/electron.d.ts"],
-  "exclude": ["electron/services/office/**", "electron/services/admin-console/**"]
+  "exclude": ["electron/services/admin-console/**"]
 }

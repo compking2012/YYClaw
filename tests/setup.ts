@@ -4,7 +4,6 @@
  */
 import { vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { resetSidebarOfficeSessionVisibility } from '../shared/internal-session';
 
 // Provide a minimal `electron` mock so tests that transitively import
 // main-process code (logger, store, etc.) don't blow up when the Electron
@@ -126,5 +125,4 @@ if (typeof window !== 'undefined') {
 afterEach(() => {
   vi.clearAllMocks();
   vi.useRealTimers();
-  resetSidebarOfficeSessionVisibility();
 });

@@ -60,7 +60,7 @@ import type { Skill } from '@/types/skill';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { compressPathToTilde } from '@/lib/office-workflow-closure-deliverables';
+import { compressPathToTilde } from '@/lib/tilde-path';
 import {
   addCatalogSkillToSelection,
   countSelectedCatalogSkills,

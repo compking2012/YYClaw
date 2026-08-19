@@ -17,7 +17,6 @@ import {
   Pencil,
   Check,
   X,
-  Building2,
   Workflow,
   ImagePlus,
   ChevronsUpDown,
@@ -52,7 +51,6 @@ import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '@shared/side
 import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
 import { useNewChatAction } from './use-new-chat-action';
-import { SHOW_OFFICE_COLLABORATION } from '@/lib/feature-office';
 import { isDefaultWorkspacePath } from '@/lib/workspace-context';
 import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
 import { projectSessionRunState } from '@/stores/chat/session-status';
@@ -444,12 +442,6 @@ export function Sidebar() {
       label: t('sidebar.cronTasks'),
       testId: 'sidebar-nav-cron',
     },
-    {
-      to: '/office',
-      icon: <Building2 className="h-4 w-4" strokeWidth={2} />,
-      label: t('sidebar.office'),
-      testId: 'sidebar-nav-office',
-    },
     ...(devModeUnlocked
       ? [
           {
@@ -469,10 +461,7 @@ export function Sidebar() {
   ];
 
   const navItems = [
-    ...coreNavItems.filter((item) => (
-      !hiddenRoutes.has(item.to)
-      && (item.to !== '/office' || SHOW_OFFICE_COLLABORATION)
-    )),
+    ...coreNavItems.filter((item) => !hiddenRoutes.has(item.to)),
     ...extraNavItems.map((item) => ({
       to: item.to,
       icon: <item.icon className="h-4 w-4" strokeWidth={2} />,

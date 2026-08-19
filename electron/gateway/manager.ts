@@ -712,16 +712,6 @@ export class GatewayManager extends EventEmitter {
       return;
     }
 
-    const { isOfficeExecutionSyncActive } = await import('../services/office/office-sync-runtime');
-    if (isOfficeExecutionSyncActive()) {
-      this.restartController.markDeferredRestart('office-execution-active', {
-        state: this.status.state,
-        startLock: this.startLock,
-      });
-      logger.info('Deferring Gateway restart while Office projects are executing');
-      return;
-    }
-
     if (this.hasActiveChatRuns()) {
       this.restartController.markDeferredRestart('chat-run-active', {
         state: this.status.state,
@@ -821,7 +811,7 @@ export class GatewayManager extends EventEmitter {
     });
   }
 
-  /** Flush a deferred restart once Office execution or an active chat run has quiesced. */
+  /** Flush a deferred restart once an active chat run has quiesced. */
   tryFlushDeferredRestart(trigger: string): void {
     this.restartController.flushDeferredRestart(
       trigger,

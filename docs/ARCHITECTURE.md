@@ -25,7 +25,7 @@ data flow, and the runtime contracts that keep those boundaries enforceable.
 +---------------------------------------------------------------------+
 |                      Renderer Process (React 19)                    |
 |  main.tsx -> HashRouter -> App.tsx -> MainLayout (TitleBar/Sidebar) |
-|    Pages:   Chat, Agents, Cron, Workflows, Office, Setup            |
+|    Pages:   Chat, Agents, Cron, Workflows, Setup                    |
 |    Modals:  SystemSettingsModal (System/Models/Channels/Skills/     |
 |             Memory tabs), PersonaSettingsModal                      |
 |    Sidebar: Chat workspace-files panel (ArtifactPanel browser tab)  |
@@ -49,7 +49,7 @@ data flow, and the runtime contracts that keep those boundaries enforceable.
 |  main/ipc-handlers.ts -> IPC channel registration (all namespaces)  |
 |  api/server.ts        -> Host API HTTP server (127.0.0.1:13210)     |
 |  gateway/manager.ts   -> OpenClaw Gateway supervision + WS RPC      |
-|  services/*           -> providers, secrets, admin-console, office  |
+|  services/*           -> providers, secrets, admin-console          |
 |  workflow/*           -> XState deterministic workflow engine       |
 |  extensions/*         -> builtin/loadable host-api + marketplace    |
 +---------------------------------------------------------------------+
@@ -98,7 +98,7 @@ the runtime contract.
 
 | Tier | Renderer entry | Main mechanism | Transport | Purpose |
 |------|----------------|----------------|-----------|---------|
-| **1. Host REST** | `hostApiFetch(path)` | `hostapi:fetch` IPC proxy | HTTP to `127.0.0.1:13210` | Business APIs (`/api/*`): chat, settings, providers, agents, channels, skills, cron, workflow, office, voice |
+| **1. Host REST** | `hostApiFetch(path)` | `hostapi:fetch` IPC proxy | HTTP to `127.0.0.1:13210` | Business APIs (`/api/*`): chat, settings, providers, agents, channels, skills, cron, workflow, voice |
 | **2. IPC** | `invokeIpc(channel)` / `invokeApi` | `ipcMain.handle` (+ unified `app:request`) | Direct IPC | System integration & control plane: window, update, file, gateway lifecycle/RPC, OAuth, uv |
 | **3. Realtime** | `subscribeHostEvent(name)` | IPC push (`webContents.send`) with SSE fallback (`/api/events`) | IPC event / EventSource | Live Gateway status, chat runtime events, workflow progress, OAuth, channel status |
 
@@ -183,8 +183,8 @@ into `src/App.tsx`.
 - `components/layout/MainLayout.tsx` -- shell composed of `TitleBar`, `Sidebar`,
   and a routed `<Outlet>`.
 - `components/layout/Sidebar.tsx` -- primary navigation, New Chat, time-bucketed
-  session list, and Settings entry. Dev-mode-only and feature-gated entries
-  (Workflows, Image Generation, Office) appear conditionally.
+  session list, and Settings entry. Dev-mode-only entries (Workflows, Image
+  Generation) appear conditionally.
 - `components/layout/TitleBar.tsx` -- macOS drag region / Windows custom title bar
   with min/max/close routed through `window:*` IPC.
 
@@ -262,7 +262,7 @@ All global state uses **Zustand**. Stores call the backend exclusively through
 
 | Store | Manages | Backend access |
 |-------|---------|----------------|
-| `useSettingsStore` | theme, language, gateway/proxy/update/voice/office toggles, setup completion, dev mode | `persist` + `/api/settings` |
+| `useSettingsStore` | theme, language, gateway/proxy/update/voice toggles, setup completion, dev mode | `persist` + `/api/settings` |
 | `useGatewayStore` | Gateway lifecycle, health, RPC wrapper, runtime-event dispatch into chat | `/api/gateway/*` + `gateway:rpc` + host events |
 | `useChatStore` (+ `stores/chat/*`) | messages, sessions, streaming, runtime runs, workflow cards, history | `/api/chat/*`, `/api/sessions/*` + events |
 | `useProviderStore` | provider accounts, API-key status, vendor list | `/api/providers` + `lib/provider-accounts` |
@@ -272,7 +272,6 @@ All global state uses **Zustand**. Stores call the backend exclusively through
 | `useSkillsMarketplaceStore` | remote marketplace search | `/api/skills/marketplace` |
 | `useCronStore` | cron job CRUD, trigger | `/api/cron/jobs` |
 | `useWorkflowStore` | workflow definitions & run records | `lib/workflow-api` + `workflow:progress` |
-| `useOfficeStore` | Office roles/scenarios/tasks/room messages | `/api/office/*` + events |
 | `useUpdateStore` | update check/download/install | `update:*` IPC |
 | `useArtifactPanel` | chat artifact-panel UI (tab/width/focused file) | UI-only (`persist`) |
 
@@ -292,7 +291,6 @@ Routes are defined in `src/App.tsx` using `react-router-dom` v6 under a
 | `/agents` | `Agents` | Multi-agent management: per-agent model, skill allowlist, channel binding, persona settings modal |
 | `/cron` | `Cron` | Cron job CRUD, trigger, run history, external delivery config |
 | `/workflows` | `Workflows` | Deterministic workflow engine UI (dev-mode gated) |
-| `/office` | `Office` | Multi-agent Office collaboration (feature-gated) |
 | `/image-generation` | `ImageGeneration` | Dedicated image-generation endpoint settings (dev-mode gated) |
 
 The former `Models`, `Channels`, `Skills`, `Dreams`, `Settings`, and
@@ -322,8 +320,6 @@ Extensions may inject additional routes via the renderer extension registry.
   skill-provided UI.
 - **Settings** (`components/settings/`) -- `ProvidersSettings`, `UpdateSettings`,
   `ImageGenerationSettings`, `KindParamsEditor`.
-- **Office** (`components/office/`) -- task/role/workflow editors,
-  `LangGraphCustomWorkflowEditor`, `WorkflowVisualPreview`.
 - **Common** -- `ErrorBoundary`, `LoadingSpinner`, `ForceUpdateModal`,
   `StatusBadge`; plus `channels/ChannelConfigModal` and
   `gateway/PortConflictDialog`.
@@ -361,7 +357,6 @@ Route modules under `electron/api/routes/`:
 | `sessions.ts` | transcripts, delete, summaries |
 | `cron.ts` | `/api/cron/jobs`, toggle, trigger |
 | `workspace.ts` | OpenClaw workspace tree/file CRUD |
-| `office.ts` | `/api/office/*` collaboration |
 | `workflow.ts` | `/api/workflow/list|start|start-dynamic|resume|abort|status` |
 | `voice.ts` | TTS/STT/realtime config & calls |
 | `diagnostics.ts` | `/api/diagnostics/gateway-snapshot` |
@@ -429,16 +424,10 @@ proxy). The Control UI is embeddable via `<webview>` because Main strips
   local Gateway (agents/models/providers + restart), protocol
   commands/handlers/topics, and a queue that serializes apply-sync against
   Gateway RPC.
-- **`office/`** -- the multi-agent collaboration / Office business layer
-  (distinct from the generic workflow engine): task running, room/mention
-  orchestration, a LangGraph runner, project deliverable filesystem handling,
-  role/scenario setup, and Office<->session history sync. Exposed via
-  `/api/office/*` when `officeCollaborationEnabled`.
 
 ## Workflow Engine (`electron/workflow/`)
 
-A **generic deterministic workflow kernel** built on XState v5, separate from the
-Office/LangGraph orchestration.
+A **generic deterministic workflow kernel** built on XState v5.
 
 - `index.ts` -- Electron bootstrap: a `SnapshotStore` rooted at
   `userData/workflows/` plus a `GatewayBackedAdapter`, wired as a singleton.
@@ -576,9 +565,9 @@ Main -> Renderer realtime events are pushed over whitelisted IPC channels (with
 an SSE fallback on `/api/events`). Notable channels:
 
 `gateway:status-changed`, `gateway:error`, `gateway:chat-message`,
-`chat:runtime-event`, `workflow:progress`, `office:workflow-dispatch`,
-`office:room-message-appended`, `oauth:*`, `channel:whatsapp-*`, `update:*`,
-`navigate`, `openclaw:cli-installed`, `providers:snapshot-changed`.
+`chat:runtime-event`, `workflow:progress`, `oauth:*`, `channel:whatsapp-*`,
+`update:*`, `navigate`, `openclaw:cli-installed`,
+`providers:snapshot-changed`.
 
 Gateway, Admin Console, and OAuth events are written to the `HostEventBus`
 (SSE) and selected events are simultaneously delivered via `webContents.send`.
@@ -613,7 +602,7 @@ mtime/size-keyed incremental cache.
 `react-i18next`, initialized before render in `src/i18n/index.ts`. Supported
 languages: `en`, `zh`, `ja`, `ru`. Namespaces: `common`, `settings`,
 `dashboard`, `chat`, `channels`, `agents`, `skills`, `cron`, `dreams`, `setup`,
-`workspace`, `office`, `workflow`. English is the structural source of truth;
+`workspace`, `workflow`. English is the structural source of truth;
 `zh`/`ja` mostly use deep `mergeFallback(en, overlay)`, while `ru` ships a
 mostly-independent bundle. New user-facing strings must be routed through i18n
 with full locale coverage -- never hardcoded.

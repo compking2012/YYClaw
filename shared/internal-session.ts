@@ -1,30 +1,15 @@
-import { isOfficeSessionKey } from './office-session';
 import { isWorkflowSessionKey } from './workflow-session';
 
-declare const __SHOW_OFFICE_SESSIONS__: boolean | undefined;
-
-const buildTimeShowOfficeSessions =
-  typeof __SHOW_OFFICE_SESSIONS__ === 'undefined' ? false : __SHOW_OFFICE_SESSIONS__;
-
-let showOfficeSessionsInSidebar = buildTimeShowOfficeSessions;
-
-/** Compile-time default from office.env (`VITE_SHOW_OFFICE_SESSIONS`). */
-export function isOfficeSidebarSessionVisibilityEnabled(): boolean {
-  return showOfficeSessionsInSidebar;
-}
-
-/** Test-only override; call `resetSidebarOfficeSessionVisibility()` in afterEach. */
-export function configureSidebarOfficeSessionVisibility(visible: boolean): void {
-  showOfficeSessionsInSidebar = visible;
-}
-
-export function resetSidebarOfficeSessionVisibility(): void {
-  showOfficeSessionsInSidebar = buildTimeShowOfficeSessions;
-}
+/**
+ * Legacy Office collaboration session keys. The Office feature was removed, but
+ * Gateway still persists these keys for installs that used it, so keep filtering
+ * them out of the sidebar instead of surfacing orphaned rooms to the user.
+ */
+const LEGACY_OFFICE_SESSION_KEY_RE = /(?:^|:)office:(?:task-room|task|p2p|role):/;
 
 /** Gateway sessions that must never surface in the user-facing sidebar. */
 export function isSidebarHiddenSessionKey(key: string): boolean {
+  if (!key) return false;
   if (isWorkflowSessionKey(key)) return true;
-  if (showOfficeSessionsInSidebar) return false;
-  return isOfficeSessionKey(key);
+  return LEGACY_OFFICE_SESSION_KEY_RE.test(key);
 }

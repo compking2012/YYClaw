@@ -1131,7 +1131,7 @@ describe('host services', () => {
     );
   });
 
-  it('registers the ACP chat actions plus the Office media send', async () => {
+  it('registers the ACP chat actions plus the media send', async () => {
     const { createChatApi } = await import('@electron/services/chat-api');
 
     expect(Object.keys(createChatApi({

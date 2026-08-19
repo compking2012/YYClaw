@@ -4,24 +4,6 @@ import electron from 'vite-plugin-electron';
 import renderer from 'vite-plugin-electron-renderer';
 import { resolve } from 'path';
 import { existsSync, readFileSync } from 'fs';
-import {
-  MAIN_PROCESS_BUNDLED_ROOT_PACKAGES,
-  collectBundledPackageGraph,
-  isBundledMainProcessImport,
-} from './scripts/electron-main-bundled-packages.mjs';
-import {
-  isLangGraphCompileEnabled,
-  loadLangGraphEnvFiles,
-} from './scripts/is-langgraph-enabled.mjs';
-import {
-  isOfficeCollaborationConfigurable,
-  isOfficeSessionsVisible,
-  loadOfficeEnvFiles,
-} from './scripts/is-office-collaboration-configurable.mjs';
-import {
-  isOfficeUserCheckpointEnabled,
-  loadOfficeUserCheckpointEnv,
-} from './scripts/is-office-user-checkpoint-enabled.mjs';
 
 function getExtensionPackages(): Set<string> {
   try {
@@ -44,23 +26,6 @@ function getExtensionPackages(): Set<string> {
   }
 }
 
-function dropLangGraphOutputWhenDisabled(enabled: boolean) {
-  return {
-    name: 'drop-langgraph-output-when-disabled',
-    generateBundle(_options: unknown, bundle: Record<string, { type?: string; code?: string }>) {
-      if (enabled) return;
-      for (const [fileName, output] of Object.entries(bundle)) {
-        const isLangGraphArtifact =
-          /langgraph|langchain/i.test(fileName)
-          || (output.type === 'chunk' && output.code?.includes('@langchain'));
-        if (isLangGraphArtifact) {
-          delete bundle[fileName];
-        }
-      }
-    },
-  };
-}
-
 const alias = {
   '@': resolve(__dirname, 'src'),
   '@electron': resolve(__dirname, 'electron'),
@@ -68,24 +33,13 @@ const alias = {
 };
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => {
-  loadLangGraphEnvFiles(mode);
-  loadOfficeEnvFiles(mode);
-  loadOfficeUserCheckpointEnv(mode);
-  const enableLangGraph = isLangGraphCompileEnabled();
-  const showOfficeCollaboration = isOfficeCollaborationConfigurable();
-  const showOfficeSessions = isOfficeSessionsVisible();
-  const enableUserCheckpoint = isOfficeUserCheckpointEnabled();
+export default defineConfig(() => {
   const extensionPackages = getExtensionPackages();
-  const mainProcessBundledPackages = enableLangGraph
-    ? collectBundledPackageGraph(__dirname, MAIN_PROCESS_BUNDLED_ROOT_PACKAGES)
-    : new Set<string>();
 
   function isMainProcessExternal(id: string): boolean {
     if (!id || id.startsWith('\0')) return false;
     if (id.startsWith('.') || id.startsWith('/') || /^[A-Za-z]:[\\/]/.test(id)) return false;
     if (id.startsWith('@/') || id.startsWith('@electron/') || id.startsWith('@shared/')) return false;
-    if (isBundledMainProcessImport(id, mainProcessBundledPackages)) return false;
     for (const pkg of extensionPackages) {
       if (id === pkg || id.startsWith(pkg + '/')) return false;
     }
@@ -96,11 +50,7 @@ export default defineConfig(({ mode }) => {
   const openclawVersion = (pkg.devDependencies?.openclaw ?? '') as string;
 
   const compileTimeDefine = {
-    __ENABLE_LANGGRAPH__: enableLangGraph,
-    __SHOW_OFFICE_COLLABORATION__: showOfficeCollaboration,
     __OPENCLAW_VERSION__: JSON.stringify(openclawVersion),
-    __SHOW_OFFICE_SESSIONS__: showOfficeSessions,
-    __OFFICE_USER_CHECKPOINT__: enableUserCheckpoint,
   };
 
   return {
@@ -124,7 +74,6 @@ export default defineConfig(({ mode }) => {
           },
           vite: {
             define: compileTimeDefine,
-            plugins: [dropLangGraphOutputWhenDisabled(enableLangGraph)],
             resolve: {
               alias,
             },

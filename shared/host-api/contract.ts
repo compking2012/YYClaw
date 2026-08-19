@@ -150,21 +150,6 @@ export type WorkflowStartDynamicResult = HostSuccess & {
   /** Set when `resumable` was provided and the model judged the turn a resume request. */
   resume?: boolean;
 };
-export type OfficeIdPayload = { id: string };
-export type OfficeScenarioIdPayload = { scenarioId: string };
-export type OfficeTaskIdPayload = { taskId: string };
-export type OfficeSnapshotResult = HostSuccess & JsonRecord;
-export type OfficeRoleResult = HostSuccess & { role?: JsonRecord; errors?: string[] };
-export type OfficeScenarioResult = HostSuccess & { scenario?: JsonRecord; deletedRoleCount?: number; deletedTaskCount?: number };
-export type OfficeTaskResult = HostSuccess & { task?: JsonRecord };
-export type OfficeMessagesResult = HostSuccess & { messages?: JsonRecord[] };
-export type OfficeRunTaskPayload = { taskId: string; options?: JsonRecord };
-export type OfficeRoomMessagePayload = { taskId: string; content: string; fromRoleId?: string; replyToId?: string };
-export type OfficeP2PPayload = { fromRoleId: string; toRoleId: string; content: string };
-export type OfficeP2PResult = HostSuccess & { sessionKey?: string; reply?: string; completed?: boolean };
-export type OfficeReorderScenariosPayload = { orderedIds: string[] };
-export type OfficeGenerateWorkflowPayload = JsonRecord;
-export type OfficeGenerateWorkflowResult = HostSuccess & JsonRecord;
 
 export type ShellPathPayload = { path: string };
 export type ShellOpenExternalPayload = { url: string };
@@ -1355,29 +1340,6 @@ export type HostApiContract = {
     abort: (payload: WorkflowRunIdPayload) => WorkflowAbortResult;
     status: (payload: WorkflowRunIdPayload) => WorkflowStatusResult;
     startDynamic: (payload: WorkflowStartDynamicPayload) => WorkflowStartDynamicResult;
-  };
-  office: {
-    snapshot: () => OfficeSnapshotResult;
-    enableCollab: () => HostSuccess;
-    updateSettings: (payload: JsonRecord) => HostSuccess;
-    createRole: (payload: JsonRecord) => OfficeRoleResult;
-    updateRole: (payload: OfficeIdPayload & { patch: JsonRecord }) => OfficeRoleResult;
-    deleteRole: (payload: OfficeIdPayload) => HostSuccess;
-    createScenario: (payload: JsonRecord) => OfficeScenarioResult;
-    updateScenario: (payload: OfficeIdPayload & { patch: JsonRecord }) => HostSuccess;
-    deleteScenario: (payload: OfficeIdPayload) => OfficeScenarioResult;
-    reorderScenarios: (payload: OfficeReorderScenariosPayload) => HostSuccess;
-    createTask: (payload: JsonRecord) => OfficeTaskResult;
-    updateTask: (payload: OfficeTaskIdPayload & { patch: JsonRecord }) => OfficeTaskResult;
-    runTask: (payload: OfficeRunTaskPayload) => HostSuccess;
-    abortTask: (payload: OfficeTaskIdPayload) => HostSuccess;
-    deleteTask: (payload: OfficeTaskIdPayload) => HostSuccess;
-    roomMessages: (payload: OfficeTaskIdPayload & { urgent?: boolean }) => OfficeMessagesResult;
-    postRoomMessage: (payload: OfficeRoomMessagePayload) => HostSuccess & { pendingReplies?: boolean };
-    reconcileScenarioProgress: (payload: OfficeScenarioIdPayload) => HostSuccess & { reconciled?: number };
-    sendP2P: (payload: OfficeP2PPayload) => OfficeP2PResult;
-    executionSyncStatus: () => HostSuccess & { active?: boolean };
-    generateWorkflow: (payload: OfficeGenerateWorkflowPayload) => OfficeGenerateWorkflowResult;
   };
   legacy: {
     fetch: (payload: LegacyFetchPayload) => LegacyFetchResult;

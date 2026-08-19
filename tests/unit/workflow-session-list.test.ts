@@ -34,7 +34,7 @@ describe('filterOutWorkflowSessions', () => {
     ]);
   });
 
-  it('drops office internal sessions', () => {
+  it('drops legacy office internal sessions', () => {
     const sessions: ChatSession[] = [
       { key: 'agent:main:main' },
       { key: 'agent:pm:office:task:proj-1:role:dev:node:gen-0' },
@@ -89,7 +89,7 @@ describe('pickStartupSessionFallback — internal sessions are never selected', 
     expect(pickStartupSessionFallback('agent:main:main', sessions)).toBe('agent:main:session-1');
   });
 
-  it('skips office internal sessions', () => {
+  it('skips legacy office internal sessions', () => {
     const sessions: ChatSession[] = [
       { key: 'agent:pm:office:task:proj-1:role:dev:node:gen-0', updatedAt: 9_000 },
       { key: 'agent:main:session-1', updatedAt: 1_000 },

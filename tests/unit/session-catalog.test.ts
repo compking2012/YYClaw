@@ -158,9 +158,7 @@ describe('Gateway session catalog projection', () => {
     }]);
   });
 
-  it('does not insert hidden office sessions when VITE_SHOW_OFFICE_SESSIONS is off', async () => {
-    const { configureSidebarOfficeSessionVisibility } = await import('../../shared/internal-session');
-    configureSidebarOfficeSessionVisibility(false);
+  it('does not insert hidden legacy office sessions', () => {
     const officeKey = 'agent:pm:office:task:proj-1:role:dev:node:gen-0';
     const result = applyGatewaySessionsChanged(
       [{ key: SESSION_KEY }],
@@ -185,9 +183,7 @@ describe('Gateway session catalog projection', () => {
     });
   });
 
-  it('removes a previously listed office session on update when visibility is off', async () => {
-    const { configureSidebarOfficeSessionVisibility } = await import('../../shared/internal-session');
-    configureSidebarOfficeSessionVisibility(false);
+  it('removes a previously listed legacy office session on update', () => {
     const officeKey = 'agent:pm:office:task:proj-1:role:dev:node:gen-0';
     const result = applyGatewaySessionsChanged(
       [{ key: SESSION_KEY }, { key: officeKey, status: 'running' }],
@@ -201,29 +197,6 @@ describe('Gateway session catalog projection', () => {
 
     expect(result.applied).toBe(true);
     expect(result.sessions.map((session) => session.key)).toEqual([SESSION_KEY]);
-  });
-
-  it('inserts office sessions when visibility is enabled', async () => {
-    const { configureSidebarOfficeSessionVisibility } = await import('../../shared/internal-session');
-    configureSidebarOfficeSessionVisibility(true);
-    const officeKey = 'agent:pm:office:task:proj-1:role:dev:node:gen-0';
-    const result = applyGatewaySessionsChanged(
-      [{ key: SESSION_KEY }],
-      {
-        sessionKey: officeKey,
-        ts: 14,
-        session: {
-          key: officeKey,
-          displayName: 'Office node',
-          lastMessagePreview: 'working',
-          status: 'running',
-        },
-      },
-      new Map(),
-    );
-
-    expect(result.applied).toBe(true);
-    expect(result.sessions.map((session) => session.key)).toEqual([SESSION_KEY, officeKey]);
   });
 
   it('never inserts or mutates attention rows from run-scoped cron snapshots', () => {

@@ -1,35 +1,8 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
-import {
-  isLangGraphCompileEnabled,
-  loadLangGraphEnvFiles,
-} from './scripts/is-langgraph-enabled.mjs';
-import {
-  isOfficeCollaborationConfigurable,
-  isOfficeSessionsVisible,
-  loadOfficeEnvFiles,
-} from './scripts/is-office-collaboration-configurable.mjs';
-import {
-  isOfficeUserCheckpointEnabled,
-  loadOfficeUserCheckpointEnv,
-} from './scripts/is-office-user-checkpoint-enabled.mjs';
-
-loadLangGraphEnvFiles('test');
-loadOfficeEnvFiles('test');
-loadOfficeUserCheckpointEnv('test');
-const enableLangGraph = isLangGraphCompileEnabled();
-const showOfficeCollaboration = isOfficeCollaborationConfigurable();
-const showOfficeSessions = isOfficeSessionsVisible();
-const enableUserCheckpoint = isOfficeUserCheckpointEnabled();
 
 export default defineConfig({
-  define: {
-    __ENABLE_LANGGRAPH__: enableLangGraph,
-    __SHOW_OFFICE_COLLABORATION__: showOfficeCollaboration,
-    __SHOW_OFFICE_SESSIONS__: showOfficeSessions,
-    __OFFICE_USER_CHECKPOINT__: enableUserCheckpoint,
-  },
   plugins: [
     react(),
     {

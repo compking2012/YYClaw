@@ -11,13 +11,7 @@
     "language": "Язык",
     "menuLanguageUpdated": "Язык меню обновлён",
     "launchAtStartup": "Запуск при старте системы",
-    "launchAtStartupDesc": "Автоматически запускать YYClaw при входе в систему",
-    "officeCollaboration": "Офисная коллаборация",
-    "officeCollaborationDesc": "Показывать раздел «Офис» в боковой панели и включать API команд/проектов (по умолчанию выкл.)",
-    "officeCollaborationGatewayWait": "Дождитесь завершения запуска шлюза, затем повторите",
-    "officeCollaborationApplying": "Синхронизация настроек шлюза и перезапуск, подождите…",
-    "officeCollaborationEnabledOk": "Офис-коллаборация включена; шлюз перезапущен в режиме без стриминга",
-    "officeCollaborationDisabledOk": "Офис-коллаборация выключена; шлюз вернул стриминг вывода"
+    "launchAtStartupDesc": "Автоматически запускать YYClaw при входе в систему"
   },
   "aiProviders": {
     "title": "Модели",

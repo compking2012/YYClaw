@@ -17,7 +17,6 @@ function isValidEventChannel(channel: string): boolean {
     || channel === 'gateway:talk-event'
     || channel === 'channels:accounts-changed'
     || channel === 'providers:snapshot-changed'
-    || channel.startsWith('office:')
     || channel.startsWith('workflow:')
     || channel.startsWith('skill:')
     || DYNAMIC_CHANNEL_EVENT_RE.test(channel)

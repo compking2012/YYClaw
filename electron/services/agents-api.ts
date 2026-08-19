@@ -124,12 +124,6 @@ export function createAgentsApi(ctx: AgentsApiContext): CompleteHostServiceRegis
       const agentId = requireString(payload, 'id');
       const newId = requireString(payload, 'newId');
       const snapshot = await updateAgentId(agentId, newId);
-      try {
-        const { remapOfficeAgentIdReferences } = await import('./office/store');
-        await remapOfficeAgentIdReferences(agentId, newId);
-      } catch (err) {
-        console.warn('[agents] Failed to remap office agent id references:', err);
-      }
       // An agent id rename migrates the agent workspace/identity; the running
       // Gateway must be fully replaced rather than hot-applied.
       await restartGatewayForAgentDeletion(ctx);

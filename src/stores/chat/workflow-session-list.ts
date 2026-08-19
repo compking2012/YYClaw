@@ -16,7 +16,7 @@ import { isSidebarHiddenSessionKey } from '../../../shared/internal-session';
 import type { ChatSession } from './types';
 import type { WorkflowCardRef } from '@/types/workflow';
 
-/** Drop internal workflow / office sub-sessions from the sidebar list. */
+/** Drop internal workflow sub-sessions from the sidebar list. */
 export function filterOutWorkflowSessions(sessions: ChatSession[]): ChatSession[] {
   return sessions.filter((s) => !isSidebarHiddenSessionKey(s.key));
 }

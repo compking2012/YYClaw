@@ -25,13 +25,7 @@
     "language": "语言",
     "menuLanguageUpdated": "菜单语言已更新",
     "launchAtStartup": "开机自动启动",
-    "launchAtStartupDesc": "登录系统后自动启动 $t(common:appName)",
-    "officeCollaboration": "协作",
-    "officeCollaborationDesc": "在侧栏显示「协作」入口，并启用多角色团队与项目 API（默认关闭）",
-    "officeCollaborationGatewayWait": "等待网关启动后重试",
-    "officeCollaborationApplying": "正在同步网关配置并重启，请稍候…",
-    "officeCollaborationEnabledOk": "协作已开启，网关已按非流式模式重启",
-    "officeCollaborationDisabledOk": "协作已关闭，网关已恢复流式输出"
+    "launchAtStartupDesc": "登录系统后自动启动 $t(common:appName)"
   },
   "aiProviders": {
     "title": "模型",

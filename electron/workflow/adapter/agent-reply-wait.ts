@@ -18,9 +18,9 @@
  * don't block to the deadline. On true timeout/abort it returns null (the caller
  * fails the step cleanly rather than consuming a preamble).
  *
- * Kept self-contained (NO import from electron/services/office/*) — it mirrors the
- * proven office run-settle logic but avoids dragging in the office multi-agent
- * deps (mention dispatch, room mirror, structured-reply, attachments).
+ * Self-contained by design: the run-settle logic lives here rather than being
+ * shared, so this single-agent waiter carries no multi-agent orchestration deps
+ * (mention dispatch, room mirror, structured-reply, attachments).
  */
 import type { GatewayManager } from '../../gateway/manager';
 import { logger } from '../../utils/logger';
@@ -55,7 +55,7 @@ const DEFAULT_INITIAL_DELAY_MS = 1_000;
 const DEFAULT_IDLE_FALLBACK_MS = 45_000;
 /** Consecutive identical polls (after the gate opens) required to accept. */
 const REQUIRED_STABLE = 2;
-/** Gateway run-completion phases (mirror of office OFFICE_RUN_COMPLETE_PHASES). */
+/** Gateway run-completion phases. */
 const COMPLETE_PHASES = new Set(['completed', 'done', 'finished', 'end', 'ended']);
 
 function sleep(ms: number): Promise<void> {
@@ -131,7 +131,7 @@ function latestAssistantAfter(messages: RawMessage[], startedAtMs: number): stri
   return best?.text ?? null;
 }
 
-// --- in-flight tool-work detection (self-contained mirror of office logic) ---
+// --- in-flight tool-work detection ---
 
 function isToolResultRole(role: unknown): boolean {
   const normalized = String(role ?? '').toLowerCase();
@@ -187,7 +187,7 @@ function hasInFlightToolWork(messages: RawMessage[], startedAtMs: number): boole
   return Boolean(lastRelevant && isToolResultRole(lastRelevant.role));
 }
 
-// --- gateway event parsing (self-contained subset of office parseGatewayChatEnvelope) ---
+// --- gateway event parsing (minimal chat-envelope subset) ---
 
 type ChatEvent = { sessionKey?: string; state?: string; phase?: string; runId?: string };
 

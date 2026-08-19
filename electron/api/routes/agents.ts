@@ -256,12 +256,6 @@ export async function handleAgentRoutes(
         const body = await parseJsonBody<{ id: string }>(req);
         const agentId = decodeURIComponent(parts[0]);
         const snapshot = await updateAgentId(agentId, body.id);
-        try {
-          const { remapOfficeAgentIdReferences } = await import('../../services/office/store');
-          await remapOfficeAgentIdReferences(agentId, body.id);
-        } catch (err) {
-          console.warn('[agents] Failed to remap office agent id references:', err);
-        }
         notifyManagerConfigSnapshotBeforeGatewayReload('local_agents_update_id');
         await restartGatewayForAgentDeletion(ctx);
         sendJson(res, 200, { success: true, ...snapshot });

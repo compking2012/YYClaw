@@ -14,7 +14,6 @@ touchedAreas:
   - electron/gateway/config-refresh-scheduler.ts
   - electron/gateway/manager.ts
   - electron/api/routes/channels.ts
-  - electron/api/routes/office.ts
   - electron/api/routes/skills.ts
   - electron/main/ipc-handlers.ts
   - electron/services/agents-api.ts

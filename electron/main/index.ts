@@ -668,11 +668,6 @@ if (gotTheLock) {
   clawHubService = new ClawHubService();
   adminConsoleClient.setGatewayManager(gatewayManager);
   adminConsoleClient.setClawHubService(clawHubService);
-  void import('../services/office/office-sync-runtime').then(({ onOfficeExecutionQuiesced }) => {
-    onOfficeExecutionQuiesced(() => {
-      gatewayManager.tryFlushDeferredRestart('office-execution-quiesced');
-    });
-  });
 
   // Register builtin extensions and load manifest
   registerAllBuiltinExtensions();

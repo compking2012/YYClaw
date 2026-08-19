@@ -585,10 +585,11 @@ describe('hostApi facade', () => {
   });
 
   // SKIPPED (fork deviation): the typed-IPC migration (invokeIpc removal,
-  // api-client deletion, type convergence) is complete, but the electron/services/office
-  // layer still imports shared logic from src/lib/office-* (plus shared/chat/types.ts ->
-  // src/types/workflow). Untangling those cross-layer imports is a separate code-organization
-  // refactor, tracked apart from the IPC migration. Re-enable once that move lands.
+  // api-client deletion, type convergence) is complete. The Office layer that used
+  // to violate this boundary is gone, but two cross-layer imports remain:
+  // `electron/services/skills-marketplace-client.ts` -> `src/`, and
+  // `shared/chat/types.ts` -> `src/types/workflow`. Untangling those is a separate
+  // code-organization refactor. Re-enable once that move lands.
   it.skip('keeps production main, preload, renderer, and shared imports on their side of the boundary', () => {
     const webBrowserTypeBridge = readFileSync(join(process.cwd(), 'src/types/web-browser.ts'), 'utf8');
     const collectFiles = (root: string): string[] => {

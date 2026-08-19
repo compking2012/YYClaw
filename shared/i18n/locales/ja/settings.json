@@ -25,13 +25,7 @@
     "language": "言語",
     "menuLanguageUpdated": "メニューの言語を更新しました",
     "launchAtStartup": "システム起動時に自動起動",
-    "launchAtStartupDesc": "ログイン時に $t(common:appName) を自動的に起動します",
-    "officeCollaboration": "オフィスコラボレーション",
-    "officeCollaborationDesc": "サイドバーに「オフィスコラボ」を表示し、チーム／プロジェクト API を有効化（既定はオフ）",
-    "officeCollaborationGatewayWait": "ゲートウェイの起動完了後に再試行してください",
-    "officeCollaborationApplying": "ゲートウェイ設定を同期して再起動しています。しばらくお待ちください…",
-    "officeCollaborationEnabledOk": "オフィスコラボを有効にしました（非ストリーミングで再起動済み）",
-    "officeCollaborationDisabledOk": "オフィスコラボを無効にしました（ストリーミング出力を復元）"
+    "launchAtStartupDesc": "ログイン時に $t(common:appName) を自動的に起動します"
   },
   "aiProviders": {
     "title": "モデル",

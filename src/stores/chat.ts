@@ -79,7 +79,6 @@ import { useSettingsStore } from './settings';
 import { useWorkflowStore } from './workflow';
 import { useAcpChatSessionStore } from './acp-chat-session';
 import { isSidebarHiddenSessionKey } from '../../shared/internal-session';
-import { isOfficeSessionKey } from '../../shared/office-session';
 import type { WorkflowCardRef, RunRecord, WorkflowStepMeta } from '@/types/workflow';
 import { subscribeHostEvent } from '@/lib/host-events';
 import i18n from '@/i18n';
@@ -3388,7 +3387,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (
             !mintedFreshLocalSession
             && useAgentsStore.getState().agents.length > 0
-            && !isOfficeSessionKey(nextSessionKey)
             && !isKnownAgentPrefix(getCanonicalPrefixFromSessionKey(nextSessionKey))
           ) {
             const defaultPrefix = resolveDefaultAgentPrefix();
@@ -3397,8 +3395,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
               ?? `${defaultPrefix}:main`;
           }
 
-          // Keep office/workflow current keys (e.g. OfficeChatPanel) and never
-          // fallback/inject them into the user-facing sidebar list.
+          // Keep hidden workflow current keys and never fallback/inject them
+          // into the user-facing sidebar list.
           if (isSidebarHiddenSessionKey(currentSessionKey)) {
             nextSessionKey = currentSessionKey;
           } else {

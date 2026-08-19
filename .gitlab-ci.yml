@@ -1,0 +1,365 @@
+stages:
+  - daily_build
+  - pre_release
+
+# ---------------------------------------------------------------------------
+# daily: schedule / push main — stamp display version as YYYYMMDD-HHMMSS
+# ---------------------------------------------------------------------------
+daily_build:
+  stage: daily_build
+  variables:
+    GIT_CLEAN_FLAGS: -ffdx -e resources/build-cache/ -e resources/build-cache/**
+    # Full history so changelist vs last successful build is complete.
+    GIT_DEPTH: 0
+  tags:
+    - macos
+    - daily-build
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+    - when: never
+  timeout: 6h
+  script:
+    - export PATH="/Users/share/.nvm/versions/node/v22.22.3/bin:$HOME/.local/bin:/opt/homebrew/opt/binutils/bin:$PATH"
+    - export GIT_CONFIG_COUNT=2
+    - export GIT_CONFIG_KEY_0="url.https://github.com/.insteadOf"
+    - export GIT_CONFIG_VALUE_0="git@github.com:"
+    - export GIT_CONFIG_KEY_1="url.https://github.com/.insteadOf"
+    - export GIT_CONFIG_VALUE_1="ssh://git@github.com/"
+    # Stamp buildDisplayVersion (YYYYMMDD-HHMMSS) before packaging.
+    # package.json "version" stays valid semver for electron-builder.
+    - node scripts/stamp-ci-package-version.mjs
+    - chmod +x ./build_rel.sh
+    - ./build_rel.sh
+    - node scripts/write-builder-effective-config.mjs
+    - chmod +x scripts/ci-mac-arm64-smoke.sh
+    - echo "[ci] mac arm64 smoke test (install → gateway → GLM-5.2 chat e2e)"
+    - |
+      if [ -z "${SMOKE_GLM_API_KEY:-}" ] && [ -f scripts/ci-smoke.env ]; then
+        set -a
+        # shellcheck disable=SC1091
+        . scripts/ci-smoke.env
+        set +a
+      fi
+      if [ -z "${SMOKE_GLM_API_KEY:-}" ]; then
+        echo "SMOKE_GLM_API_KEY 未设置（GitLab CI Variable 或构建机 scripts/ci-smoke.env）。" >&2
+        exit 1
+      fi
+    - pnpm run smoke:mac-arm64:ci
+    - echo "[ci] mac arm64 smoke passed, continuing upload"
+    - |
+      DISPLAY_VERSION="$(node -p "require('./package.json').buildDisplayVersion || require('./package.json').version")"
+      VERSION="V${DISPLAY_VERSION}"
+      DAILY_DIR="${DISPLAY_VERSION}"
+      echo "VERSION=$VERSION" > ci_daily.env
+      echo "DAILY_DIR=$DAILY_DIR" >> ci_daily.env
+      echo "DAILY_URL=${DAILY_BASE_URL%/}/${DAILY_DIR}/" >> ci_daily.env
+      echo "CI_HEAD_SHA=$(git rev-parse HEAD)" >> ci_daily.env
+    - |
+      if [ -z "${DEPLOY_SSH_PRIVATE_KEY:-}" ]; then
+        echo "DEPLOY_SSH_PRIVATE_KEY 未设置，无法上传发布产物。" >&2
+        exit 1
+      fi
+
+      mkdir -p "$HOME/.ssh"
+      chmod 700 "$HOME/.ssh"
+      printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/yyclaw_deploy"
+      chmod 600 "$HOME/.ssh/yyclaw_deploy"
+      ssh-keyscan -H "$DEPLOY_HOST" >> "$HOME/.ssh/known_hosts"
+    - |
+      SSH_OPTS=(-i "$HOME/.ssh/yyclaw_deploy" -o IdentitiesOnly=yes)
+      REMOTE_MARKER="${DEPLOY_PATH}/daily/.last-ci-commit"
+      PREV_SHA="$(
+        ssh "${SSH_OPTS[@]}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+          "cat '${REMOTE_MARKER}' 2>/dev/null" | tr -d '[:space:]' || true
+      )"
+      chmod +x scripts/ci-write-changelist.sh
+      ./scripts/ci-write-changelist.sh "${PREV_SHA}" ci_changelist.txt
+      echo "PREV_CI_SHA=${PREV_SHA}" >> ci_daily.env
+
+      rsync -av \
+        --include="/*.deb" \
+        --include="/*.AppImage" \
+        --include="/*.dmg" \
+        --include="/*.zip" \
+        --include="/*.exe" \
+        --include="/*.blockmap" \
+        --include="/*.yml" \
+        --include="/*.yaml" \
+        --exclude="*" \
+        -e "ssh -i $HOME/.ssh/yyclaw_deploy -o IdentitiesOnly=yes" \
+        release/ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/daily/${DAILY_DIR}/"
+
+      # Record this successful build tip for the next changelist.
+      git rev-parse HEAD | ssh "${SSH_OPTS[@]}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+        "cat > '${REMOTE_MARKER}'"
+      echo "[daily] updated ${REMOTE_MARKER}"
+  after_script:
+    - |
+      set -a
+      # shellcheck disable=SC1091
+      source ci_daily.env 2>/dev/null || true
+      set +a
+    - |
+      STATUS_TEXT="❌ 失败"
+      if [ "$CI_JOB_STATUS" = "success" ]; then STATUS_TEXT="✅ 成功"; fi
+      export STATUS_TEXT
+      NOTIFY_TIME="$(TZ=Asia/Shanghai date -Iseconds)"
+      export NOTIFY_TIME
+
+      CHANGELIST="$(cat ci_changelist.txt 2>/dev/null || echo '（无 changelist：构建未到上传步骤或生成失败）')"
+
+      # Optional Feishu (kept for compatibility; changelist truncated).
+      if [ -n "${FEISHU_WEBHOOK_URL:-}" ]; then
+        CHANGELIST_FEISHU="$(printf '%s\n' "$CHANGELIST" | head -n 40)"
+        export CHANGELIST_FEISHU
+        node <<'NODE' | curl -fsS -X POST "$FEISHU_WEBHOOK_URL" \
+          -H "Content-Type: application/json" \
+          --data-binary @- || echo "[daily] 飞书通知发送失败" >&2
+      const env = process.env;
+      const payload = {
+        msg_type: 'text',
+        content: {
+          text: [
+            `【daily】整体状态：${env.STATUS_TEXT || '未知'}`,
+            `任务 id：#${env.CI_JOB_ID ?? ''} · ${env.CI_JOB_URL ?? ''}`,
+            `触发方式：${env.CI_PIPELINE_SOURCE ?? ''}`,
+            `触发用户：${env.GITLAB_USER_NAME ?? ''} <${env.GITLAB_USER_EMAIL ?? ''}>`,
+            `软件版本：${env.VERSION || '未知'}`,
+            `时间：${env.NOTIFY_TIME || ''}`,
+            `版本目录 URL：${env.DAILY_URL || '未生成'}`,
+            '',
+            env.CHANGELIST_FEISHU || '',
+          ].join('\n'),
+        },
+      };
+      process.stdout.write(JSON.stringify(payload));
+      NODE
+      else
+        echo "[daily] FEISHU_WEBHOOK_URL 未设置，跳过飞书通知。"
+      fi
+
+      # SMTP email via GitLab CI Variables (full changelist).
+      export NOTIFY_SUBJECT="[YYClaw daily] ${STATUS_TEXT} ${VERSION:-未知版本}"
+      export NOTIFY_BODY="$(printf '%s\n' \
+        "任务：daily_build" \
+        "整体状态：${STATUS_TEXT}" \
+        "任务 id：#${CI_JOB_ID:-} · ${CI_JOB_URL:-}" \
+        "触发方式：${CI_PIPELINE_SOURCE:-}" \
+        "触发用户：${GITLAB_USER_NAME:-} <${GITLAB_USER_EMAIL:-}>" \
+        "软件版本：${VERSION:-未知}" \
+        "时间：${NOTIFY_TIME}" \
+        "版本目录 URL：${DAILY_URL:-未生成}" \
+        "" \
+        "${CHANGELIST}" \
+      )"
+      python3 scripts/ci-notify-smtp.py || echo "[daily] SMTP 邮件发送失败" >&2
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - ci_daily.env
+      - ci_changelist.txt
+      - release/*.yml
+      - release/*.yaml
+      - release/*.blockmap
+
+# ---------------------------------------------------------------------------
+# pre_release: manual only — package.json version as-is; upload under
+#   /data/yyclaw-update-server-https/data/pre_release/YYYYMMDD-HHMMSS/
+# Always builds origin/pre_release (not the triggering ref).
+# ---------------------------------------------------------------------------
+pre_release:
+  stage: pre_release
+  variables:
+    GIT_CLEAN_FLAGS: -ffdx -e resources/build-cache/ -e resources/build-cache/**
+    GIT_STRATEGY: fetch
+    GIT_DEPTH: 0
+    PRE_RELEASE_DEPLOY_PATH: /data/yyclaw-update-server-https/data
+  tags:
+    - macos
+    - daily-build
+  rules:
+    # Manual / API only on pre_release branch — never schedule or push auto-build.
+    # Script still force-checkouts origin/pre_release so the built tip is fixed.
+    - if: '$CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_BRANCH == "pre_release"'
+      when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "api" && $CI_COMMIT_BRANCH == "pre_release"'
+      when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "trigger" && $CI_COMMIT_BRANCH == "pre_release"'
+      when: on_success
+    - when: never
+  timeout: 6h
+  script:
+    - export PATH="/Users/share/.nvm/versions/node/v22.22.3/bin:$HOME/.local/bin:/opt/homebrew/opt/binutils/bin:$PATH"
+    - export GIT_CONFIG_COUNT=2
+    - export GIT_CONFIG_KEY_0="url.https://github.com/.insteadOf"
+    - export GIT_CONFIG_VALUE_0="git@github.com:"
+    - export GIT_CONFIG_KEY_1="url.https://github.com/.insteadOf"
+    - export GIT_CONFIG_VALUE_1="ssh://git@github.com/"
+    - |
+      echo "[pre_release] checkout origin/pre_release (fixed ref)"
+      git fetch origin pre_release
+      git checkout -B pre_release origin/pre_release
+      git reset --hard origin/pre_release
+      git clean -ffdx -e resources/build-cache/ -e resources/build-cache/**
+      git log -1 --oneline
+    - |
+      # Ensure About / artifacts use package.json semver only (no daily stamp).
+      node -e "
+        const fs = require('fs');
+        const pkgPath = 'package.json';
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+        if (pkg.buildDisplayVersion != null) {
+          delete pkg.buildDisplayVersion;
+          fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 4) + '\n');
+          console.log('[pre_release] removed buildDisplayVersion');
+        }
+        console.log('[pre_release] version=' + pkg.version);
+      "
+    - chmod +x ./build_rel.sh
+    - ./build_rel.sh
+    - node scripts/write-builder-effective-config.mjs
+    - chmod +x scripts/ci-mac-arm64-smoke.sh
+    - echo "[ci] mac arm64 smoke test (install → gateway → GLM-5.2 chat e2e)"
+    - |
+      if [ -z "${SMOKE_GLM_API_KEY:-}" ] && [ -f scripts/ci-smoke.env ]; then
+        set -a
+        # shellcheck disable=SC1091
+        . scripts/ci-smoke.env
+        set +a
+      fi
+      if [ -z "${SMOKE_GLM_API_KEY:-}" ]; then
+        echo "SMOKE_GLM_API_KEY 未设置（GitLab CI Variable 或构建机 scripts/ci-smoke.env）。" >&2
+        exit 1
+      fi
+    - pnpm run smoke:mac-arm64:ci
+    - echo "[ci] mac arm64 smoke passed, continuing upload"
+    - |
+      PKG_VERSION="$(node -p "require('./package.json').version")"
+      UPLOAD_DIR="$(TZ=Asia/Shanghai date +%Y%m%d-%H%M%S)"
+      VERSION="V${PKG_VERSION}"
+      REMOTE_DIR="${PRE_RELEASE_DEPLOY_PATH}/pre_release/${UPLOAD_DIR}/"
+      echo "VERSION=$VERSION" > ci_pre_release.env
+      echo "PKG_VERSION=$PKG_VERSION" >> ci_pre_release.env
+      echo "UPLOAD_DIR=$UPLOAD_DIR" >> ci_pre_release.env
+      echo "PRE_RELEASE_REMOTE=$REMOTE_DIR" >> ci_pre_release.env
+      echo "CI_HEAD_SHA=$(git rev-parse HEAD)" >> ci_pre_release.env
+      if [ -n "${PRE_RELEASE_BASE_URL:-}" ]; then
+        # PRE_RELEASE_BASE_URL already includes .../pre_release (no trailing slash).
+        echo "PRE_RELEASE_URL=${PRE_RELEASE_BASE_URL%/}/${UPLOAD_DIR}/" >> ci_pre_release.env
+      else
+        echo "PRE_RELEASE_URL=" >> ci_pre_release.env
+      fi
+      echo "[pre_release] VERSION=$VERSION"
+      echo "[pre_release] remote=$REMOTE_DIR"
+    - |
+      if [ -z "${DEPLOY_SSH_PRIVATE_KEY:-}" ]; then
+        echo "DEPLOY_SSH_PRIVATE_KEY 未设置，无法上传发布产物。" >&2
+        exit 1
+      fi
+
+      mkdir -p "$HOME/.ssh"
+      chmod 700 "$HOME/.ssh"
+      printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/yyclaw_deploy"
+      chmod 600 "$HOME/.ssh/yyclaw_deploy"
+      ssh-keyscan -H "$DEPLOY_HOST" >> "$HOME/.ssh/known_hosts"
+    - |
+      SSH_OPTS=(-i "$HOME/.ssh/yyclaw_deploy" -o IdentitiesOnly=yes)
+      REMOTE_MARKER="${PRE_RELEASE_DEPLOY_PATH}/pre_release/.last-ci-commit"
+      PREV_SHA="$(
+        ssh "${SSH_OPTS[@]}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+          "cat '${REMOTE_MARKER}' 2>/dev/null" | tr -d '[:space:]' || true
+      )"
+      chmod +x scripts/ci-write-changelist.sh
+      ./scripts/ci-write-changelist.sh "${PREV_SHA}" ci_changelist.txt
+      echo "PREV_CI_SHA=${PREV_SHA}" >> ci_pre_release.env
+
+      rsync -av \
+        --include="/*.deb" \
+        --include="/*.AppImage" \
+        --include="/*.dmg" \
+        --include="/*.zip" \
+        --include="/*.exe" \
+        --include="/*.blockmap" \
+        --include="/*.yml" \
+        --include="/*.yaml" \
+        --exclude="*" \
+        -e "ssh -i $HOME/.ssh/yyclaw_deploy -o IdentitiesOnly=yes" \
+        release/ "${DEPLOY_USER}@${DEPLOY_HOST}:${PRE_RELEASE_DEPLOY_PATH}/pre_release/${UPLOAD_DIR}/"
+
+      git rev-parse HEAD | ssh "${SSH_OPTS[@]}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+        "cat > '${REMOTE_MARKER}'"
+      echo "[pre_release] updated ${REMOTE_MARKER}"
+  after_script:
+    - |
+      set -a
+      # shellcheck disable=SC1091
+      source ci_pre_release.env 2>/dev/null || true
+      set +a
+    - |
+      STATUS_TEXT="❌ 失败"
+      if [ "$CI_JOB_STATUS" = "success" ]; then STATUS_TEXT="✅ 成功"; fi
+      export STATUS_TEXT
+      NOTIFY_TIME="$(TZ=Asia/Shanghai date -Iseconds)"
+      export NOTIFY_TIME
+
+      CHANGELIST="$(cat ci_changelist.txt 2>/dev/null || echo '（无 changelist：构建未到上传步骤或生成失败）')"
+
+      if [ -n "${FEISHU_WEBHOOK_URL:-}" ]; then
+        echo "[pre_release] 发送飞书通知…"
+        CHANGELIST_FEISHU="$(printf '%s\n' "$CHANGELIST" | head -n 40)"
+        export CHANGELIST_FEISHU
+        node <<'NODE' | curl -fsS -X POST "$FEISHU_WEBHOOK_URL" \
+          -H "Content-Type: application/json" \
+          --data-binary @- || echo "[pre_release] 飞书通知发送失败" >&2
+      const env = process.env;
+      const payload = {
+        msg_type: 'text',
+        content: {
+          text: [
+            `【pre_release】整体状态：${env.STATUS_TEXT || '未知'}`,
+            `任务 id：#${env.CI_JOB_ID ?? ''} · ${env.CI_JOB_URL ?? ''}`,
+            `触发方式：${env.CI_PIPELINE_SOURCE ?? ''}`,
+            `触发用户：${env.GITLAB_USER_NAME ?? ''} <${env.GITLAB_USER_EMAIL ?? ''}>`,
+            `分支：origin/pre_release`,
+            `软件版本：${env.VERSION || '未知'}`,
+            `时间：${env.NOTIFY_TIME || ''}`,
+            `远程目录：${env.PRE_RELEASE_REMOTE || '未生成'}`,
+            `版本目录 URL：${env.PRE_RELEASE_URL || '未配置 PRE_RELEASE_BASE_URL'}`,
+            '',
+            env.CHANGELIST_FEISHU || '',
+          ].join('\n'),
+        },
+      };
+      process.stdout.write(JSON.stringify(payload));
+      NODE
+      else
+        echo "[pre_release] FEISHU_WEBHOOK_URL 未设置，跳过飞书通知。"
+      fi
+
+      export NOTIFY_SUBJECT="[YYClaw pre_release] ${STATUS_TEXT} ${VERSION:-未知版本}"
+      export NOTIFY_BODY="$(printf '%s\n' \
+        "任务：pre_release" \
+        "整体状态：${STATUS_TEXT}" \
+        "任务 id：#${CI_JOB_ID:-} · ${CI_JOB_URL:-}" \
+        "触发方式：${CI_PIPELINE_SOURCE:-}" \
+        "触发用户：${GITLAB_USER_NAME:-} <${GITLAB_USER_EMAIL:-}>" \
+        "分支：origin/pre_release" \
+        "软件版本：${VERSION:-未知}" \
+        "时间：${NOTIFY_TIME}" \
+        "远程目录：${PRE_RELEASE_REMOTE:-未生成}" \
+        "版本目录 URL：${PRE_RELEASE_URL:-未配置 PRE_RELEASE_BASE_URL}" \
+        "" \
+        "${CHANGELIST}" \
+      )"
+      python3 scripts/ci-notify-smtp.py || echo "[pre_release] SMTP 邮件发送失败" >&2
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - ci_pre_release.env
+      - ci_changelist.txt
+      - release/*.yml
+      - release/*.yaml
+      - release/*.blockmap

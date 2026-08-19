@@ -85,6 +85,11 @@ playground/
 resources/enterprise-skills/
 resources/openclaw-plugins/skillshub/
 
+# Lark skills are downloaded from GitHub by `pnpm run init` / build
+# (see scripts/bundle-lark-cli.mjs), not checked in.
+resources/skills-bundled/lark-*/
+
+.agents/
 .opencode
 .superpowers
 .playwright-mcp

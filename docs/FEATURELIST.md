@@ -58,8 +58,8 @@ tracked as GitHub issues.
 
 | Item | Notes |
 |------|-------|
-| Screenshots are generated with seeded mock data | `pnpm run screenshots` captures all 24 images from an isolated profile with mocked gateway/provider/skill/cron/channel data (`tests/e2e/capture-readme-screenshots.spec.ts`). The data is representative, not real. Re-run after any UI change that affects the six README surfaces |
-| Chat screenshot has no conversation | The chat capture shows an empty session; the composer still reads "Gateway not connected" because the composer gates on a readiness signal the mock does not satisfy. Seeding an ACP conversation via `emitAcpSessionUpdates` would improve it |
+| Screenshots are generated with seeded mock data | `pnpm run screenshots` captures all 24 images from an isolated profile with mocked gateway/provider/skill/cron/channel data and a seeded chat conversation (`tests/e2e/capture-readme-screenshots.spec.ts`). The data is representative, not real. Re-run after any UI change that affects the six README surfaces |
+| Seeded content is layout-sensitive | The chat conversation is tuned to fit the 1280×800 viewport without scrolling. Lengthening the prose, or a locale that wraps to an extra line, pushes the user's request out of frame — check every locale after editing `CHAT_CONTENT`. Avoid `$…$` pairs in seeded prose: the renderer treats them as KaTeX inline math (by design) |
 | No screenshots for several shipping pages | Setup wizard, Agents, Workflows, Image Generation, and the Memory tab have no screenshot in any locale |
 | Screenshot locale directories are inconsistently named | `resources/screenshot/{en,zh,jp,ru}` vs `docs/{en-US,zh-CN,ja-JP,ru-RU}` |
 | `tests/unit` is not typechecked | `tsconfig.test.json` covers only `tests/e2e/fixtures` (the shared harness). Extending it to every spec surfaces ~350 pre-existing loose-typing errors (inferred literals vs. declared mock shapes, missing vitest globals) that need cleanup first |

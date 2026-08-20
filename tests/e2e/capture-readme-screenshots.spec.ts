@@ -1,7 +1,14 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ElectronApplication, Page } from '@playwright/test';
-import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
+import sharp from 'sharp';
+import {
+  completeSetup,
+  emitAcpSessionUpdates,
+  expect,
+  installIpcMocks,
+  test,
+} from './fixtures/electron';
 import { E2E_SCREENSHOT_TAG } from './parallel-policy';
 
 /**
@@ -219,6 +226,172 @@ const SKILLS = {
   ],
 };
 
+const MAIN_SESSION_KEY = 'agent:main:main';
+const MAIN_WORKSPACE = '/Users/you/Workspace';
+
+/**
+ * Seeded chat conversation per locale.
+ *
+ * The chat surface is the first screenshot most readers look at, so it needs to
+ * show what the product actually does rather than an empty session: a request, a
+ * tool run, prose with Markdown, a produced file, and generated image media.
+ */
+const CHAT_CONTENT = {
+  en: {
+    request: 'Analyze data/q3-sales.csv, chart the monthly trend, and write a short summary report.',
+    analysis: [
+      'Read **data/q3-sales.csv** (92 rows). Revenue (USD) grew every month, mostly on enterprise accounts:',
+      '',
+      '- **July** 412K · **August** 486K (+18%) · **September** 571K (+17%)',
+    ].join('\n'),
+    closing: 'Done — the chart is above and the write-up is in `reports/q3-summary.md`.',
+    chartTitle: 'Q3 revenue by month',
+    months: ['Jul', 'Aug', 'Sep'],
+    barLabels: ['$412K', '$486K', '$571K'],
+    writeTool: 'Write: reports/q3-summary.md',
+  },
+  zh: {
+    request: '分析 data/q3-sales.csv，画出月度趋势图，并写一份简短的总结报告。',
+    analysis: [
+      '已读取 **data/q3-sales.csv**（92 行），本季度营收逐月增长，主要来自企业客户：',
+      '',
+      '- **7 月** 41.2 万 · **8 月** 48.6 万（+18%）· **9 月** 57.1 万（+17%）',
+    ].join('\n'),
+    closing: '完成 —— 图表见上方，完整分析写入了 `reports/q3-summary.md`。',
+    chartTitle: '第三季度月度营收',
+    months: ['7 月', '8 月', '9 月'],
+    barLabels: ['41.2 万', '48.6 万', '57.1 万'],
+    writeTool: 'Write: reports/q3-summary.md',
+  },
+  jp: {
+    request: 'data/q3-sales.csv を分析して、月次トレンドをグラフにし、短いサマリーレポートを書いてください。',
+    analysis: [
+      '**data/q3-sales.csv**（92 行）を読みました。売上は毎月伸びており、主にエンタープライズ顧客によるものです。',
+      '',
+      '- **7月** 41.2万ドル · **8月** 48.6万ドル（+18%）· **9月** 57.1万ドル（+17%）',
+    ].join('\n'),
+    closing: '完了しました。グラフは上のとおりで、詳細は `reports/q3-summary.md` に書き出しています。',
+    chartTitle: '第3四半期の月次売上',
+    months: ['7月', '8月', '9月'],
+    barLabels: ['41.2万', '48.6万', '57.1万'],
+    writeTool: 'Write: reports/q3-summary.md',
+  },
+  ru: {
+    request: 'Проанализируй data/q3-sales.csv, построй график по месяцам и напиши сводку.',
+    analysis: [
+      'Прочитал **data/q3-sales.csv** (92 строки). Выручка (USD) росла каждый месяц:',
+      '',
+      '- **Июль** 412K · **Август** 486K (+18%) · **Сентябрь** 571K (+17%)',
+    ].join('\n'),
+    closing: 'Готово — график выше, а разбор записан в `reports/q3-summary.md`.',
+    chartTitle: 'Выручка за 3-й квартал по месяцам',
+    months: ['Июл', 'Авг', 'Сен'],
+    barLabels: ['412K', '486K', '571K'],
+    writeTool: 'Write: reports/q3-summary.md',
+  },
+} as const;
+
+const REPORT_MARKDOWN = [
+  '# Q3 revenue summary',
+  '',
+  '| Month | Revenue | Change |',
+  '|-------|---------|--------|',
+  '| July | $412,000 | — |',
+  '| August | $486,000 | +18% |',
+  '| September | $571,000 | +17% |',
+  '',
+  'Enterprise accounts contributed 63% of the quarter-over-quarter increase.',
+].join('\n');
+
+/**
+ * Render the "generated" chart as a real PNG so the inline image part has
+ * content. Kept deliberately short (620x198) so the whole exchange — request,
+ * tool runs, prose, chart and produced file — fits the 1280x800 viewport without
+ * scrolling the earlier turns out of frame.
+ */
+async function chartPngBase64(content: (typeof CHAT_CONTENT)[keyof typeof CHAT_CONTENT]): Promise<string> {
+  const values = [412, 486, 571];
+  const max = 620;
+  const width = 620;
+  const height = 198;
+  const plotTop = 52;
+  const plotBottom = 144;
+  const barWidth = 72;
+  const gap = 56;
+  const startX = (width - (values.length * barWidth + (values.length - 1) * gap)) / 2;
+
+  const bars = values.map((value, index) => {
+    const barHeight = Math.round((value / max) * (plotBottom - plotTop));
+    const x = Math.round(startX + index * (barWidth + gap));
+    const y = plotBottom - barHeight;
+    return [
+      `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="5" fill="#e2622f" opacity="${0.72 + index * 0.14}"/>`,
+      `<text x="${x + barWidth / 2}" y="${y - 9}" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#3f3a35">${content.barLabels[index]}</text>`,
+      `<text x="${x + barWidth / 2}" y="${plotBottom + 24}" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#7a736c">${content.months[index]}</text>`,
+    ].join('');
+  }).join('');
+
+  const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">`
+    + `<rect width="${width}" height="${height}" rx="10" fill="#fdfcfa"/>`
+    + `<text x="32" y="34" font-family="Helvetica, Arial, sans-serif" font-size="19" font-weight="600" fill="#2f2b27">${content.chartTitle}</text>`
+    + `<line x1="32" y1="${plotBottom}" x2="${width - 32}" y2="${plotBottom}" stroke="#e4ded6" stroke-width="2"/>`
+    + bars
+    + '</svg>';
+
+  const png = await sharp(Buffer.from(svg)).png().toBuffer();
+  return png.toString('base64');
+}
+
+async function seedConversation(
+  app: ElectronApplication,
+  localeDir: keyof typeof CHAT_CONTENT,
+): Promise<void> {
+  const content = CHAT_CONTENT[localeDir];
+  const chart = await chartPngBase64(content);
+
+  await emitAcpSessionUpdates(app, {
+    sessionKey: MAIN_SESSION_KEY,
+    generation: 1,
+    updates: [
+      {
+        sessionUpdate: 'user_message',
+        messageId: 'shot-user',
+        content: [{ type: 'text', text: content.request }],
+      },
+      {
+        sessionUpdate: 'agent_message',
+        messageId: 'shot-analysis',
+        content: [{ type: 'text', text: content.analysis }],
+      },
+      {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'shot-write',
+        title: content.writeTool,
+        status: 'in_progress',
+        rawInput: { path: 'reports/q3-summary.md', content: REPORT_MARKDOWN },
+        content: [],
+      },
+      {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'shot-write',
+        status: 'completed',
+        rawInput: { path: 'reports/q3-summary.md', content: REPORT_MARKDOWN },
+        content: [],
+      },
+      {
+        sessionUpdate: 'agent_message',
+        messageId: 'shot-chart',
+        content: [{ type: 'image', mimeType: 'image/png', data: chart }],
+      },
+      {
+        sessionUpdate: 'agent_message',
+        messageId: 'shot-closing',
+        content: [{ type: 'text', text: content.closing }],
+      },
+    ],
+  });
+}
+
 function baseHostApi(localeDir: keyof typeof CRON_CONTENT) {
   return {
     [stableStringify(['/api/gateway/status', 'GET'])]: legacy(GATEWAY_STATUS),
@@ -237,6 +410,17 @@ function baseHostApi(localeDir: keyof typeof CRON_CONTENT) {
     [stableStringify(['providers', 'accountKeyInfo', null])]: PROVIDER_KEY_INFO,
     [stableStringify(['providers', 'getDefaultAccount', null])]: { accountId: 'openai-main' },
     [stableStringify(['skills', 'local', null])]: SKILLS,
+    // Accept the ACP session load for whichever workspace the renderer resolves,
+    // so the seeded conversation has a live generation to attach to.
+    ...Object.fromEntries([MAIN_WORKSPACE, '/', '~/.openclaw/workspace'].map((root) => [
+      stableStringify(['chat', 'loadAcpSession', {
+        sessionKey: MAIN_SESSION_KEY,
+        workspaceRoot: root,
+        cwd: root,
+      }]),
+      { success: true, generation: 1 },
+    ])),
+    [stableStringify(['sessions', 'summaries', { sessionKeys: [MAIN_SESSION_KEY] }])]: { summaries: [] },
   };
 }
 
@@ -283,7 +467,10 @@ for (const locale of LOCALES) {
     await completeSetup(page);
     await sizeWindow(electronApp);
 
-    // 1. Chat (default landing surface)
+    // 1. Chat (default landing surface) with a seeded conversation
+    await seedConversation(electronApp, locale.dir);
+    await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('acp-image-part').locator('img')).toBeVisible();
     await shoot(page, locale.dir, 'chat');
 
     // 2. Cron

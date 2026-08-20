@@ -156,8 +156,9 @@ That runs two steps, each also available on its own
 
 1. **Capture** — `tests/e2e/capture-readme-screenshots.spec.ts` launches Electron
    on an isolated profile, mocks the gateway/provider/skill/cron/channel data via
-   `installIpcMocks`, switches locale through the setup wizard's language buttons,
-   sizes the window to 1280×800 (2560×1600 at DPR 2), and writes each surface to
+   `installIpcMocks`, seeds a chat conversation through `emitAcpSessionUpdates`,
+   switches locale through the setup wizard's language buttons, sizes the window
+   to 1280×800 (2560×1600 at DPR 2), and writes each surface to
    `resources/screenshot/<locale>/`.
 2. **Decorate** — `scripts/decorate-screenshots.mjs` adds the rounded corners,
    drop shadow and transparent margin that a macOS window screenshot has,
@@ -173,6 +174,15 @@ runs every configured project, so a tag alone would not exclude it.
 Re-run this after any UI change that affects Chat, Cron, or the Models / Channels
 / Skills / General tabs of the System Settings modal. The seeded data is
 representative sample content, not real account data.
+
+Two constraints when editing the seeded content in `CHAT_CONTENT`:
+
+- The conversation is sized to fit the 1280×800 viewport without scrolling. Extra
+  prose — or a locale that wraps onto one more line — pushes the user's request
+  out of frame, so re-check all four locales after editing.
+- Avoid `$…$` pairs in seeded prose. The renderer parses them as KaTeX inline
+  math (that is intended app behavior), which turns figures like `$412K … $486K`
+  into an italic equation.
 
 ### Packaging Notes
 

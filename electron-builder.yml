@@ -65,12 +65,16 @@ asarUnpack:
 npmRebuild: false
 
 # Auto-update configuration
-# Primary: Alibaba Cloud OSS (fast for Chinese users, used for auto-update)
-# Fallback: GitHub Releases (backup, used when OSS is unavailable)
+# GitHub Releases is the update feed. CI (.github/workflows/release.yml, `publish`
+# job) already uploads the installers plus the `*.yml` update metadata to the
+# release, so the client reads exactly what CI produces.
+# NOTE: releases are currently created with `prerelease: true`, so the client sets
+# `allowPrerelease` in electron/main/updater.ts — otherwise electron-updater only
+# considers the latest *stable* release and finds nothing.
 publish:
-  - provider: generic
-    url: https://claw-x.com/latest
-    useMultipleRangeRequest: false
+  - provider: github
+    owner: compking2012
+    repo: YYClaw
 
 # macOS Configuration
 mac:

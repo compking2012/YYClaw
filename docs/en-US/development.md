@@ -1,11 +1,11 @@
-# ClawX Development Guide
+# YYClaw Development Guide
 
 This document provides the detailed version of the Development section in the README.
 
 ### Prerequisites
 
-- **Node.js**: 22.22.3+, 24.15.0+, or 25.9.0+ within the corresponding supported major line (Node 24 LTS recommended)
-- **Package Manager**: pnpm 9+ (npm is also supported)
+- **Node.js**: 22.22.3+, 24.15.0+, or 25.9.0+ within the corresponding supported major line (Node 24 LTS recommended). This is a documented requirement, not enforced by an `engines` field.
+- **Package Manager**: pnpm only, at the exact version pinned by the `packageManager` field in `package.json`. Run `corepack enable` to activate it. **npm and yarn are not supported.**
 - **Linux (Ubuntu/Debian)**: Install the required system libraries before running Electron:
   ```bash
   sudo apt-get install -y libnss3 libgtk-3-0 libxss1 libxtst6 libatspi2.0-0 libnotify4 xdg-utils
@@ -15,30 +15,41 @@ This document provides the detailed version of the Development section in the RE
 ### Project Structure
 
 ```text
-ClawX/
+YYClaw/
 ├── electron/                 # Electron Main Process
-│   ├── services/            # Typed Host API, provider, secrets, and runtime services
+│   ├── main/                # App entry, windows, and IPC registration
+│   ├── preload/             # Secure contextBridge IPC bridge
+│   ├── api/                 # Main-side typed API router
+│   ├── gateway/             # OpenClaw Gateway process manager
+│   ├── workflow/            # XState deterministic workflow engine
+│   ├── extensions/          # Main-process extension contributions
+│   ├── services/            # Typed Host API, provider, and runtime services
 │   │   ├── providers/       # Provider/account model sync logic
 │   │   └── secrets/         # OS keychain and secret storage
 │   ├── shared/              # Shared provider schemas/constants
-│   │   └── providers/
-│   ├── main/                # App entry, windows, and IPC registration
-│   ├── gateway/             # OpenClaw Gateway process manager
-│   ├── preload/             # Secure IPC bridge
-│   └── utils/               # Utilities for storage, auth, and paths
+│   └── utils/               # Utilities for storage, auth, paths, telemetry
 ├── src/                      # React Renderer Process
 │   ├── lib/                 # Unified frontend API and error model
 │   ├── stores/              # Zustand stores (settings/chat/gateway)
 │   ├── components/          # Reusable UI components
-│   ├── pages/               # Setup/Dashboard/Chat/Channels/Skills/Cron/Settings
-│   ├── i18n/                # Localization resources
+│   ├── pages/               # Chat, Agents, Channels, Cron, Workflows, Skills,
+│   │                        # Models, Settings, Setup, Dreams,
+│   │                        # ImageGeneration, Login
+│   ├── styles/              # Design tokens and global CSS
 │   └── types/               # TypeScript type definitions
+├── shared/                   # Cross-process contracts and i18n locales
+├── harness/                  # Spec-driven AI-coding validation harness
+├── docs/                     # Architecture, product, and localized docs
 ├── tests/
-│   ├── e2e/                 # Playwright Electron end-to-end smoke tests
+│   ├── e2e/                 # Playwright Electron end-to-end tests
 │   └── unit/                # Vitest unit and integration-like tests
-├── resources/                # Static assets (icons and images)
+├── resources/                # Icons, screenshots, bundled binaries
 └── scripts/                  # Build and utility scripts
 ```
+
+> Note: localization resources live in `shared/i18n/locales/<lang>/<ns>.json`, not
+> under `src/i18n/`. There is no separate `/dashboard` page — the token-usage
+> dashboard is merged into the Models page.
 
 ### Available Commands
 
@@ -84,7 +95,7 @@ Open a CPU profile in Chrome DevTools. The artifacts contain generated fixture t
 
 For a live Renderer recording, start development with `CLAWX_REMOTE_DEBUGGING_PORT=9223 pnpm dev` and attach Playwright or Chrome DevTools to `localhost:9223`. For a live Electron Main recording, run `pnpm run profile:main`, open `chrome://inspect`, configure `localhost:9229`, and select the Electron Main target. Leave `CLAWX_GATEWAY_WS_TRACE` unset unless WebSocket tracing itself is being measured.
 
-ClawX leaves Chromium hardware acceleration enabled by default so long documents, scrolling, and layout animations can use GPU compositing and rasterization. Chromium still honors the native `--disable-gpu` command-line switch as a troubleshooting fallback for a machine with a broken graphics driver.
+YYClaw leaves Chromium hardware acceleration enabled by default so long documents, scrolling, and layout animations can use GPU compositing and rasterization. Chromium still honors the native `--disable-gpu` command-line switch as a troubleshooting fallback for a machine with a broken graphics driver.
 
 ### Communication Regression Checks
 
@@ -105,7 +116,7 @@ The Playwright Electron suite launches the packaged renderer and Main process fr
 
 - builds the renderer and Electron bundles with `pnpm run build:vite`
 - starts Electron in an isolated E2E mode with a temporary `HOME`
-- uses a temporary ClawX `userData` directory
+- uses a temporary YYClaw `userData` directory
 - runs ordinary spec files concurrently while fencing OS-global and performance tests
 - skips heavy startup side effects such as Gateway auto-start, bundled skill installation, tray creation, and CLI auto-install
 
@@ -120,11 +131,25 @@ Add future Electron flows under `tests/e2e/` and reuse the shared fixture in `te
 
 | Layer | Technology |
 |-------|------------|
-| Runtime | Electron 40+ |
-| UI Framework | React 19 + TypeScript |
-| Styling | Tailwind CSS + shadcn/ui |
-| State | Zustand |
-| Build | Vite + electron-builder |
-| Testing | Vitest + Playwright |
+| Runtime | Electron 40 |
+| UI Framework | React 19 + TypeScript 5.9 |
+| Styling | Tailwind CSS 3.4 + shadcn/ui (Radix UI) |
+| State | Zustand 5 |
+| Orchestration | XState 5 |
+| Build | Vite 7 + electron-builder 26 |
+| Testing | Vitest 4 + Playwright |
 | Animation | Framer Motion |
 | Icons | Lucide React |
+| Math / Editor | KaTeX · Monaco Editor |
+
+### Packaging Notes
+
+Building the Linux `.deb` target on macOS needs GNU tar and GNU ar
+(`brew install gnu-tar binutils`). macOS ships only BSD `ar`/`tar`, which makes the
+bundled `fpm` silently produce a 96-byte empty `.deb` — just a `__.SYMDEF` ar
+symbol table, not a valid Debian package — while the build still exits 0.
+`scripts/electron-builder-env.mjs` preflights this on `darwin` + `--linux` and
+fails fast with a `brew install` hint if either is missing. AppImage is unaffected.
+
+On packaged Windows builds, the bundled `openclaw` CLI/TUI runs via the shipped
+`node.exe` entrypoint to keep terminal input behavior stable.

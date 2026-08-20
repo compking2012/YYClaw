@@ -8,12 +8,53 @@ accessible, "battery-included" desktop experience. The OpenClaw runtime is
 embedded and supervised as a local Gateway subprocess, so users never touch a
 terminal, a YAML file, or an environment variable to get from installation to
 their first AI conversation.
-【补充数字员工部分的描述】
+
+Beyond one-off conversations, YYClaw is built to run agents as **digital workers**.
+An agent can be bound to real instant-messaging accounts — personal WeChat, Feishu /
+Lark, WeCom, Discord, QQ, WhatsApp — so colleagues and customers reach it in the
+tools they already use, while configuration, credentials, and history stay on the
+operator's desktop. Each agent carries its own model, skill allowlist, persona, and
+workspace, so several specialized workers can run side by side. Cron schedules let
+them act without being prompted, the deterministic workflow engine makes their
+multi-step procedures repeatable, and `memory-core` dreaming consolidates what they
+learn across sessions. The result is closer to staffing a role than to opening a
+chat window.
 
 From a single window users can: chat with one or more AI agents (text, image and
 voice, even other multi-modal input & output), wire up AI-powered messaging channels, schedule recurring automated tasks, run deterministic multi-step workflows, install and toggle local-first
 skills, configure multiple AI providers with securely stored credentials, and
 observe their token usage and runtime health.
+
+## Positioning
+
+YYClaw competes in the **general-purpose office / work agent** category — the same
+space as **WorkBuddy**, **TraeWork**, **Qwen Office (千问办公)**,
+**Claude Cowork**, and **ChatGPT Work**. The target user story is identical: an AI
+teammate that does real work across documents, messages, schedules, and tools,
+rather than a chatbot that answers questions.
+
+The differentiator is delivery and ownership, not ambition. Products in that
+category are typically vendor-hosted, built on a closed core, and bound to the
+vendor's own models. YYClaw is **an open-source solution built on the open-source
+OpenClaw runtime**, delivered as a desktop application the operator runs and owns.
+
+| Dimension | Typical hosted office agent | YYClaw |
+|-----------|------------------------------|--------|
+| Delivery | Vendor-hosted service | Desktop app supervising a local Gateway subprocess |
+| Core runtime | Closed, vendor-built | Open-source OpenClaw, embedded and supervised |
+| Data residency | Vendor cloud | Operator's disk; credentials in the OS keychain |
+| Model choice | Vendor's own models | Any configured provider, including OpenAI-compatible gateways |
+| Extensibility | Vendor-curated plugin catalog | Local-first skills, extension layer, channel plugins |
+| Private deployment | Enterprise-tier or unavailable | `farmApiBaseUrl` points the provider catalog and skill marketplace at a self-hosted server |
+| Licensing | Per-seat subscription | MIT |
+
+Products in that category vary, and several are strong. The positioning claim is
+deliberately narrow: YYClaw offers that class of capability **without requiring the
+user's work to leave their machine, and without locking them to one vendor's
+model**.
+
+Every pillar below is downstream of this stance — in particular *local-first &
+private* and *extensible*, which are the concrete expression of it.
 
 ## Product Pillars
 
@@ -41,7 +82,7 @@ section below. Add new features to this table first, then to **Core Features**.
 | 4 | Multi-Agent Management | `/agents` | Per-agent model, skill allowlist, channel binding, global config |
 | 5 | AI Providers & Models Dashboard | System Settings → Models | Provider/key config + rolling token-usage charts |
 | 6 | Multi-Channel Management | System Settings → Channels | Channel accounts, QR/OAuth linking, per-account agent binding |
-| 7 | Skill System | System Settings → Skills | Local-first browse / install / enable-disable, Corperation server marketplace, disabled ClawHub |
+| 7 | Skill System | System Settings → Skills | Local-first browse / install / enable-disable, corporate server marketplace, public ClawHub disabled |
 | 8 | Cron Automation | `/cron` | Scheduled AI tasks with external delivery config and run history |
 | 9 | Deterministic Workflow Engine | `/workflows` | XState-based deterministic multi-step orchestration (dev-gated) |
 | 10 | Agent Workspace | Chat right sidebar + per-agent Persona modal | File-tree browser and preview of the agent workspace; persona/memory files edited per-agent |
@@ -310,7 +351,7 @@ section below. Add new features to this table first, then to **Core Features**.
   - **Single-instance protection** (Electron lock + file lock) prevents duplicate
     launches and contention over the Gateway listener.
   - **System tray** — closing the window hides to tray; full quit is via tray
-    **Quit ClawX** (ordered, asynchronous teardown).
+    **Quit YYClaw** (ordered, asynchronous teardown).
   - **Launch at startup**, native notifications, custom title bar / drag region.
   - **Auto-update** — checks a generic-provider feed per release channel;
     supports forced updates via `forceUpdate` in the channel manifest.
@@ -387,7 +428,7 @@ section below. Add new features to this table first, then to **Core Features**.
   files (`~/.clawx`, `~/.openclaw`, Electron `userData`) and the OS keychain.
 - **Renderer boundary:** The renderer never opens a socket to the Gateway and
   never issues a cross-origin `fetch`; all backend access flows through
-  `src/lib/host-api.ts` / `src/lib/api-client.ts`.
+  `src/lib/host-api.ts` / `src/lib/host-api-client.ts`.
 - **Provider keys required for real AI:** The app is fully navigable and testable
   without keys, but actual chat/voice/image generation requires a configured
   provider.

@@ -1,11 +1,11 @@
-# ClawX開発ガイド
+# YYClaw開発ガイド
 
 このドキュメントは、READMEの「開発」セクションの詳細版です。
 
 ### 前提条件
 
 - **Node.js**：対応するメジャー系列の22.22.3以上、24.15.0以上、または25.9.0以上（Node 24 LTS推奨）
-- **パッケージマネージャー**：pnpm 9以上（npmも対応）
+- **パッケージマネージャー**：pnpm のみ。バージョンは `package.json` の `packageManager` フィールドで固定されています。`corepack enable` で有効化してください。**npm と yarn は非対応です。**
 - **Linux（Ubuntu/Debian）**：Electronを実行する前に必要なシステムライブラリをインストールしてください。
   ```bash
   sudo apt-get install -y libnss3 libgtk-3-0 libxss1 libxtst6 libatspi2.0-0 libnotify4 xdg-utils
@@ -15,7 +15,7 @@
 ### プロジェクト構成
 
 ```text
-ClawX/
+YYClaw/
 ├── electron/                 # Electron Mainプロセス
 │   ├── services/            # 型付きHost API、プロバイダー、秘密情報、ランタイムサービス
 │   │   ├── providers/       # プロバイダー/アカウントのモデル同期ロジック
@@ -30,8 +30,10 @@ ClawX/
 │   ├── lib/                 # フロントエンド統合APIとエラーモデル
 │   ├── stores/              # Zustandストア（settings/chat/gateway）
 │   ├── components/          # 再利用可能なUIコンポーネント
-│   ├── pages/               # Setup/Dashboard/Chat/Channels/Skills/Cron/Settings
-│   ├── i18n/                # ローカライズリソース
+│   ├── pages/               # Chat、Agents、Channels、Cron、Workflows、Skills、
+│   │                        # Models、Settings、Setup、Dreams、
+│   │                        # ImageGeneration、Login
+│   ├── styles/              # デザイントークンとグローバル CSS
 │   └── types/               # TypeScript型定義
 ├── tests/
 │   ├── e2e/                 # Playwright Electron E2Eスモークテスト
@@ -39,6 +41,11 @@ ClawX/
 ├── resources/                # 静的アセット（アイコン、画像）
 └── scripts/                  # ビルドとユーティリティのスクリプト
 ```
+
+> 注意：ローカライズリソースは `src/i18n/` ではなく `shared/i18n/locales/<lang>/<ns>.json`
+> にあります。独立した `/dashboard` ページはありません —— トークン使用量ダッシュボードは
+> Models ページに統合されています。
+
 
 ### 利用可能なコマンド
 
@@ -84,7 +91,7 @@ CPUプロファイルはChrome DevToolsで開けます。アーティファク�
 
 実際のRendererを記録するには、`CLAWX_REMOTE_DEBUGGING_PORT=9223 pnpm dev`で開発環境を起動し、PlaywrightまたはChrome DevToolsを`localhost:9223`へ接続します。実際のElectron Mainを記録するには`pnpm run profile:main`を実行し、`chrome://inspect`で`localhost:9229`を設定してElectron Mainターゲットを選びます。WebSocket trace自体を測定する場合を除き、`CLAWX_GATEWAY_WS_TRACE`は設定しないでください。
 
-ClawXは既定でChromiumのハードウェアアクセラレーションを有効にし、長い文書、スクロール、レイアウトアニメーションでGPUコンポジットとラスタライズを利用します。グラフィックスドライバーに問題がある場合のトラブルシューティングには、Chromium標準の`--disable-gpu`コマンドラインスイッチを使用できます。
+YYClawは既定でChromiumのハードウェアアクセラレーションを有効にし、長い文書、スクロール、レイアウトアニメーションでGPUコンポジットとラスタライズを利用します。グラフィックスドライバーに問題がある場合のトラブルシューティングには、Chromium標準の`--disable-gpu`コマンドラインスイッチを使用できます。
 
 ### 通信回帰チェック
 
@@ -105,7 +112,7 @@ Playwright Electronスイートは`dist/`と`dist-electron/`からパッケー�
 
 - `pnpm run build:vite`でRendererとElectronのバンドルをビルド
 - 一時的な`HOME`を使ってElectronを分離E2Eモードで起動
-- 一時的なClawX `userData`ディレクトリを使用
+- 一時的なYYClaw `userData`ディレクトリを使用
 - OS全体のリソースとパフォーマンステストを隔離しながら、通常のspecファイルを並列実行
 - Gateway自動起動、同梱スキルのインストール、トレイ作成、CLI自動インストールなど、重い起動副作用をスキップ
 
@@ -120,7 +127,7 @@ Playwright Electronスイートは`dist/`と`dist-electron/`からパッケー�
 
 | レイヤー | 技術 |
 |---------|------|
-| ランタイム | Electron 40+ |
+| ランタイム | Electron 40 |
 | UIフレームワーク | React 19 + TypeScript |
 | スタイリング | Tailwind CSS + shadcn/ui |
 | 状態管理 | Zustand |
@@ -128,3 +135,8 @@ Playwright Electronスイートは`dist/`と`dist-electron/`からパッケー�
 | テスト | Vitest + Playwright |
 | アニメーション | Framer Motion |
 | アイコン | Lucide React |
+### パッケージングの注意点
+
+macOS で Linux の `.deb` ターゲットをビルドするには GNU tar と GNU ar が必要です（`brew install gnu-tar binutils`）。macOS には BSD の `ar`/`tar` しか同梱されていないため、同梱の `fpm` は 96 バイトの空の `.deb`（有効な Debian パッケージではなく `__.SYMDEF` の ar シンボルテーブルだけ）を黙って生成し、それでもビルドは 0 で終了します。`scripts/electron-builder-env.mjs` は `darwin` + `--linux` の組み合わせでこれを事前チェックし、どちらか欠けていれば `brew install` のヒントを添えて即座に失敗します。AppImage は影響を受けません。
+
+パッケージ化された Windows ビルドでは、同梱の `openclaw` CLI/TUI は同梱の `node.exe` エントリポイント経由で実行され、ターミナル入力の挙動が安定します。

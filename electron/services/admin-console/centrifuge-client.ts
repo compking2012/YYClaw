@@ -32,7 +32,6 @@ import type { GatewayManager } from '../../gateway/manager';
 import { awaitApplySyncExclusiveIdle, runApplySyncExclusive } from './clawx-apply-gateway-queue';
 import { applyClawxSyncAction } from './remote-sync/apply-sync';
 import type { ClawHubService } from '../../gateway/clawhub';
-import pkg from '../../../package.json';
 import { getAllSkillConfigs } from '../../utils/skill-config';
 import { getProviderService } from '../providers/provider-service';
 import { broadcastToRenderer } from '../../utils/broadcast-renderer';
@@ -50,7 +49,7 @@ import {
   decorateChatSendParamsWithAdminSharedWorkspace,
   handleOfficeSharedWorkspaceRpc,
 } from './office-shared-workspace';
-import { farmHttpBaseToWsBase, getFarmApiBaseUrl } from '../../utils/farm-api-base';
+import { farmHttpBaseToWsBase, isFarmEnabled, resolveFarmApiBaseUrl } from '../../utils/farm-api-base';
 
 /** Emitted on the Centrifuge client when the server initiates an RPC (see patchCentrifugeServerToClientRpc). */
 export type AdminConsoleCentrifugeRpcEvent = {
@@ -225,6 +224,23 @@ function patchCentrifugeServerToClientRpc(
   };
 }
 
+/**
+ * The admin-console channel carries privileged commands, so cleartext `ws://` is
+ * only tolerated for loopback (local development against a dev Farm).
+ */
+function isAllowedControlChannelUrl(wsUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(wsUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol === 'wss:') return true;
+  if (parsed.protocol !== 'ws:') return false;
+  const host = parsed.hostname.toLowerCase();
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+}
+
 export class CentrifugeClient {
   private centrifuge: Centrifuge | null = null;
   /** Centrifuge keeps subscription objects across reconnects; must remove before newSubscription. */
@@ -243,6 +259,8 @@ export class CentrifugeClient {
   private gatewayStatusHandler: (() => void) | null = null;
   /** Until gateway is `online` again after apply-sync, send one definitive heartbeat for Manager. */
   private applySyncStableUplinkTimer: ReturnType<typeof setInterval> | null = null;
+  /** Centrifuge retries forever; log the first error of a cycle, then suppress. */
+  private loggedConnectError = false;
 
   /**
    * Wire the local OpenClaw gateway manager so Centrifuge RPC method `openclaw_rpc` can proxy to
@@ -402,13 +420,33 @@ export class CentrifugeClient {
   async start() {
     this.stop();
 
-    if (!pkg.farmEnabled) return;
+    if (!isFarmEnabled()) return;
 
     const baseUrl = this.getBaseUrl();
     if (!baseUrl) return;
     this.baseUrl = baseUrl;
 
+    // This channel is a remote CONTROL plane: `clawx_apply_sync` can create and
+    // delete agents, change models/tools, install skills and restart the Gateway
+    // (see remote-sync/clawxApplySyncOps). Refuse to open it unauthenticated or
+    // in cleartext to a remote host, regardless of how it was configured.
+    const token = process.env.CLIENT_INGEST_TOKEN || '';
+    if (!token) {
+      logCentrifugeInfo(
+        'Admin Console realtime disabled: CLIENT_INGEST_TOKEN is not set '
+        + '(refusing to open an unauthenticated remote control channel).',
+      );
+      return;
+    }
+
     let wsUrl = farmHttpBaseToWsBase(this.baseUrl);
+    if (!isAllowedControlChannelUrl(wsUrl)) {
+      logCentrifugeInfo(
+        `Admin Console realtime disabled: refusing cleartext ws:// to a non-loopback host (${this.baseUrl}). `
+        + 'Use https:// / wss:// for the Farm base URL.',
+      );
+      return;
+    }
     // Typical centrifuge connection endpoint
     wsUrl = `${wsUrl}/api/v1/realtime/connection`;
 
@@ -416,7 +454,7 @@ export class CentrifugeClient {
 
     const centrifuge = new Centrifuge(wsUrl, {
       websocket: WebSocket as any,
-      token: process.env.CLIENT_INGEST_TOKEN || '',
+      token,
       data: {
         client_id: this.machineId,
       }
@@ -430,6 +468,7 @@ export class CentrifugeClient {
     });
 
     centrifuge.on('connected', (ctx) => {
+      this.loggedConnectError = false;
       void this.handleConnected(centrifuge, ctx);
     });
 
@@ -442,6 +481,13 @@ export class CentrifugeClient {
     });
 
     centrifuge.on('error', (ctx) => {
+      // Centrifuge retries forever; logging every attempt at error level floods
+      // the log. Report the first failure, then stay quiet until we reconnect.
+      if (this.loggedConnectError) {
+        logCentrifugeInfo('Centrifuge error (repeat, suppressed)', ctx);
+        return;
+      }
+      this.loggedConnectError = true;
       logCentrifugeError('Centrifuge error', ctx);
     });
 
@@ -460,6 +506,7 @@ export class CentrifugeClient {
     }
     this.commandSubscription = null;
     this.broadcastSubscription = null;
+    this.loggedConnectError = false;
   }
 
   private async handleConnected(centrifuge: Centrifuge, ctx: ConnectedContext) {
@@ -594,7 +641,7 @@ export class CentrifugeClient {
   }
 
   private getBaseUrl(): string | null {
-    return getFarmApiBaseUrl();
+    return resolveFarmApiBaseUrl();
   }
 
   private async publishHeartbeat(options?: BuildHeartbeatPayloadOptions, lagReason?: string) {

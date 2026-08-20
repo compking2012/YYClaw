@@ -2,14 +2,19 @@
  * Auto-Updater Module
  * Handles automatic application updates using electron-updater
  *
- * Update providers are configured in electron-builder.yml (OSS primary, GitHub fallback).
- * For prerelease channels (alpha, beta), the feed URL is overridden at runtime
- * to point at the channel-specific OSS directory (e.g. /alpha/, /beta/).
+ * The update feed is GitHub Releases, configured once in electron-builder.yml
+ * (`publish: provider: github`) and baked into the packaged app — this module no
+ * longer overrides it at runtime.
  *
- * CDN YAML (generic provider): electron-updater parses the full YAML document; put
- * `forceUpdate: true` at the **root** of `latest-mac.yml` (or `{channel}-mac.yml`) so
- * the renderer can show ForceUpdateModal. The feed directory must match `detectChannel`
- * (stable → `/latest/`, prerelease tag → `/alpha/` etc.) or the wrong yml is fetched.
+ * Two things the feed depends on:
+ * - CI publishes releases with `prerelease: true`, so `allowPrerelease` is set
+ *   below. Without it electron-updater only considers the latest *stable*
+ *   release and reports "no update" forever.
+ * - `autoUpdater.channel` still selects which `{channel}-mac.yml` asset is read,
+ *   so it must match `detectChannel` (stable → `latest`, `0.1.8-alpha.0` → `alpha`).
+ *
+ * `forceUpdate: true` at the **root** of `{channel}-mac.yml` makes the renderer
+ * show ForceUpdateModal.
  */
 import { autoUpdater, UpdateInfo, ProgressInfo, UpdateDownloadedEvent } from 'electron-updater';
 import { getAppDisplayVersion } from '../utils/app-display-version';
@@ -17,9 +22,6 @@ import { BrowserWindow, app, ipcMain } from 'electron';
 import { logger } from '../utils/logger';
 import { EventEmitter } from 'events';
 import { setPendingUpdateInstallQuit, setQuitting } from './app-state';
-
-/** Base CDN URL (without trailing channel path) */
-const OSS_BASE_URL = 'https://claw-x.com';
 
 export interface UpdateStatus {
   status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
@@ -75,10 +77,8 @@ export class AppUpdater extends EventEmitter {
       debug: (msg: string) => logger.debug('[Updater]', msg),
     };
 
-    // Override feed URL for prerelease channels so that
-    // alpha -> /alpha/alpha-mac.yml, beta -> /beta/beta-mac.yml, etc.
     const realVersion = app.getVersion();
-    
+
     // In dev mode, pretend we have an old version so updates trigger
     if (!app.isPackaged) {
       // Override electron-updater currentVersion internally instead of app
@@ -89,26 +89,24 @@ export class AppUpdater extends EventEmitter {
 
     const version = app.getVersion();
     const channel = detectChannel(realVersion); // Use real version to determine channel
-    const feedUrl = `${OSS_BASE_URL}/${channel}`;
 
-    logger.info(`[Updater] Version: ${version}, channel: ${channel}, feedUrl: ${feedUrl}`);
+    logger.info(`[Updater] Version: ${version}, channel: ${channel}, feed: GitHub Releases`);
 
-    // Set channel so electron-updater requests the correct yml filename.
-    // e.g. channel "alpha" → requests alpha-mac.yml, channel "latest" → requests latest-mac.yml
+    // Select which `{channel}-mac.yml` asset to read.
+    // e.g. channel "alpha" → alpha-mac.yml, channel "latest" → latest-mac.yml
     autoUpdater.channel = channel;
+
+    // CI publishes GitHub Releases with `prerelease: true`; without this the
+    // GitHub provider only looks at the latest stable release and never finds them.
+    autoUpdater.allowPrerelease = true;
 
     // By default, electron-updater skips checking in dev mode. We force it to check.
     if (!app.isPackaged) {
       autoUpdater.forceDevUpdateConfig = true;
     }
 
-    // Set feed URL directly. This tells electron-updater exactly where to look
-    // and works in both dev (overriding dev-app-update.yml) and packaged mode.
-    autoUpdater.setFeedURL({
-      provider: 'generic',
-      url: feedUrl,
-      useMultipleRangeRequest: false,
-    });
+    // The feed itself comes from electron-builder.yml `publish` (GitHub Releases)
+    // and is baked into app-update.yml at package time — no runtime override.
 
     this.setupListeners();
   }

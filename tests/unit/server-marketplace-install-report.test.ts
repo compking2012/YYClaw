@@ -43,6 +43,17 @@ function skillInstalled(openclawDir: string, skillName: string): boolean {
 }
 
 describe('server marketplace install download_count report', () => {
+  const previousFarmBaseUrl = process.env.YYCLAW_FARM_API_BASE_URL;
+  beforeEach(() => {
+    // The server marketplace needs an explicit Farm base URL; package.json ships
+    // empty by default, so set it here instead of depending on deploy config.
+    process.env.YYCLAW_FARM_API_BASE_URL = 'https://farm.test';
+  });
+  afterAll(() => {
+    if (previousFarmBaseUrl === undefined) delete process.env.YYCLAW_FARM_API_BASE_URL;
+    else process.env.YYCLAW_FARM_API_BASE_URL = previousFarmBaseUrl;
+  });
+
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();

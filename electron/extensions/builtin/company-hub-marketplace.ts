@@ -15,7 +15,7 @@ import type {
   ClawHubInstallParams,
   ClawHubSkillResult,
 } from '../../gateway/clawhub';
-import pkg from '../../../package.json';
+import { resolveFarmApiBaseUrl } from '../../utils/farm-api-base';
 
 class CompanyHubMarketplaceExtension implements MarketplaceProviderExtension {
   readonly id = 'builtin/company-hub-marketplace';
@@ -45,7 +45,10 @@ class CompanyHubMarketplaceExtension implements MarketplaceProviderExtension {
       throw new Error('Company hub requires a skill_version to download.');
     }
 
-    const baseUrl = pkg.farmApiBaseUrl.replace(/\/+$/, '');
+    const baseUrl = resolveFarmApiBaseUrl();
+    if (!baseUrl) {
+      throw new Error('SKILLS_MARKETPLACE_NO_BASE_URL');
+    }
     const downloadUrl = `${baseUrl}/api/v1/agent/skills/versions/${version}/download`;
 
     console.log(`Downloading skill from ${downloadUrl}`);

@@ -225,7 +225,7 @@
         "emptyCatalog": "現在サーバーから利用できるスキルはありません。",
         "noVersionChanges": "現在アップグレードまたはロールバック可能なインストール済みスキルはありません。",
         "searchError": "スキルカタログを読み込めませんでした。",
-        "configError": "ルートの package.json に `farmApiBaseUrl`（スキーム・ホスト・ポートのみ、例: `http://host:9001`）を設定してください。同じベースで `/api/v1/skill_list`、`/api/v1/skill_search`、`/api/v1/skill_file/:name` と `/api/v1/provider-catalog`（AI プロバイダー一覧）を呼び出します。",
+        "configError": "ルートの package.json に `farmApiBaseUrl`（スキーム・ホスト・ポートのみ、例: `https://host:9001`）を設定するか、環境変数 `YYCLAW_FARM_API_BASE_URL` を使用してください。同じベースで `/api/v1/skill_list`、`/api/v1/skill_search`、`/api/v1/skill_file/:name` を呼び出します。",
         "marketplaceFetchTimeoutError": "タイムアウトしました。ネットワークを確認して再試行してください。",
         "marketplaceFetchRateLimitError": "リクエストが多すぎます。しばらくしてから再試行してください。",
         "marketplaceFetchError": "カタログを読み込めません。接続を確認してください。",

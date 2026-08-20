@@ -9,9 +9,9 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { ServerMarketplaceSkill } from '../../src/types/skill';
-import pkg from '../../package.json';
 import { getOpenClawConfigDir, ensureDir } from '../utils/paths';
 import { proxyAwareFetch } from '../utils/proxy-fetch';
+import { resolveFarmApiBaseUrl } from '../utils/farm-api-base';
 import { removeSkillConfig } from '../utils/skill-config';
 import { writeManagedSkillInstallMetadata } from './skills/managed-skill-winner';
 
@@ -20,12 +20,6 @@ export type SkillsMarketplaceFetchParams = {
   limit?: number;
   category?: string;
 };
-
-function getFarmApiBaseUrl(): string | null {
-  const raw = String((pkg as { farmApiBaseUrl?: string }).farmApiBaseUrl ?? '').trim();
-  if (!raw) return null;
-  return raw.replace(/\/+$/, '');
-}
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -81,7 +75,7 @@ const DEFAULT_FETCH_MS = 15_000;
 export async function fetchRemoteSkillsMarketplace(
   params: SkillsMarketplaceFetchParams,
 ): Promise<ServerMarketplaceSkill[]> {
-  const base = getFarmApiBaseUrl();
+  const base = resolveFarmApiBaseUrl();
   if (!base) {
     throw new Error('SKILLS_MARKETPLACE_NO_BASE_URL');
   }
@@ -169,7 +163,7 @@ export function assertSafeServerSkillName(name: string): void {
  */
 export async function downloadServerSkillZip(skillName: string): Promise<Buffer> {
   assertSafeServerSkillName(skillName);
-  const base = getFarmApiBaseUrl();
+  const base = resolveFarmApiBaseUrl();
   if (!base) {
     throw new Error('SKILLS_MARKETPLACE_NO_BASE_URL');
   }
@@ -219,7 +213,7 @@ export async function reportServerSkillClientInstall(
     return false;
   }
 
-  const base = getFarmApiBaseUrl();
+  const base = resolveFarmApiBaseUrl();
   if (!base) {
     return false;
   }

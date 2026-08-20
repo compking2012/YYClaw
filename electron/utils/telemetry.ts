@@ -3,6 +3,7 @@ import { machineIdSync } from 'node-machine-id';
 import { app } from 'electron';
 import { getSetting, setSetting } from './store';
 import { logger } from './logger';
+import pkg from '../../package.json';
 
 const POSTHOG_API_KEY = 'phc_aGNegeJQP5FzNiF2rEoKqQbkuCpiiETMttplibXpB0n';
 const POSTHOG_HOST = 'https://us.i.posthog.com';
@@ -42,13 +43,31 @@ function isIgnorablePostHogShutdownError(error: unknown): boolean {
 }
 
 /**
+ * Deploy-level telemetry gate, independent of the per-user `telemetryEnabled`
+ * setting. Defaults to OFF, so a build never uploads unless it is explicitly
+ * opted in — the user setting alone is not enough.
+ *
+ * This exists because the stored `telemetryEnabled` default is `true` while
+ * upload was hard-disabled in code; gating on the build flag keeps uploads off
+ * for existing installs without rewriting anyone's saved preference.
+ *
+ * Override: `YYCLAW_TELEMETRY_UPLOAD_ENABLED=true`.
+ */
+function isTelemetryUploadAllowed(): boolean {
+    const fromEnv = process.env.YYCLAW_TELEMETRY_UPLOAD_ENABLED?.trim();
+    if (fromEnv) return fromEnv === 'true' || fromEnv === '1';
+    return (pkg as { telemetryUploadEnabled?: boolean }).telemetryUploadEnabled === true;
+}
+
+/**
  * Initialize PostHog telemetry
  */
 export async function initTelemetry(): Promise<void> {
     try {
-        // [修改] 强制跳过初始化过程，即使开关打开也暂时不上传数据
-        logger.info('Telemetry upload is temporarily disabled by developer.');
-        return;
+        if (!isTelemetryUploadAllowed()) {
+            logger.info('Telemetry upload is disabled by build configuration.');
+            return;
+        }
 
         const telemetryEnabled = await getSetting('telemetryEnabled');
         if (!telemetryEnabled) {

@@ -7,6 +7,7 @@ import { browserOAuthManager, type BrowserOAuthProviderType } from '../utils/bro
 import { deviceOAuthManager, type OAuthProviderType } from '../utils/device-oauth';
 import { removeProviderFromOpenClaw, saveProviderKeyToOpenClaw } from '../utils/openclaw-auth';
 import { getProviderConfig } from '../utils/provider-registry';
+import { resolveFarmApiBaseUrl, resolveProviderCatalogSource } from '../utils/farm-api-base';
 import { logger } from '../utils/logger';
 import { getProviderService } from './providers/provider-service';
 import { providerAccountToConfig } from './providers/provider-store';
@@ -490,6 +491,10 @@ export function createProvidersApi(ctx: ProvidersApiContext): CompleteHostServic
     setDefault: async (payload) => setDefaultProvider(payload, ctx.gatewayManager),
     accounts: async () => providerService.listAccounts(),
     vendors: async () => providerService.listVendors(),
+    catalogSource: async () => {
+      const source = resolveProviderCatalogSource();
+      return { source, baseUrl: source === 'remote' ? resolveFarmApiBaseUrl() : null };
+    },
     accountKeyInfo: async () => providerService.listAccountsKeyInfo(),
     getDefaultAccount: async () => ({ accountId: await providerService.getDefaultAccountId() ?? null }),
     getAccount: async (payload) => providerService.getAccount(getAccountId(payload, 'getAccount')),

@@ -2,9 +2,11 @@
     "name": "clawx.desktop",
     "productName": "YYClaw",
     "version": "0.5.4",
-    "farmEnabled": true,
+    "farmEnabled": false,
     "allowThirdPartyMarketplace": false,
-    "farmApiBaseUrl": "http://claw-x.com:9001",
+    "farmApiBaseUrl": "",
+    "providerCatalogSource": "local",
+    "telemetryUploadEnabled": false,
     "pnpm": {
         "onlyBuiltDependencies": [
             "@discordjs/opus",

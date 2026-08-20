@@ -4,8 +4,8 @@
  */
 import fs from 'node:fs';
 import WebSocket from 'ws';
-import pkg from '../../package.json';
 import { proxyAwareFetch } from '../utils/proxy-fetch';
+import { resolveFarmApiBaseUrl } from '../utils/farm-api-base';
 
 const WS_SESSION_MS = 30_000;
 
@@ -74,7 +74,7 @@ export async function uploadSkillZipViaFarmWs(opts: {
   version?: string;
   category?: string;
 }): Promise<SkillUploadWsResponse> {
-  const raw = String((pkg as { farmApiBaseUrl?: string }).farmApiBaseUrl ?? '').trim();
+  const raw = resolveFarmApiBaseUrl();
   if (!raw) {
     return { ok: false, error: 'SKILLS_MARKETPLACE_NO_BASE_URL' };
   }
@@ -168,13 +168,8 @@ export async function uploadSkillZipViaFarmWs(opts: {
   });
 }
 
-function farmHttpBase(): string | null {
-  const raw = String((pkg as { farmApiBaseUrl?: string }).farmApiBaseUrl ?? '').trim();
-  return raw ? raw.replace(/\/+$/, '') : null;
-}
-
 export async function listPublishedMarketplaceSkills(clientId: string): Promise<PublishedMarketplaceSkill[]> {
-  const base = farmHttpBase();
+  const base = resolveFarmApiBaseUrl();
   if (!base) {
     throw new Error('SKILLS_MARKETPLACE_NO_BASE_URL');
   }
@@ -189,7 +184,7 @@ export async function listPublishedMarketplaceSkills(clientId: string): Promise<
 }
 
 export async function listMarketplaceSkillReviewRequests(clientId: string, limit = 100): Promise<MarketplaceSkillReviewRequest[]> {
-  const base = farmHttpBase();
+  const base = resolveFarmApiBaseUrl();
   if (!base) {
     throw new Error('SKILLS_MARKETPLACE_NO_BASE_URL');
   }
@@ -205,7 +200,7 @@ export async function listMarketplaceSkillReviewRequests(clientId: string, limit
 }
 
 export async function requestMarketplaceSkillUnlist(clientId: string, skillId: string): Promise<{ request_id: number; review_no?: string; status: string }> {
-  const base = farmHttpBase();
+  const base = resolveFarmApiBaseUrl();
   if (!base) {
     throw new Error('SKILLS_MARKETPLACE_NO_BASE_URL');
   }
@@ -226,7 +221,7 @@ export async function cancelMarketplaceSkillReviewRequest(
   clientId: string,
   requestId: number,
 ): Promise<{ request_id: number; status: string }> {
-  const base = farmHttpBase();
+  const base = resolveFarmApiBaseUrl();
   if (!base) {
     throw new Error('SKILLS_MARKETPLACE_NO_BASE_URL');
   }

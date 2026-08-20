@@ -1,10 +1,10 @@
 # AGENTS.md
 
-## Cursor Cloud specific instructions
+## Project overview
 
 ### Overview
 
-This is a cross-platform **Electron desktop app** (React 19 + Vite + TypeScript) providing a GUI for the OpenClaw AI agent runtime. It uses pnpm as its package manager (pinned version in `package.json`'s `packageManager` field).
+This is a cross-platform **Electron desktop app** (React 19 + Vite + TypeScript) providing a GUI for the OpenClaw AI agent runtime. It uses pnpm as its package manager (pinned version in `package.json`'s `packageManager` field). **npm and yarn are not supported.**
 
 ### Quick reference
 
@@ -42,9 +42,9 @@ Before writing any code, complete these steps in order:
 1. **Read this file completely.** It defines the boundaries and conventions for this project.
 2. **Read `docs/ARCHITECTURE.md`** to understand the full Electron layer structure and data flow.
 3. **Read `docs/PRODUCT.md`** to understand the complete feature requirements.
-4. **Read `docs/RELIABILITY.md`** to understand logging, observability, and clean state requirements.
-5. **Run `bash init.sh`** to verify the project builds and initializes cleanly.
-6. **Read `docs/FEATURE_BUG_LIST.md`** to see how to retrieve the current state of all features and bugs to determine what to develop next.
+4. **Read `docs/TROUBLESHOOTING.md`** for the quality gates, the enforced Renderer/Main boundary, and the non-obvious environment traps.
+5. **Run `pnpm run init`** to verify the project installs and initializes cleanly, then `pnpm typecheck` to verify it builds.
+6. **Read `docs/FEATURELIST.md`** to see the current state of features and known issues, and to determine what to develop next.
 
 ### Non-obvious caveats
 
@@ -65,13 +65,13 @@ Before writing any code, complete these steps in order:
 - **UI change validation**: Any user-visible UI change should include or update an Electron E2E spec in the same PR so the interaction is covered by Playwright.
 - **i18n & styling conventions**: New user-facing features must (1) route all text through `react-i18next` with full locale coverage (`en` / `zh` / `ja` / `ru` under `shared/i18n/locales/<lang>/<ns>.json`) — never hardcode display strings, and (2) use the design tokens and substitution rules documented in `src/styles/globals.css` (surfaces `bg-surface-modal` / `bg-surface-input`, selected state `bg-black/5 dark:bg-white/10`, status colours `text-X-700 dark:text-X-400`, page H1/H2 `font-serif font-normal tracking-tight`, etc.) — see the *Component conventions* block in `globals.css` for the full substitution table.
 - **Renderer/Main API boundary (important)**:
-  - Renderer must use `src/lib/host-api.ts` and `src/lib/api-client.ts` as the single entry for backend calls.
-  - Do not add new direct `window.electron.ipcRenderer.invoke(...)` calls in pages/components; expose them through host-api/api-client instead.
+  - Renderer must use `src/lib/host-api.ts` and `src/lib/host-api-client.ts` as the single entry for backend calls.
+  - Do not add new direct `window.electron.ipcRenderer.invoke(...)` calls in pages/components; expose them through host-api/host-api-client instead.
   - Do not call Gateway HTTP endpoints directly from renderer (`fetch('http://127.0.0.1:18789/...')` etc.). Use Main-process proxy channels (`hostapi:fetch`, `gateway:httpProxy`) to avoid CORS/env drift.
   - Transport policy is Main-owned and fixed as `WS -> HTTP -> IPC fallback`; renderer should not implement protocol switching UI/business logic.
 - **Comms-change checklist**: If your change touches communication paths (gateway events, runtime send/receive, delivery, or fallback), run `pnpm run comms:replay` and `pnpm run comms:compare` before pushing.
-- **Doc sync rule**: After any functional or architecture change, review `README.md`, `README.zh-CN.md`, and `README.ja-JP.md` for required updates; if behavior/flows/interfaces changed, update docs in the same PR/commit.
-- **Spec-driven harness rule**: AI Coding tasks that touch backend communication must start from a task spec under `harness/specs/tasks/` and reference `gateway-backend-communication` when the change involves renderer/Main/host-api/api-client/Gateway/OpenClaw runtime paths. Run `pnpm harness validate --spec <task-spec>` before implementation review, and `pnpm harness run --spec <task-spec>` or `--dry-run` when checking the selected validation flow.
+- **Doc sync rule**: After any functional or architecture change, review `README.md`, `README.zh-CN.md`, `README.ja-JP.md`, and `README.ru-RU.md` for required updates, plus the matching deep-dive docs under `docs/<locale>/` (`features.md` / `architecture.md` / `development.md` / `proxy-settings.md`); if behavior/flows/interfaces changed, update docs in the same PR/commit. Keep the four READMEs structurally parallel — same heading set, per-locale screenshot paths.
+- **Spec-driven harness rule**: AI Coding tasks that touch backend communication must start from a task spec under `harness/specs/tasks/` and reference `gateway-backend-communication` when the change involves renderer/Main/host-api/host-api-client/Gateway/OpenClaw runtime paths. Run `pnpm harness validate --spec <task-spec>` before implementation review, and `pnpm harness run --spec <task-spec>` or `--dry-run` when checking the selected validation flow.
 - **Spec/rule growth rule**: When adding a new feature, user-visible OpenClaw scenario, or recurring AI Coding constraint, add or update the relevant harness scenario spec and rule spec in the same PR so future AI work can validate the behavior instead of relying on tribal knowledge.
 - **Harness CI/local parity**: Run `pnpm run harness:ci` to exercise the same baseline harness checks used by GitHub Actions. Real task specs should be validated without `--no-diff`; `--no-diff` is only for structural checks of checked-in examples.
 - **Harness reference docs**: Keep durable, non-executable architecture and compatibility details under `harness/reference/`. Link them from the relevant scenario, rule, and task specs, but do not pass reference documents to `harness validate` or `harness run`.

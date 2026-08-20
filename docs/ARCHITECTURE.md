@@ -33,7 +33,7 @@ data flow, and the runtime contracts that keep those boundaries enforceable.
 |    Render:  react-markdown + remark-gfm + remark-math + KaTeX       |
 +---------------------------------------------------------------------+
         |  src/lib/host-api.ts   (REST: hostApiFetch)
-        |  src/lib/api-client.ts (IPC/transport: invokeIpc/invokeApi)
+        |  src/lib/host-api-client.ts (transport: invokeHost)
         |  src/lib/host-events.ts(realtime: subscribeHostEvent)
         v
 +---------------------------------------------------------------------+
@@ -89,34 +89,32 @@ single-owner.
 than quitting. A real quit is an asynchronous, ordered teardown (see
 [Application Lifecycle](#application-lifecycle)).
 
-## Three-Tier Communication Model
+## Renderer Communication Model
 
-The renderer has exactly three ways to reach the backend, and **all three are
-mediated by the main process**. The renderer never opens a socket to the Gateway
-and never issues a cross-origin `fetch` -- both are forbidden by ESLint and by
-the runtime contract.
+The renderer has exactly two ways to reach the backend, and **both are mediated by
+the main process**. The renderer never opens a socket to the Gateway and never
+issues a cross-origin `fetch` -- both are forbidden by ESLint and by the runtime
+contract.
 
 | Tier | Renderer entry | Main mechanism | Transport | Purpose |
 |------|----------------|----------------|-----------|---------|
-| **1. Host REST** | `hostApiFetch(path)` | `hostapi:fetch` IPC proxy | HTTP to `127.0.0.1:13210` | Business APIs (`/api/*`): chat, settings, providers, agents, channels, skills, cron, workflow, voice |
-| **2. IPC** | `invokeIpc(channel)` / `invokeApi` | `ipcMain.handle` (+ unified `app:request`) | Direct IPC | System integration & control plane: window, update, file, gateway lifecycle/RPC, OAuth, uv |
-| **3. Realtime** | `subscribeHostEvent(name)` | IPC push (`webContents.send`) with SSE fallback (`/api/events`) | IPC event / EventSource | Live Gateway status, chat runtime events, workflow progress, OAuth, channel status |
+| **1. Typed host API** | `hostApi.*` / `hostApiFetch(path)` -> `invokeHost(module, action)` | `ipcMain.handle('host:invoke')` typed dispatcher | Direct IPC via the preload `hostInvoke` bridge | Everything request/response: chat, settings, providers, agents, channels, skills, cron, workflow, voice, window, update, files, Gateway lifecycle/RPC, OAuth, uv |
+| **2. Realtime** | `subscribeHostEvent(name)` | IPC push (`webContents.send`) | IPC event | Live Gateway status, chat runtime events, workflow progress, OAuth, channel status |
 
 **Why this shape:**
 
 - **Single entry for the frontend.** Everything goes through
-  `src/lib/host-api.ts` and `src/lib/api-client.ts`, so protocol details stay
-  hidden behind a stable interface.
-- **Main-owned transport strategy.** The default policy is `WS -> HTTP -> IPC`
-  for diagnostics, but in production the renderer's Gateway calls resolve to
-  **IPC-only** (`gateway:rpc`) so reliability and CORS-safety are guaranteed.
-- **CORS-safe by design.** Local HTTP access is proxied by Main, so the renderer
-  never triggers cross-origin failures across dev/prod.
-- **Bearer-authenticated Host API.** The Host API server mints a random
-  session-scoped token (`hostapi:token`); the proxy injects
-  `Authorization: Bearer ...` and requires `application/json` on mutations
-  (CSRF mitigation). EventSource passes the token via `?token=` since it cannot
-  set headers.
+  `src/lib/host-api.ts` (typed facade) and `src/lib/host-api-client.ts`
+  (transport), so protocol details stay hidden behind a stable, contract-typed
+  interface.
+- **Main-owned transport strategy.** The `WS -> HTTP -> IPC` policy governs how
+  **Main** reaches the Gateway, not how the renderer reaches Main. The renderer's
+  own path is IPC-only, which guarantees reliability and CORS-safety.
+- **CORS-safe by design.** Any local HTTP access is performed by Main, so the
+  renderer never triggers cross-origin failures across dev/prod.
+- **Bearer-authenticated Host API.** Where the Host API server is used, it mints a
+  random session-scoped token, and Main injects `Authorization: Bearer ...` and
+  requires `application/json` on mutations (CSRF mitigation).
 
 ## Electron Layers
 
@@ -168,8 +166,8 @@ window.electron = {
 ```
 
 Renderer code does not consume this object directly. Project convention requires
-all calls to flow through `src/lib/api-client.ts` (`invokeIpc`) and
-`src/lib/host-api.ts` (`hostApiFetch`); ESLint blocks direct
+all calls to flow through `src/lib/host-api.ts` (`hostApi` / `hostApiFetch`) and
+`src/lib/host-api-client.ts` (`invokeHost`); ESLint blocks direct
 `ipcRenderer.invoke` and renderer->localhost `fetch`.
 
 ### Renderer (`electron/`'s counterpart in `src/`)
@@ -193,51 +191,35 @@ reusable UI in `src/components/`, and frontend domain logic in `src/lib/`.
 
 ## Frontend API Boundary (`src/lib/`)
 
-### `host-api.ts` -- Host REST client
+### `host-api.ts` -- typed host facade
 
-`hostApiFetch<T>(path, init?)` is the single entry for `/api/*` business calls.
-It always prefers `invokeIpc('hostapi:fetch', ...)` so requests execute inside
-the main process (avoiding CORS in both dev and prod). A direct
-`http://127.0.0.1:13210` fallback exists only outside Electron, or when IPC is
-unavailable *and* `localStorage['clawx:allow-localhost-fallback'] === '1'`; in
-that mode the Bearer token is fetched via `hostapi:token`.
-`createHostEventSource('/api/events')` opens the SSE channel (token via query
-string).
+`hostApi` is the single entry the renderer uses for backend calls. It is a typed
+facade over the `shared/host-api/contract.ts` module/action registry, and every
+method delegates to `invokeHost` (see below). Pages and components import
+`hostApi` from `@/lib/host-api`; they never call IPC directly.
 
-### `api-client.ts` -- unified IPC / transport layer
+`hostApiFetch<T>(path, init?)` remains for legacy `/api/*`-shaped business calls.
+It normalizes headers and routes the request through the typed
+`invokeHost('legacy', 'fetch', ...)` action, so the request executes inside the
+main process and CORS never applies in either dev or prod. Non-2xx responses throw;
+`204`/empty bodies resolve to `undefined`.
 
-This module owns the renderer's transport orchestration. Key surface:
+### `host-api-client.ts` -- typed IPC transport
 
-- `invokeApi` / `invokeIpc` -- main entry; tries transports per the configured
-  rules.
-- `invokeIpcWithRetry` -- application-level retry for `TIMEOUT`/`NETWORK`
-  `AppError`s.
-- `configureApiClient` / `applyGatewayTransportPreference` /
-  `initializeDefaultTransports` -- transport policy. Called at startup in
-  `main.tsx`.
-- `registerTransportInvoker`, `createGatewayWsTransportInvoker`,
-  `createGatewayHttpTransportInvoker` -- pluggable WS/HTTP transports.
-- `resolveDefaultGatewayWsUrl` / `resolveDefaultGatewayHttpBaseUrl` -- Gateway
-  address resolution (port cached ~5s).
-- `setGatewayWsDiagnosticEnabled`, `clearTransportBackoff`.
-- `toUserMessage` and a re-exported `AppError`.
-- File-preview IPC wrappers: `readTextFile`, `readBinaryFile`, `writeTextFile`,
-  `statFile`, `listDir`, `listTree`, `readClipboardText`.
+`invokeHost(module, action, ...payload)` is the renderer's only transport call. It
+builds a `TypedHostRequest` with a `crypto.randomUUID()` id and dispatches it over
+the preload bridge `window.clawx.hostInvoke`, which is
+`ipcRenderer.invoke('host:invoke', request)`. If the bridge is unavailable it
+throws immediately — there is no localhost HTTP fallback in the renderer.
 
-A subset of channels (`settings:*`, `provider:*`, `update:*`, `cron:*`,
-`usage:recentTokenHistory`, `app:version|name|platform`, ...) route through the
-**unified `app:request`** protocol first and fall back to legacy channels.
-
-**Default vs. diagnostic transport:**
-
-- **Default** -- `gateway:rpc` resolves to IPC only; all other `gateway:*` and
-  remaining channels use IPC.
-- **Diagnostic** (`localStorage['clawx:gateway-ws-diagnostic'] === '1'`) --
-  `gateway:rpc` attempts `WS -> HTTP -> IPC`, with per-transport failure backoff
-  (~5s) before falling through.
-
-Slow requests (>=800ms) or any fallback emit `trackUiEvent('api.request', ...)`
-telemetry.
+> **Transport policy is not a renderer concern.** The `WS -> HTTP -> IPC` policy,
+> the Gateway WebSocket, backoff, and reconnect all live in the main process (see
+> [Gateway Management](#gateway-management-electrongateway), notably
+> `ws-client.ts`, `connection-monitor.ts`, and `restart-governor.ts`). The renderer
+> implements no protocol switching. The
+> `localStorage['clawx:gateway-ws-diagnostic']` flag
+> (`src/lib/gateway-ws-diagnostic.ts`) only toggles diagnostic tracing exposed in
+> **Settings → Advanced → Developer**.
 
 ### `error-model.ts` -- unified error model
 
@@ -250,14 +232,15 @@ copy per code.
 
 ### `host-events.ts` -- realtime subscription
 
-`subscribeHostEvent(name, handler)` prefers IPC push (mapping channels such as
-`chat:runtime-event`, `gateway:status`, `workflow:progress`), and only falls back
-to SSE when `localStorage['clawx:allow-sse-fallback'] === '1'`.
+`subscribeHostEvent(name, handler)` receives realtime updates over IPC push,
+mapping channels such as `chat:runtime-event`, `gateway:status`, and
+`workflow:progress`. IPC push is the only mechanism — there is no SSE or
+EventSource fallback in the renderer.
 
 ## State Management (`src/stores/`)
 
 All global state uses **Zustand**. Stores call the backend exclusively through
-`hostApiFetch` / `invokeIpc` and receive realtime updates via
+`hostApi` / `hostApiFetch` and receive realtime updates via
 `subscribeHostEvent`.
 
 | Store | Manages | Backend access |
@@ -393,7 +376,7 @@ registry.
 - **Connection monitor** (`connection-monitor.ts`) -- 30s ping interval, 10s
   timeout; three consecutive misses trigger reconnect; an independent health
   check runs every ~30s (`GATEWAY_CONFIG.HEALTH_CHECK_INTERVAL`).
-- **Config sync** (`config-sync.ts`, `reload-policy.ts`) -- ClawX settings are
+- **Config sync** (`config-sync.ts`, `reload-policy.ts`) -- YYClaw settings are
   synced into OpenClaw config/env before start. Ordinary `openclaw.json` writes
   rely on OpenClaw's native watcher and reload planner; model changes additionally
   poll `agents.list` until the live runtime snapshot converges. Explicit process
@@ -578,7 +561,7 @@ YYClaw uses no database. Configuration and runtime data live in JSON/text
 files and OS-managed locations:
 
 ```
-~/.clawx/                       # ClawX (YYClaw) configuration root
+~/.clawx/                       # YYClaw (YYClaw) configuration root
   logs/clawx-YYYY-MM-DD.log     # Dated, leveled main-process logs
 <userData>/                     # Electron per-app userData
   clawx.instance.lock           # Single-instance file lock
@@ -624,7 +607,7 @@ These contracts are enforced by ESLint and/or the harness specs and must hold fo
 every change:
 
 1. **Single frontend entry.** Renderer backend access goes only through
-   `src/lib/host-api.ts` and `src/lib/api-client.ts`. No new direct
+   `src/lib/host-api.ts` and `src/lib/host-api-client.ts`. No new direct
    `window.electron.ipcRenderer.invoke(...)` calls in pages/components.
 2. **No renderer->Gateway HTTP.** The renderer never calls
    `fetch('http://127.0.0.1:18789/...')`; Gateway HTTP is reached only through

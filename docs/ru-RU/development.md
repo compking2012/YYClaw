@@ -1,11 +1,11 @@
-# Руководство по разработке ClawX
+# Руководство по разработке YYClaw
 
 Этот документ содержит подробную версию раздела «Разработка» из README.
 
 ### Требования
 
 - **Node.js**: 22.22.3+, 24.15.0+ или 25.9.0+ в пределах соответствующей основной версии (рекомендуется Node 24 LTS)
-- **Менеджер пакетов**: pnpm 9+ (npm также поддерживается)
+- **Менеджер пакетов**: только pnpm, версия закреплена полем `packageManager` в `package.json`. Выполните `corepack enable`, чтобы активировать её. **npm и yarn не поддерживаются.**
 - **Linux (Ubuntu/Debian)**: перед запуском Electron установите необходимые системные библиотеки:
   ```bash
   sudo apt-get install -y libnss3 libgtk-3-0 libxss1 libxtst6 libatspi2.0-0 libnotify4 xdg-utils
@@ -15,7 +15,7 @@
 ### Структура проекта
 
 ```text
-ClawX/
+YYClaw/
 ├── electron/                 # Главный процесс Electron
 │   ├── services/            # Типизированные Host API, провайдеры, секреты и runtime-сервисы
 │   │   ├── providers/       # Логика синхронизации моделей provider/account
@@ -30,8 +30,10 @@ ClawX/
 │   ├── lib/                 # Унифицированный фронтенд API и модель ошибок
 │   ├── stores/              # Хранилища Zustand (settings/chat/gateway)
 │   ├── components/          # Переиспользуемые UI-компоненты
-│   ├── pages/               # Setup/Dashboard/Chat/Channels/Skills/Cron/Settings
-│   ├── i18n/                # Ресурсы локализации
+│   ├── pages/               # Chat, Agents, Channels, Cron, Workflows, Skills,
+│   │                        # Models, Settings, Setup, Dreams,
+│   │                        # ImageGeneration, Login
+│   ├── styles/              # Дизайн-токены и глобальный CSS
 │   └── types/               # Определения типов TypeScript
 ├── tests/
 │   ├── e2e/                 # Сквозные дымовые тесты Playwright Electron
@@ -39,6 +41,11 @@ ClawX/
 ├── resources/                # Статические ресурсы (иконки и изображения)
 └── scripts/                  # Скрипты сборки и утилит
 ```
+
+> Примечание: ресурсы локализации находятся в `shared/i18n/locales/<lang>/<ns>.json`,
+> а не в `src/i18n/`. Отдельной страницы `/dashboard` нет — панель расхода токенов
+> объединена со страницей Models.
+
 
 ### Доступные команды
 
@@ -84,7 +91,7 @@ CPU-профиль можно открыть в Chrome DevTools. Артефак�
 
 Для записи реального Renderer запустите разработку командой `CLAWX_REMOTE_DEBUGGING_PORT=9223 pnpm dev` и подключите Playwright или Chrome DevTools к `localhost:9223`. Для записи реального Electron Main выполните `pnpm run profile:main`, откройте `chrome://inspect`, настройте `localhost:9229` и выберите цель Electron Main. Не устанавливайте `CLAWX_GATEWAY_WS_TRACE`, если измеряется не сам WebSocket trace.
 
-ClawX по умолчанию оставляет аппаратное ускорение Chromium включённым, чтобы длинные документы, прокрутка и анимации layout использовали GPU-композицию и растеризацию. При проблемах с графическим драйвером можно использовать встроенный переключатель Chromium `--disable-gpu` как резервный вариант диагностики.
+YYClaw по умолчанию оставляет аппаратное ускорение Chromium включённым, чтобы длинные документы, прокрутка и анимации layout использовали GPU-композицию и растеризацию. При проблемах с графическим драйвером можно использовать встроенный переключатель Chromium `--disable-gpu` как резервный вариант диагностики.
 
 ### Проверки регрессии коммуникаций
 
@@ -105,7 +112,7 @@ pnpm run comms:compare
 
 - собирает Renderer и бандлы Electron через `pnpm run build:vite`
 - запускает Electron в изолированном E2E-режиме с временным `HOME`
-- использует временный каталог `userData` ClawX
+- использует временный каталог `userData` YYClaw
 - запускает обычные spec-файлы параллельно, изолируя тесты глобальных ресурсов ОС и производительности
 - пропускает тяжёлые побочные эффекты запуска, такие как автозапуск Gateway, установка bundled skills, создание трея и автоустановка CLI
 
@@ -120,7 +127,7 @@ pnpm run comms:compare
 
 | Уровень | Технология |
 |---------|------------|
-| Среда выполнения | Electron 40+ |
+| Среда выполнения | Electron 40 |
 | UI-фреймворк | React 19 + TypeScript |
 | Стилизация | Tailwind CSS + shadcn/ui |
 | Состояние | Zustand |
@@ -128,3 +135,8 @@ pnpm run comms:compare
 | Тестирование | Vitest + Playwright |
 | Анимация | Framer Motion |
 | Иконки | Lucide React |
+### Примечания по упаковке
+
+Для сборки цели Linux `.deb` на macOS нужны GNU tar и GNU ar (`brew install gnu-tar binutils`). В macOS есть только BSD-версии `ar`/`tar`, из-за чего встроенный `fpm` молча создаёт пустой 96-байтный `.deb` (только таблицу символов ar `__.SYMDEF`, а не корректный пакет Debian), при этом сборка всё равно завершается с кодом 0. `scripts/electron-builder-env.mjs` теперь проверяет это заранее для комбинации `darwin` + `--linux` и сразу завершается с ошибкой и подсказкой `brew install`, если чего-то не хватает. AppImage это не затрагивает.
+
+В упакованных сборках для Windows встроенный CLI/TUI `openclaw` запускается через поставляемую точку входа `node.exe`, чтобы поведение ввода в терминале оставалось стабильным.

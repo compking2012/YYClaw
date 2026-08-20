@@ -225,7 +225,7 @@
         "emptyCatalog": "No skills are available from the server right now.",
         "noVersionChanges": "No installed skills can be upgraded or rolled back right now.",
         "searchError": "Could not load the skills catalog.",
-        "configError": "Set `farmApiBaseUrl` in package.json (scheme + host + port, e.g. `http://host:9001`). The app uses that base for `/api/v1/skill_list`, `/api/v1/skill_search`, and `/api/v1/skill_file/:name`, and for `/api/v1/provider-catalog` (AI providers).",
+        "configError": "Set `farmApiBaseUrl` in package.json (scheme + host + port, e.g. `https://host:9001`), or the `YYCLAW_FARM_API_BASE_URL` environment variable. The app uses that base for `/api/v1/skill_list`, `/api/v1/skill_search`, and `/api/v1/skill_file/:name`.",
         "marketplaceFetchTimeoutError": "Request timed out. Check your network and try again.",
         "marketplaceFetchRateLimitError": "Too many requests. Please wait and try again.",
         "marketplaceFetchError": "Could not load the catalog. Check your connection.",

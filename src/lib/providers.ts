@@ -6,14 +6,6 @@
  * layer so TypeScript project boundaries remain stable during the migration.
  */
 
-import pkg from '../../package.json';
-
-function getFarmApiBaseUrl(): string | null {
-  const raw = String((pkg as { farmApiBaseUrl?: string }).farmApiBaseUrl ?? '').trim();
-  if (!raw) return null;
-  return raw.replace(/\/+$/, '');
-}
-
 export const PROVIDER_TYPES = [
   'anthropic',
   'openai',
@@ -434,11 +426,22 @@ export let PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [...LOCAL_PROVIDER_TYPE_INFO
 
 export let SETUP_PROVIDERS: ProviderTypeInfo[] = PROVIDER_TYPE_INFO;
 
+/**
+ * Fetch the provider catalog from a Farm server.
+ *
+ * `baseUrl` must come from `hostApi.providers.catalogSource()` (resolved in Main)
+ * — callers must not read it from `package.json` here, or `YYCLAW_*` env
+ * overrides silently stop working. Only call this when `source === 'remote'`.
+ *
+ * NOTE: this still fetches directly from the renderer, which the AGENTS.md
+ * renderer/Main boundary rule discourages. It is gated off by default; routing
+ * it through a Main-side proxy is tracked separately.
+ */
 export async function fetchRemoteProviders(
-  options?: { allowLocalFallback?: boolean },
+  options?: { allowLocalFallback?: boolean; baseUrl?: string | null },
 ): Promise<{ providers: ProviderTypeInfo[]; source: 'remote' | 'local' }> {
   try {
-    const base = getFarmApiBaseUrl();
+    const base = options?.baseUrl ?? null;
     if (!base) {
       throw new Error('REMOTE_API_NO_BASE_URL');
     }

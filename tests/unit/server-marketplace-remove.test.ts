@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import AdmZip from 'adm-zip';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -33,6 +33,17 @@ function writeServerSkill(skillDir: string, slug: string, name = slug): void {
 }
 
 describe('server marketplace local removal', () => {
+  const previousFarmBaseUrl = process.env.YYCLAW_FARM_API_BASE_URL;
+  beforeEach(() => {
+    // The server marketplace needs an explicit Farm base URL; package.json ships
+    // empty by default, so set it here instead of depending on deploy config.
+    process.env.YYCLAW_FARM_API_BASE_URL = 'https://farm.test';
+  });
+  afterAll(() => {
+    if (previousFarmBaseUrl === undefined) delete process.env.YYCLAW_FARM_API_BASE_URL;
+    else process.env.YYCLAW_FARM_API_BASE_URL = previousFarmBaseUrl;
+  });
+
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();

@@ -5,7 +5,7 @@
 - **Renderer/Main boundary is enforced by ESLint** — never add a direct
   `window.electron.ipcRenderer.invoke(...)` call or a renderer→`localhost`/`127.0.0.1`
   `fetch(...)`. Route everything through `src/lib/host-api.ts` and
-  `src/lib/api-client.ts`. (Full rationale in AGENTS.md.)
+  `src/lib/host-api-client.ts`. (Full rationale in AGENTS.md.)
 - **UI changes** must add or update a Playwright E2E spec in the same change — run `/e2e`.
 - **Comms-path changes** (gateway events, runtime send/receive, delivery, fallback)
   must pass `/comms-check` before finishing.

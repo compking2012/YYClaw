@@ -1,11 +1,11 @@
-# ClawX 开发文档
+# YYClaw 开发文档
 
 本文档是 README「开发指南」一节的详细说明。
 
 ### 前置要求
 
 - **Node.js**：对应主版本范围内的 22.22.3+、24.15.0+ 或 25.9.0+（推荐 Node 24 LTS）
-- **包管理器**：pnpm 9+（推荐）或 npm
+- **包管理器**：仅支持 pnpm，版本由 `package.json` 的 `packageManager` 字段锁定。运行 `corepack enable` 启用。**不支持 npm 与 yarn。**
 - **Linux（Ubuntu/Debian）**：运行 Electron 前，请先安装所需系统库：
   ```bash
   sudo apt-get install -y libnss3 libgtk-3-0 libxss1 libxtst6 libatspi2.0-0 libnotify4 xdg-utils
@@ -14,7 +14,7 @@
 
 ### 项目结构
 
-```ClawX/
+```YYClaw/
 ├── electron/                 # Electron 主进程
 │   ├── services/            # 类型化 Host API、Provider、Secrets 与运行时服务
 │   │   ├── providers/       # Provider/account 模型同步逻辑
@@ -29,8 +29,10 @@
 │   ├── lib/                 # 前端统一 API 与错误模型
 │   ├── stores/              # Zustand 状态仓库（settings/chat/gateway）
 │   ├── components/          # 可复用 UI 组件
-│   ├── pages/               # Setup/Dashboard/Chat/Channels/Skills/Cron/Settings
-│   ├── i18n/                # 国际化资源
+│   ├── pages/               # Chat、Agents、Channels、Cron、Workflows、Skills、
+│   │                        # Models、Settings、Setup、Dreams、
+│   │                        # ImageGeneration、Login
+│   ├── styles/              # 设计 token 与全局 CSS
 │   └── types/               # TypeScript 类型定义
 ├── tests/
 │   ├── e2e/                 # Playwright Electron 端到端冒烟测试
@@ -38,6 +40,10 @@
 ├── resources/                # 静态资源（图标、图片）
 └── scripts/                  # 构建与工具脚本
 ```
+
+> 注意：国际化资源位于 `shared/i18n/locales/<lang>/<ns>.json`，而不是 `src/i18n/`。
+> 不存在独立的 `/dashboard` 页面 —— token 用量看板已合并进 Models 页面。
+
 ### 常用命令
 
 ```bash
@@ -80,7 +86,7 @@ Electron E2E 功能测试在本地和 CI 中默认使用两个 Playwright worker
 
 录制真实 Renderer 时，使用 `CLAWX_REMOTE_DEBUGGING_PORT=9223 pnpm dev` 启动开发环境，再让 Playwright 或 Chrome DevTools 连接 `localhost:9223`。录制真实 Electron Main 时，运行 `pnpm run profile:main`，在 `chrome://inspect` 中配置 `localhost:9229` 并选择 Electron Main target。除非正在测量 WebSocket trace 本身，否则不要设置 `CLAWX_GATEWAY_WS_TRACE`。
 
-ClawX 默认保留 Chromium 硬件加速，使长文档、滚动和布局动画能够使用 GPU 合成与光栅化。若某台机器的显卡驱动存在问题，仍可使用 Chromium 原生的 `--disable-gpu` 命令行参数作为排障回退。
+YYClaw 默认保留 Chromium 硬件加速，使长文档、滚动和布局动画能够使用 GPU 合成与光栅化。若某台机器的显卡驱动存在问题，仍可使用 Chromium 原生的 `--disable-gpu` 命令行参数作为排障回退。
 
 ### 通信回归检查
 
@@ -93,11 +99,30 @@ pnpm run comms:compare
 
 CI 中的 `comms-regression` 会校验必选场景与阈值。
 
+### Electron E2E 测试
+
+Playwright 的 Electron 套件会从 `dist/` 与 `dist-electron/` 启动打包后的渲染进程与主进程，因此无需先手动运行 `pnpm dev`。
+
+`pnpm run test:e2e` 会自动：
+
+- 使用 `pnpm run build:vite` 构建渲染进程与 Electron 产物
+- 以隔离的 E2E 模式启动 Electron，并使用临时 `HOME`
+- 使用临时的 YYClaw `userData` 目录
+- 并发运行普通用例，同时隔离依赖操作系统全局状态与性能相关的测试
+- 跳过较重的启动副作用，例如 Gateway 自动启动、内置技能安装、托盘创建与 CLI 自动安装
+
+最初的基线用例覆盖：
+
+- 全新用户配置下首次启动配置向导的可见性
+- 跳过配置流程并在 Electron 应用内导航到「模型」页
+
+后续的 Electron 流程请放在 `tests/e2e/` 下，并复用 `tests/e2e/fixtures/electron.ts` 中的共享 fixture。请避免固定的可写路径、端口、系统钥匙串等外部共享状态，以保证用例可并行；确实无法隔离时使用 `E2E_EXCLUSIVE_TAG`。
+
 ### 技术栈
 
 | 层级 | 技术 |
 |------|------|
-| 运行时 | Electron 40+ |
+| 运行时 | Electron 40 |
 | UI 框架 | React 19 + TypeScript |
 | 样式 | Tailwind CSS + shadcn/ui |
 | 状态管理 | Zustand |
@@ -105,3 +130,8 @@ CI 中的 `comms-regression` 会校验必选场景与阈值。
 | 测试 | Vitest + Playwright |
 | 动画 | Framer Motion |
 | 图标 | Lucide React |
+### 打包注意事项
+
+在 macOS 上构建 Linux `.deb` 目标需要 GNU tar 与 GNU ar（`brew install gnu-tar binutils`）。macOS 只自带 BSD 的 `ar`/`tar`，这会让内置的 `fpm` 静默产出一个 96 字节的空 `.deb`（只有一个 `__.SYMDEF` ar 符号表，并非有效的 Debian 包），而构建仍以 0 退出。`scripts/electron-builder-env.mjs` 现在会在 `darwin` + `--linux` 组合下预检此项，缺少任一工具时会带上 `brew install` 提示快速失败。AppImage 不受影响。
+
+在 Windows 的打包构建中，内置的 `openclaw` CLI/TUI 通过随包发布的 `node.exe` 入口运行，以保持终端输入行为稳定。

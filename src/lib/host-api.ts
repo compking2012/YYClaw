@@ -329,6 +329,7 @@ export const hostApi = {
     ),
     accounts: () => invokeHost('providers', 'accounts'),
     vendors: () => invokeHost('providers', 'vendors'),
+    catalogSource: () => invokeHost('providers', 'catalogSource'),
     accountKeyInfo: () => invokeHost('providers', 'accountKeyInfo'),
     getDefaultAccount: () => invokeHost('providers', 'getDefaultAccount'),
     getAccount: (accountId: string) => (

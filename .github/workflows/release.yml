@@ -331,6 +331,7 @@ jobs:
             release-artifacts/**/*.deb
             release-artifacts/**/*.rpm
             release-artifacts/**/*.yml
+            release-artifacts/**/*.blockmap
           draft: false
           prerelease: true
           make_latest: false

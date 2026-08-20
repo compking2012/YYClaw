@@ -495,6 +495,15 @@ export type ProviderWithKeyInfo = ProviderConfig & {
   hasKey: boolean;
   keyMasked: string | null;
 };
+/**
+ * Where the renderer should get the AI provider catalog from. Resolved in Main
+ * (see `electron/utils/farm-api-base.ts`) so `YYCLAW_*` env overrides apply at
+ * runtime; `local` means the renderer must not make any network call.
+ */
+export type ProviderCatalogSourceInfo = {
+  source: 'local' | 'remote';
+  baseUrl: string | null;
+};
 export type ProviderVendorInfo = {
   id: ProviderType;
   name: string;
@@ -1192,6 +1201,7 @@ export type HostApiContract = {
     setDefault: (payload: ProviderIdPayload) => HostSuccess;
     accounts: () => ProviderAccount[];
     vendors: () => ProviderVendorInfo[];
+    catalogSource: () => ProviderCatalogSourceInfo;
     accountKeyInfo: () => ProviderAccountKeyInfo[];
     getDefaultAccount: () => ProviderDefaultAccountResult;
     getAccount: (payload: ProviderAccountIdPayload) => ProviderAccount | null;

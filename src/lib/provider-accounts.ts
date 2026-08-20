@@ -1,4 +1,5 @@
 import { hostApi } from '@/lib/host-api';
+import type { ProviderCatalogSourceInfo } from '@shared/host-api/contract';
 import type {
   ProviderAccount,
   ProviderType,
@@ -11,6 +12,8 @@ export interface ProviderSnapshot {
   statuses: ProviderWithKeyInfo[];
   vendors: ProviderVendorInfo[];
   defaultAccountId: string | null;
+  /** Resolved in Main; `local` means callers must not fetch a remote catalog. */
+  catalogSource: ProviderCatalogSourceInfo;
 }
 
 export interface ProviderListItem {
@@ -83,11 +86,12 @@ function fallbackStatusToAccount(status: ProviderWithKeyInfo): ProviderAccount {
 }
 
 export async function fetchProviderSnapshot(): Promise<ProviderSnapshot> {
-  const [accountsResult, keyInfoResult, vendors, defaultInfo] = await Promise.all([
+  const [accountsResult, keyInfoResult, vendors, defaultInfo, catalogSource] = await Promise.all([
     hostApi.providers.accounts(),
     hostApi.providers.accountKeyInfo(),
     hostApi.providers.vendors(),
     hostApi.providers.getDefaultAccount(),
+    hostApi.providers.catalogSource(),
   ]);
 
   let accounts = accountsResult ?? [];
@@ -107,6 +111,9 @@ export async function fetchProviderSnapshot(): Promise<ProviderSnapshot> {
     statuses,
     vendors,
     defaultAccountId: defaultInfo?.accountId ?? null,
+    // Fall back to local so a stale/absent host response can never trigger a
+    // surprise outbound request.
+    catalogSource: catalogSource ?? { source: 'local', baseUrl: null },
   };
 }
 

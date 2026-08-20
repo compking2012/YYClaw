@@ -105,23 +105,32 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     try {
       const snapshot = await fetchProviderSnapshot();
       let vendors = snapshot.vendors ?? [];
-      try {
-        const remote = await fetchRemoteProviders({ allowLocalFallback });
-        if (remote.source === 'remote') {
-          vendors = remote.providers
-            .filter((provider) => !provider.hidden)
-            .map(providerTypeInfoToVendor);
-        }
-      } catch (remoteError) {
-        // Reached only in non-dev mode: the online catalog failed and the local
-        // fallback is disabled. Keep the host-provided vendors as the available
-        // catalog. Only prompt when this refresh was triggered by an explicit
-        // user action (e.g. "Add provider") so background/startup refreshes stay
-        // silent instead of spamming the toast.
-        remoteCatalogOk = false;
-        console.warn('Failed to fetch remote provider catalog (online-only mode).', remoteError);
-        if (options?.notifyOnRemoteFailure) {
-          toast.error(i18n.t('settings:aiProviders.toast.remoteCatalogFailed'));
+      // `local` (the default) means the host-provided vendors ARE the catalog —
+      // skip the network call entirely rather than fetching and falling back.
+      // Absent/unknown also means local: fail closed so we never make a
+      // surprise outbound request.
+      if (snapshot.catalogSource?.source === 'remote') {
+        try {
+          const remote = await fetchRemoteProviders({
+            allowLocalFallback,
+            baseUrl: snapshot.catalogSource.baseUrl,
+          });
+          if (remote.source === 'remote') {
+            vendors = remote.providers
+              .filter((provider) => !provider.hidden)
+              .map(providerTypeInfoToVendor);
+          }
+        } catch (remoteError) {
+          // Reached only in non-dev mode: the online catalog failed and the local
+          // fallback is disabled. Keep the host-provided vendors as the available
+          // catalog. Only prompt when this refresh was triggered by an explicit
+          // user action (e.g. "Add provider") so background/startup refreshes stay
+          // silent instead of spamming the toast.
+          remoteCatalogOk = false;
+          console.warn('Failed to fetch remote provider catalog (online-only mode).', remoteError);
+          if (options?.notifyOnRemoteFailure) {
+            toast.error(i18n.t('settings:aiProviders.toast.remoteCatalogFailed'));
+          }
         }
       }
 

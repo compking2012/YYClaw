@@ -225,7 +225,7 @@
         "emptyCatalog": "Сейчас на сервере нет доступных навыков.",
         "noVersionChanges": "Сейчас нет установленных навыков для обновления или отката.",
         "searchError": "Не удалось загрузить каталог навыков.",
-        "configError": "Укажите `farmApiBaseUrl` в package.json.",
+        "configError": "Укажите `farmApiBaseUrl` в package.json или переменную окружения `YYCLAW_FARM_API_BASE_URL`.",
         "marketplaceFetchTimeoutError": "Время запроса истекло. Проверьте сеть и повторите.",
         "marketplaceFetchRateLimitError": "Слишком много запросов. Повторите позже.",
         "marketplaceFetchError": "Не удалось загрузить каталог. Проверьте подключение.",

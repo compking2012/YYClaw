@@ -1,4 +1,4 @@
-# ClawX Application Icons
+# YYClaw Application Icons
 
 This directory contains the application icons for all supported platforms.
 
@@ -47,7 +47,7 @@ If you prefer to generate icons manually:
 
 1. **macOS (.icns)**
    - Create a `.iconset` folder with properly named PNGs
-   - Run: `iconutil -c icns -o icon.icns ClawX.iconset`
+   - Run: `iconutil -c icns -o icon.icns YYClaw.iconset`
 
 2. **Windows (.ico)**
    - Use ImageMagick: `convert icon_16.png icon_32.png icon_64.png icon_128.png icon_256.png icon.ico`
@@ -66,7 +66,7 @@ If you prefer to generate icons manually:
 - **Format**: Single-color (black) on transparent background
 - **Size**: 22x22 pixels, with a 44x44 `@2x` retina variant
 - **Naming**: Must end with "Template.png" for automatic template mode
-- **Design**: Monochrome silhouette of the main app icon (ClawX lobster)
+- **Design**: Monochrome silhouette of the main app icon (YYClaw lobster)
 - **Source**: Generated automatically from `icon.svg` (alpha channel flattened to pure black)
 - **Important**: macOS template images are tinted by the system (black in light menu bar, white in dark); only the alpha channel matters
 

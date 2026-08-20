@@ -142,6 +142,38 @@ Add future Electron flows under `tests/e2e/` and reuse the shared fixture in `te
 | Icons | Lucide React |
 | Math / Editor | KaTeX · Monaco Editor |
 
+### README Screenshots
+
+The 24 README screenshots (6 surfaces × 4 locales) are generated, not captured by
+hand:
+
+```bash
+pnpm run screenshots
+```
+
+That runs two steps, each also available on its own
+(`screenshots:capture` / `screenshots:decorate`):
+
+1. **Capture** — `tests/e2e/capture-readme-screenshots.spec.ts` launches Electron
+   on an isolated profile, mocks the gateway/provider/skill/cron/channel data via
+   `installIpcMocks`, switches locale through the setup wizard's language buttons,
+   sizes the window to 1280×800 (2560×1600 at DPR 2), and writes each surface to
+   `resources/screenshot/<locale>/`.
+2. **Decorate** — `scripts/decorate-screenshots.mjs` adds the rounded corners,
+   drop shadow and transparent margin that a macOS window screenshot has,
+   producing the 2784×1824 canvas the committed images use. Playwright can only
+   capture web contents, so this step is what makes the output match. It is
+   idempotent: an already-decorated file is skipped.
+
+The capture spec is tagged `@screenshots` **and** its Playwright project is gated
+behind `CLAWX_CAPTURE_SCREENSHOTS=1`, so it never runs during `pnpm run test:e2e`.
+The env-var gate is the part that matters — `playwright test` with no `--project`
+runs every configured project, so a tag alone would not exclude it.
+
+Re-run this after any UI change that affects Chat, Cron, or the Models / Channels
+/ Skills / General tabs of the System Settings modal. The seeded data is
+representative sample content, not real account data.
+
 ### Packaging Notes
 
 Building the Linux `.deb` target on macOS needs GNU tar and GNU ar

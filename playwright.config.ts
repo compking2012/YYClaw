@@ -3,6 +3,7 @@ import {
   DEFAULT_E2E_WORKERS,
   E2E_EXCLUSIVE_TAG,
   E2E_PERFORMANCE_TAG,
+  E2E_SCREENSHOT_TAG,
 } from './tests/e2e/parallel-policy';
 
 function e2eWorkers(): number {
@@ -18,7 +19,12 @@ function e2eWorkers(): number {
 
 const exclusivePattern = new RegExp(E2E_EXCLUSIVE_TAG);
 const performancePattern = new RegExp(E2E_PERFORMANCE_TAG);
-const nonParallelPattern = new RegExp(`${E2E_EXCLUSIVE_TAG}|${E2E_PERFORMANCE_TAG}`);
+const screenshotPattern = new RegExp(E2E_SCREENSHOT_TAG);
+// Screenshot capture is excluded from the default lanes as well: it produces
+// image artifacts, not assertions, and is run on demand via `pnpm run screenshots`.
+const nonParallelPattern = new RegExp(
+  `${E2E_EXCLUSIVE_TAG}|${E2E_PERFORMANCE_TAG}|${E2E_SCREENSHOT_TAG}`,
+);
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -56,5 +62,17 @@ export default defineConfig({
       dependencies: ['parallel'],
       workers: 1,
     },
+    // README screenshot capture is opt-in: `playwright test` with no --project
+    // runs every configured project, so gating on the env var (set by
+    // `pnpm run screenshots`) is what actually keeps it out of ordinary runs.
+    ...(process.env.CLAWX_CAPTURE_SCREENSHOTS === '1'
+      ? [{
+          name: 'screenshots' as const,
+          grep: screenshotPattern,
+          workers: 1,
+          // Deliberately no `dependencies`: capturing README images must not
+          // drag the whole functional suite along.
+        }]
+      : []),
   ],
 });

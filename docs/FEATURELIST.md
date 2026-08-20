@@ -58,9 +58,12 @@ tracked as GitHub issues.
 
 | Item | Notes |
 |------|-------|
-| Screenshots show the pre-rename `ClawX` wordmark and stale navigation | All 24 files under `resources/screenshot/{en,zh,jp,ru}/` need re-capture; the sidebar reads "ClawX" and predates the Workflows entry and the System Settings modal consolidation |
+| Screenshots are generated with seeded mock data | `pnpm run screenshots` captures all 24 images from an isolated profile with mocked gateway/provider/skill/cron/channel data (`tests/e2e/capture-readme-screenshots.spec.ts`). The data is representative, not real. Re-run after any UI change that affects the six README surfaces |
+| Chat screenshot has no conversation | The chat capture shows an empty session; the composer still reads "Gateway not connected" because the composer gates on a readiness signal the mock does not satisfy. Seeding an ACP conversation via `emitAcpSessionUpdates` would improve it |
 | No screenshots for several shipping pages | Setup wizard, Agents, Workflows, Image Generation, and the Memory tab have no screenshot in any locale |
 | Screenshot locale directories are inconsistently named | `resources/screenshot/{en,zh,jp,ru}` vs `docs/{en-US,zh-CN,ja-JP,ru-RU}` |
+| `tests/unit` is not typechecked | `tsconfig.test.json` covers only `tests/e2e/fixtures` (the shared harness). Extending it to every spec surfaces ~350 pre-existing loose-typing errors (inferred literals vs. declared mock shapes, missing vitest globals) that need cleanup first |
+| `docs/yyclaw-multi-agent-design.md` has malformed diagrams | 32 ASCII box lines have inconsistent widths and the file has an odd number of code fences (41) |
 
 ## How to Extend This List
 

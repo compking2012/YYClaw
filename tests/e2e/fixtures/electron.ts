@@ -3,6 +3,7 @@ import { _electron as electron, expect, test as base, type ElectronApplication, 
 import { build as buildWithEsbuild } from 'esbuild';
 import { access, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { createServer } from 'node:net';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { RawMessage } from '../../../shared/chat/types';
@@ -219,6 +220,35 @@ async function closeElectronApp(app: ElectronApplication, timeoutMs = 5_000): Pr
   }
 }
 
+/**
+ * Bind an ephemeral loopback port and release it, returning the port number.
+ *
+ * Each isolated E2E profile needs its own Host API port so parallel workers do
+ * not contend for a fixed one. There is an inherent bind/use race here, but the
+ * window is tiny and the alternative (a fixed port) breaks parallel runs
+ * outright.
+ */
+async function allocatePort(): Promise<number> {
+  const server = createServer();
+  try {
+    const port = await new Promise<number>((resolvePort, rejectPort) => {
+      server.once('error', rejectPort);
+      server.listen(0, '127.0.0.1', () => {
+        server.off('error', rejectPort);
+        const address = server.address();
+        if (!address || typeof address === 'string') {
+          rejectPort(new Error('Electron E2E fixture failed to bind an ephemeral Host API port'));
+          return;
+        }
+        resolvePort(address.port);
+      });
+    });
+    return port;
+  } finally {
+    await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+  }
+}
+
 async function seedE2eSettings(userDataDir: string, seedDevMode: boolean): Promise<void> {
   const settingsPath = join(userDataDir, 'settings.json');
   try {
@@ -259,7 +289,9 @@ async function launchClawXElectron(
   delete launchEnv.CLAWX_REMOTE_DEBUGGING_PORT;
   delete launchEnv.VITE_DEV_SERVER_URL;
   return await electron.launch({
-    executablePath: electronBinaryPath,
+    // The `electron` package's default export is the binary path at runtime, but
+    // its bundled types describe the Electron API namespace instead.
+    executablePath: electronBinaryPath as unknown as string,
     args: ['--lang=en-US', ...(options.additionalArgs ?? []), electronEntry],
     env: {
       ...launchEnv,
@@ -278,7 +310,7 @@ async function launchClawXElectron(
       OPENCLAW_STATE_DIR: join(homeDir, '.openclaw'),
       OPENCLAW_CONFIG_PATH: join(homeDir, '.openclaw', 'openclaw.json'),
       ...(options.skipSetup ? { CLAWX_E2E_SKIP_SETUP: '1' } : {}),
-    },
+    } as Record<string, string>,
     timeout: 90_000,
   });
 }

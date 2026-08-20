@@ -611,7 +611,7 @@ export async function installWebBrowserPolicyInstrumentation(
           .off('will-download', state.downloadObserver as never);
         if (state.clipboardWritten && state.clipboard.hadContents) {
           const hasBookmark = state.clipboard.bookmark.url.length > 0;
-          const restored: Electron.ClipboardData = {
+          const restored: Electron.Data = {
             ...(hasBookmark
               ? { text: state.clipboard.bookmark.url, bookmark: state.clipboard.bookmark.title }
               : state.clipboard.text

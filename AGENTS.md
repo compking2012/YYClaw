@@ -21,6 +21,7 @@ Standard dev commands are in `package.json` scripts and `README.md`. Key ones:
 | Comms baseline refresh | `pnpm run comms:baseline` |
 | Comms regression compare | `pnpm run comms:compare` |
 | E2E tests (Playwright) | `pnpm run test:e2e` |
+| README screenshots (24 images) | `pnpm run screenshots` |
 | Chat performance profiles | `pnpm run perf:chat` |
 | Electron Main inspector | `pnpm run profile:main` |
 | Build frontend only | `pnpm run build:vite` |
@@ -63,6 +64,7 @@ Before writing any code, complete these steps in order:
 - **Models page aggregation**: The 7-day/30-day filters are relative rolling windows, not calendar-month buckets. When grouped by time, the chart should keep all day buckets in the selected window; only model grouping is intentionally capped to the top entries.
 - **OpenClaw Doctor in UI**: In Settings > Advanced > Developer, the app exposes both `Run Doctor` (`openclaw doctor --json`) and `Run Doctor Fix` (`openclaw doctor --fix --yes --non-interactive`) through the host-api. Renderer code should call the host route, not spawn CLI processes directly.
 - **UI change validation**: Any user-visible UI change should include or update an Electron E2E spec in the same PR so the interaction is covered by Playwright.
+- **README screenshots are generated**: `pnpm run screenshots` regenerates all 24 images (6 surfaces × 4 locales) via `tests/e2e/capture-readme-screenshots.spec.ts` plus `scripts/decorate-screenshots.mjs`. Re-run it when a change alters Chat, Cron, or the Models / Channels / Skills / General tabs of the System Settings modal. The capture project is gated behind `CLAWX_CAPTURE_SCREENSHOTS=1` so it never runs in `pnpm run test:e2e` — a `@screenshots` tag alone would not exclude it, because `playwright test` with no `--project` runs every configured project.
 - **i18n & styling conventions**: New user-facing features must (1) route all text through `react-i18next` with full locale coverage (`en` / `zh` / `ja` / `ru` under `shared/i18n/locales/<lang>/<ns>.json`) — never hardcode display strings, and (2) use the design tokens and substitution rules documented in `src/styles/globals.css` (surfaces `bg-surface-modal` / `bg-surface-input`, selected state `bg-black/5 dark:bg-white/10`, status colours `text-X-700 dark:text-X-400`, page H1/H2 `font-serif font-normal tracking-tight`, etc.) — see the *Component conventions* block in `globals.css` for the full substitution table.
 - **Renderer/Main API boundary (important)**:
   - Renderer must use `src/lib/host-api.ts` and `src/lib/host-api-client.ts` as the single entry for backend calls.

@@ -36,6 +36,11 @@ ownedPaths:
   - src/stores/artifact-panel.ts
   - src/components/layout/MainLayout.tsx
   - src/pages/Chat/ChatInput.tsx
+  - src/App.tsx
+  - src/components/settings/SystemSettingsModal.tsx
+  - src/stores/settings-modal.ts
+  - resources/config/providers.json
+  - shared/i18n/locales/*/settings.json
   - src/pages/Chat/ChatToolbar.tsx
   - shared/host-api/contract.ts
   - electron/utils/store.ts
@@ -65,6 +70,10 @@ ownedPaths:
   - tests/unit/artifact-panel.test.tsx
   - tests/unit/acp-chat-components.test.tsx
   - tests/e2e/chat-workspace-context.spec.ts
+  - tests/e2e/computer-use.spec.ts
+  - tests/e2e/developer-mode.spec.ts
+  - tests/e2e/voice-features.spec.ts
+  - tests/unit/providers.test.ts
   - tests/e2e/chat-new-session-date.spec.ts
   - tests/e2e/chat-acp-inline-timeline.spec.ts
   - tests/e2e/chat-question-directory.spec.ts
@@ -83,6 +92,7 @@ conditionalProfiles:
     - workspace selection, binding, sidebar, browser, or question navigation changes
     - Markdown file-preview rendering or syntax highlighting changes
 requiredRules:
+  - local-computer-use
   - session-workspace-authority
   - renderer-main-boundary
   - ui-i18n-design-tokens
@@ -93,6 +103,8 @@ requiredRules:
   - electron-rendering-performance
   - docs-sync
 ---
+
+Computer Use is always accessible from Settings, independently of Developer Mode, and defaults off. Its former sidebar entry is removed, while direct route visits open the settings tab. Voice input, prompt optimization, and Send remain adjacent at the right edge of the composer at wide and narrow viewport sizes. Legacy company-network provider presets preceding Anthropic are absent from the bundled catalog; official definitions and persisted account data are not rewritten.
 
 This scenario covers inheriting the selected conversation's effective workspace when creating a new Chat; selecting persisted recent, known-session, or newly browsed workspaces while the new Chat remains unbound; validating workspace availability before ACP load; deriving a newly visible local-session title atomically from its first prompt; replacing truncated cwd-only and matching synthetic UUID-date fallback titles with transcript prompts, including for the canonical main conversation after workspace resolution; recovering from deleted global or inherited workspace paths; marking unavailable non-default sidebar groups; permanently deleting their sessions after confirmation; removing every sidebar conversation owned by an Agent immediately after that Agent and its managed data are permanently deleted, clearing a successfully removed managed workspace from the new-chat workspace menu and persisted workspace metadata, with safe selection repair; binding workspaces through OpenClaw ACP cwd while pinning the canonical `agent:main:main` session to the default workspace when replay metadata is stale; targeting another agent without losing that agent's workspace or first prompt; restoring historical workspace context; renaming imported workspace display labels; navigating workspace-grouped sessions with busy, unread, and relative-time status; hiding native child rows as presentation-only while retaining their exact-key catalog records; drilling from a parent into ACP-listed direct children and returning to the direct ACP parent with deleted-target guards and exact non-cascading deletion; keeping each conversation's unsent composer text and textarea caret or selection isolated and restoring both when the user returns; browsing the effective workspace; previewing authorized local HTML and supported Office documents under their documented safety boundaries; and jumping among user questions from an overlay that leaves the conversation width unchanged. Latest exact-key Gateway catalog presence gates child actions and return-target availability without creating ACP lineage or titles.
 

@@ -8,6 +8,7 @@ export type SettingsTab =
   | 'skills'
   | 'memory'
   | 'voice'
+  | 'computer-use'
   | 'gateway'
   | 'developer'
   | 'updates'

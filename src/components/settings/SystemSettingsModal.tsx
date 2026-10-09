@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import {
   Sun,
   Mic,
+  Monitor,
   Server,
   Terminal,
   Download,
@@ -24,6 +25,7 @@ import { ModelsSettings, UsageSettings } from '@/pages/Models';
 import { ChannelsSettings } from '@/pages/Channels';
 import { MemorySettings } from '@/pages/Dreams';
 import { SkillsSettings } from '@/pages/Skills';
+import { ComputerUse } from '@/pages/ComputerUse';
 
 type TabEntry = {
   value: SettingsTab;
@@ -40,6 +42,7 @@ const TABS: TabEntry[] = [
   { value: 'skills', labelKey: 'tabs.skills', icon: Puzzle },
   { value: 'memory', labelKey: 'tabs.memory', icon: Moon },
   { value: 'voice', labelKey: 'tabs.voice', icon: Mic },
+  { value: 'computer-use', labelKey: 'tabs.computerUse', icon: Monitor },
   { value: 'gateway', labelKey: 'tabs.gateway', icon: Server },
   { value: 'updates', labelKey: 'tabs.updates', icon: Download },
   { value: 'developer', labelKey: 'tabs.developer', icon: Terminal, devOnly: true },
@@ -95,7 +98,7 @@ export function SystemSettingsModal() {
           className="flex min-h-0 flex-1"
         >
           <TabsList
-            className="h-auto w-52 shrink-0 flex-col items-stretch justify-start gap-y-1 rounded-none border-r border-black/5 bg-surface-sidebar p-2 dark:border-white/10"
+            className="h-auto w-52 shrink-0 flex-col items-stretch justify-start gap-y-1 overflow-y-auto rounded-none border-r border-black/5 bg-surface-sidebar p-2 dark:border-white/10"
           >
             {visibleTabs.map((entry) => {
               const Icon = entry.icon;
@@ -133,6 +136,9 @@ export function SystemSettingsModal() {
             </TabsContent>
             <TabsContent value="voice" className="m-0 h-full overflow-y-auto p-6">
               <SystemSettingsTab section="voice" />
+            </TabsContent>
+            <TabsContent value="computer-use" className="m-0 h-full overflow-y-auto p-6">
+              <ComputerUse />
             </TabsContent>
             <TabsContent value="gateway" className="m-0 h-full overflow-y-auto p-6">
               <SystemSettingsTab section="gateway" />

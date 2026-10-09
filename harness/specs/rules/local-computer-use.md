@@ -9,6 +9,8 @@ appliesTo:
   - electron/services/computer-use-api.ts
   - electron/utils/store.ts
   - src/pages/ComputerUse/**
+  - src/components/settings/SystemSettingsModal.tsx
+  - src/stores/settings-modal.ts
   - electron/main/index.ts
   - electron/gateway/config-sync-env.ts
   - electron/utils/plugin-install.ts
@@ -35,7 +37,7 @@ severity: error
 - Computer Use is optional and defaults off, including upgrades without an explicit saved preference. Disabled startup and activation must not load the privileged SDK or request permissions. Disable removes the descriptor and stops the daemon; serialize lifecycle and preference mutations and retain failed-opt-in rollback. This does not imply global model-action serialization or cancellation of already admitted native input.
 - On macOS, read permission status without prompts on startup, activation and page load. Request Accessibility and Screen Recording from the Main-process host only through an explicit enabled management action, and do not start the daemon until both grants are present. Permission changes invalidate the daemon generation and its observations.
 - A completed request with ungranted access must show actionable feedback, not imply a native dialog opened or that access was granted. Screen permission probes do not establish denial history. Guide users to the OS-listed responsible app; development launches may be attributed to a terminal or IDE rather than ClawX. Never reset TCC or remove grants automatically.
-- The sidebar management page must retain its Developer Mode gate, visual pattern, typed host-api calls, and all four locales. Generic settings writes and resets must route the preference through the same lifecycle owner, not bypass it. User-visible wording changes require management Electron E2E coverage.
+- The management tab must always be visible in Settings, regardless of Developer Mode, and must not appear in the main sidebar. Preserve typed host-api calls and all four locales. Visibility does not enable the service or grant permissions. Generic settings writes and resets must route the preference through the same lifecycle owner, not bypass it. User-visible wording changes require management Electron E2E coverage.
 - Computer Use must not install, trust-repair, register, or reconcile policy for the retired CUA plugin. Preserve unrelated plugin policy and historical `computer` chat presentation. No general migration framework is needed for the internal-only adapter; targeted development cleanup must not silently turn a sole-CUA restrictive `plugins.allow` into an absent/empty unrestricted policy.
 - Atomically publish the owner-private descriptor `{ v: 2, generation, driverVersion, binaryPath, socketPath }` under ClawX user data via `CLAWX_CUA_CONNECTION_FILE`. Use the absolute resolved bundled executable and live SDK connection fields, not parsed MCP arguments or a dual-format reader. Remove stale descriptors on disable/exit and replace generations on restart.
 - Skill guidance must require the live descriptor at task start and rediscovery after restart/unavailability. Invoke its absolute `binaryPath` with explicit `--socket`; retain existing bundled-bin PATH injection without relying on a login shell to select the driver. Never start an alternate daemon when the endpoint is unavailable.

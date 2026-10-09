@@ -1,4 +1,6 @@
 <p align="center">
+
+Computer Use is always available under Settings → Computer Use, without developer mode, and remains disabled until explicitly enabled. Voice input, prompt optimization, and Send are grouped at the right edge of the composer. The bundled provider catalog no longer includes legacy company-network presets before Anthropic; official providers and saved user accounts remain unchanged.
   <img src="src/assets/logo.svg" width="128" height="128" alt="YYClaw Logo" />
 </p>
 

@@ -3,9 +3,11 @@ import { join } from 'node:path';
 import type { ElectronApplication, Page } from '@playwright/test';
 import sharp from 'sharp';
 import {
+  closeElectronApp,
   completeSetup,
   emitAcpSessionUpdates,
   expect,
+  getRecordedHostInvocations,
   installIpcMocks,
   test,
 } from './fixtures/electron';
@@ -29,6 +31,15 @@ import { E2E_SCREENSHOT_TAG } from './parallel-policy';
 // `scripts/decorate-screenshots.mjs`.
 const CONTENT_WIDTH = 1280;
 const CONTENT_HEIGHT = 800;
+
+test.use({ electronApp: async ({ launchElectronApp }, provideApp) => {
+  const app = await launchElectronApp({ seedDevMode: false, additionalArgs: ['--force-device-scale-factor=2'] });
+  try {
+    await provideApp(app);
+  } finally {
+    await closeElectronApp(app);
+  }
+} });
 
 const LOCALES = [
   { dir: 'en', label: 'English' },
@@ -61,7 +72,7 @@ const AGENTS = [
     inheritedModel: true,
     workspace: '/Users/you/Workspace',
     agentDir: '/Users/you/Workspace/agent',
-    mainSessionKey: 'main/default',
+    mainSessionKey: 'agent:main:main',
     channelTypes: ['feishu'],
   },
   {
@@ -458,7 +469,13 @@ for (const locale of LOCALES) {
 
     await installIpcMocks(electronApp, {
       gatewayStatus: GATEWAY_STATUS,
-      gatewayRpc: {},
+      recordHostInvocations: true,
+      gatewayRpc: {
+        [stableStringify(['sessions.list', {}])]: {
+          success: true,
+          result: { sessions: [{ key: MAIN_SESSION_KEY, workspacePath: MAIN_WORKSPACE }] },
+        },
+      },
       hostApi: baseHostApi(locale.dir),
     });
 
@@ -466,6 +483,13 @@ for (const locale of LOCALES) {
     await chooseLocale(page, locale.label);
     await completeSetup(page);
     await sizeWindow(electronApp);
+    await expect(page.getByTestId('sidebar-open-dev-console')).toHaveCount(0);
+    await expect(page.getByTestId('sidebar-nav-image-generation')).toHaveCount(0);
+    await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+    await expect.poll(async () => (await getRecordedHostInvocations(electronApp)).some((call) => (
+      call.module === 'chat' && call.action === 'loadAcpSession'
+      && (call.payload as { sessionKey?: string } | null)?.sessionKey === MAIN_SESSION_KEY
+    ))).toBe(true);
 
     // 1. Chat (default landing surface) with a seeded conversation
     await seedConversation(electronApp, locale.dir);
@@ -482,6 +506,8 @@ for (const locale of LOCALES) {
     // top-level sidebar pages and are now tabs in this modal. Triggers are
     // `settings-tab-<value>`; the rendered panels are `<value>-tab`.
     await page.getByTestId('sidebar-nav-settings').click();
+    await expect(page.getByTestId('settings-tab-developer')).toHaveCount(0);
+    await expect(page.getByTestId('settings-tab-computer-use')).toBeVisible();
 
     await page.getByTestId('settings-tab-general').click();
     await expect(page.getByTestId('settings-tab')).toBeVisible();

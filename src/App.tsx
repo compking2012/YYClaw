@@ -20,7 +20,7 @@ import { MemorySettings } from './pages/Dreams';
 import { SystemSettingsTab } from './pages/Settings';
 import { Workflows } from './pages/Workflows';
 import { Login } from './pages/Login';
-import { ComputerUse } from './pages/ComputerUse';
+import { useSettingsModal } from './stores/settings-modal';
 import { Setup } from './pages/Setup';
 import { useSettingsStore } from './stores/settings';
 import { useUpdateStore } from './stores/update';
@@ -97,6 +97,14 @@ class ErrorBoundary extends Component<
     }
     return this.props.children;
   }
+}
+
+function ComputerUseSettingsRedirect() {
+  const openSettings = useSettingsModal((state) => state.openSettings);
+  useEffect(() => {
+    openSettings('computer-use');
+  }, [openSettings]);
+  return <Navigate to="/" replace />;
 }
 
 function App() {
@@ -219,7 +227,7 @@ function App() {
             />
             <Route path="/workflows" element={devModeUnlocked ? <Workflows /> : <Navigate to="/" replace />} />
             <Route path="/settings/*" element={<SystemSettingsTab />} />
-            <Route path="/computer-use" element={<ComputerUse />} />
+            <Route path="/computer-use" element={<ComputerUseSettingsRedirect />} />
             {extraRoutes.map((r) => (
               <Route key={r.path} path={r.path} element={<r.component />} />
             ))}

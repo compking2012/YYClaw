@@ -23,6 +23,12 @@ import bundledProviders from '../../resources/config/providers.json';
 import { OPENCLAW_API_PROTOCOLS } from '@electron/shared/providers/types';
 
 describe('provider metadata', () => {
+  it('removes legacy company presets while retaining official providers', () => {
+    expect(bundledProviders[0].id).toBe('anthropic');
+    expect(bundledProviders.map((provider) => provider.id)).toEqual(expect.arrayContaining(['anthropic', 'openai', 'google', 'ollama', 'custom']));
+    expect(bundledProviders.some((provider) => provider.defaultBaseUrl === 'https://claw-x.com/v1')).toBe(false);
+    expect(bundledProviders.some((provider) => /公司私有化部署/.test(provider.name))).toBe(false);
+  });
   it('includes ark in the frontend provider registry', () => {
     expect(PROVIDER_TYPES).toContain('ark');
 

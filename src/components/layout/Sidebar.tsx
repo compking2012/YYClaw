@@ -19,7 +19,6 @@ import {
   X,
   Workflow,
   ImagePlus,
-  Monitor,
   ChevronsUpDown,
   ChevronsDownUp,
   Folder,
@@ -478,12 +477,6 @@ export function Sidebar() {
           },
         ]
       : []),
-    ...(devModeUnlocked ? [{
-      to: '/computer-use',
-      icon: <Monitor className="h-4 w-4" strokeWidth={2} />,
-      label: t('computerUse.title'),
-      testId: 'sidebar-nav-computer-use',
-    }] : []),
   ];
 
   const navItems = [

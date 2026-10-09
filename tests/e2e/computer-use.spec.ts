@@ -1,5 +1,5 @@
 import type { ElectronApplication, Page } from '@playwright/test';
-import { expect, installIpcMocks, test } from './fixtures/electron';
+import { closeElectronApp, expect, installIpcMocks, test } from './fixtures/electron';
 
 async function installComputerFixture(electronApp: ElectronApplication, supported = true, mac = true, grantPermissions = true) {
   await electronApp.evaluate(({ ipcMain }, options) => {
@@ -29,39 +29,27 @@ async function installComputerFixture(electronApp: ElectronApplication, supporte
   }, { supported, mac, grantPermissions });
 }
 
-async function enableDeveloperMode(page: Page) {
-  if (await page.getByTestId('settings-tab').count() === 0) {
-    await page.getByTestId('sidebar-nav-settings').click();
+test.use({ electronApp: async ({ launchElectronApp }, provideApp) => {
+  const app = await launchElectronApp({ seedDevMode: false });
+  try {
+    await provideApp(app);
+  } finally {
+    await closeElectronApp(app);
   }
-  await page.getByTestId('settings-tab-about').click();
-  for (let clickCount = 0; clickCount < 5; clickCount += 1) {
-    await page.getByTestId('about-version').click();
-  }
-  const devModeSwitch = page.getByTestId('settings-dev-mode-switch');
-  if (await devModeSwitch.getAttribute('data-state') !== 'checked') await devModeSwitch.click();
-  await expect(devModeSwitch).toHaveAttribute('data-state', 'checked');
-  await page.keyboard.press('Escape');
-  await expect(page.getByTestId('settings-tab')).toHaveCount(0);
-}
+} });
 
-test.afterEach(async ({ page }) => {
-  const settingsLink = page.getByTestId('sidebar-nav-settings');
-  if (await settingsLink.count() === 0) return;
-  if (await page.getByTestId('settings-tab').count() === 0) await settingsLink.click();
-  await page.getByTestId('settings-tab-about').click();
-  for (let clickCount = 0; clickCount < 5; clickCount += 1) {
-    await page.getByTestId('about-version').click();
-  }
-  const devModeSwitch = page.getByTestId('settings-dev-mode-switch');
-  if (await devModeSwitch.getAttribute('data-state') === 'checked') await devModeSwitch.click();
-  await page.keyboard.press('Escape');
-});
+async function openComputerUseSettings(page: Page) {
+  await page.getByTestId('sidebar-nav-settings').click();
+  await expect(page.getByTestId('settings-tab-computer-use')).toBeVisible();
+  await expect(page.getByTestId('settings-tab-developer')).toHaveCount(0);
+  await expect(page.getByTestId('sidebar-nav-computer-use')).toHaveCount(0);
+  await page.getByTestId('settings-tab-computer-use').click();
+}
 
 test('Computer Use is default off and only the explicit button requests permissions', async ({ electronApp, page }) => {
   await installComputerFixture(electronApp);
   await page.getByTestId('setup-skip-button').click();
-  await enableDeveloperMode(page);
-  await page.getByTestId('sidebar-nav-computer-use').click();
+  await openComputerUseSettings(page);
   await expect(page.getByTestId('computer-use-page')).toBeVisible();
   await expect(page.getByTestId('computer-use-page')).toContainText('Let agents inspect windows, accessibility elements, and menus, verify results, and operate this computer through the bundled native CUA CLI.');
   await expect(page.getByTestId('computer-use-page')).toContainText('Once enabled, it is recommended to use the /computer-use skill to guide AI in operating your computer.');
@@ -78,6 +66,7 @@ test('Computer Use is default off and only the explicit button requests permissi
   await expect(request).toBeEnabled();
   expect(await electronApp.evaluate(() => (globalThis as unknown as { computerUseCalls: string[] }).computerUseCalls)).not.toContain('requestPermissions');
   await page.reload();
+  await openComputerUseSettings(page);
   await expect(toggle).toBeChecked();
   await request.click();
   await expect(request).toBeDisabled();
@@ -91,17 +80,28 @@ test('Computer Use is default off and only the explicit button requests permissi
 test('unsupported platforms cannot opt in and non-macOS does not show macOS permissions', async ({ electronApp, page }) => {
   await installComputerFixture(electronApp, false, false);
   await page.getByTestId('setup-skip-button').click();
-  await enableDeveloperMode(page);
-  await page.getByTestId('sidebar-nav-computer-use').click();
+  await openComputerUseSettings(page);
   await expect(page.getByTestId('computer-use-toggle')).toBeDisabled();
   await expect(page.getByTestId('computer-use-request-permissions')).toHaveCount(0);
+});
+
+test('the former Computer Use route opens its settings tab without developer mode', async ({ electronApp, page }) => {
+  await installComputerFixture(electronApp);
+  await page.getByTestId('setup-skip-button').click();
+  await expect(page.getByTestId('main-layout')).toBeVisible();
+  await page.evaluate(() => { window.location.hash = '/computer-use'; });
+  await expect(page.getByTestId('settings-tab-computer-use')).toHaveAttribute('data-state', 'active');
+  await expect(page.getByTestId('computer-use-page')).toBeVisible();
+  await expect(page.getByTestId('computer-use-toggle')).not.toBeChecked();
+  await expect(page.getByTestId('settings-tab-developer')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('chat-composer-mic')).toBeVisible();
 });
 
 test('an unchanged permission request shows guidance without implicitly re-prompting', async ({ electronApp, page }) => {
   await installComputerFixture(electronApp, true, true, false);
   await page.getByTestId('setup-skip-button').click();
-  await enableDeveloperMode(page);
-  await page.getByTestId('sidebar-nav-computer-use').click();
+  await openComputerUseSettings(page);
   const feedback = page.getByTestId('computer-use-permission-feedback');
   await expect(feedback).toHaveCount(0);
   await page.getByTestId('computer-use-toggle').click();
@@ -137,8 +137,7 @@ test('failed opt-in displays an error and retains the safe host state', async ({
     '["computerUse","setEnabled",{"enabled":true}]': 'Computer Use startup failed',
   } });
   await page.getByTestId('setup-skip-button').click();
-  await enableDeveloperMode(page);
-  await page.getByTestId('sidebar-nav-computer-use').click();
+  await openComputerUseSettings(page);
   await page.getByTestId('computer-use-toggle').click();
   await expect(page.getByRole('alert')).toBeVisible();
   await expect(page.getByTestId('computer-use-toggle')).not.toBeChecked();

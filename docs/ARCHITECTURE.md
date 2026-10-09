@@ -1,4 +1,4 @@
-# Architecture -- YYClaw Desktop Client
+# Architecture -- YYClaw AI Workbench
 
 ## System Overview
 
@@ -20,6 +20,12 @@ main process. This document describes the layers, the communication paths, the
 data flow, and the runtime contracts that keep those boundaries enforceable.
 
 ## Target Architecture: Unified Local–Cloud Workbench
+
+**Overall status: PARTIAL.** The local Electron/OpenClaw foundation is supported;
+the complete cross-platform local–cloud system is not. Use the support matrix
+below to distinguish implemented components from target architecture. The
+existing layer diagram is a **current desktop** diagram, not a diagram of the
+future distributed deployment.
 
 The [product PRD](PRODUCT.md#product-vision-and-scope) extends the desktop
 foundation toward a shared Agent runtime across desktop, mobile/tablet consoles,
@@ -66,6 +72,93 @@ backend boundary; it must not add renderer-side Gateway connections or protocol
 switching. Self-hosting the catalog/marketplace through `farmApiBaseUrl` is not a
 cloud Agent deployment mechanism. Protocol design and implementation remain
 separate tasks governed by the communication harness.
+
+### PRD Architecture Support Matrix
+
+Status semantics match [FEATURELIST.md](FEATURELIST.md): **DONE** means supported
+within the stated local scope, **PARTIAL** means a foundation exists with missing
+target contracts, and **TODO** means no integrated implementation is established.
+Feature IDs link the architecture to the PRD breakdown. Runtime/plugin capability
+is not automatically a YYClaw-managed service or a verified security guarantee.
+
+| Architecture component / feature IDs | Status | Already supported | Not yet supported / TODO Items |
+|-------------------------------------|--------|-------------------|--------------------------------|
+| Open runtime and provider abstraction — F01–F03 | PARTIAL | MIT project, supervised OpenClaw, provider service/catalog, secure credentials, custom endpoints and Ollama configuration | Complete cloud/local compatibility matrix, first-class Llama.cpp lifecycle and device-only inference validation; F01 itself is DONE |
+| Desktop platform adapter — F04, F05 | PARTIAL | Electron Main/preload/React renderer; local runtime file/Shell tools; opt-in Computer Use service with permission reconciliation and shutdown | Verified PRD OS-version matrix, cross-platform screen/process/peripheral capabilities and granular authorization |
+| Mobile/tablet platform adapter — F06 | TODO | Desktop Host API/types provide a reference boundary | Native/mobile shell, camera/voice/upload adapters, notifications, remote control and OS-specific capability denial for iOS/iPadOS/Android/HarmonyOS |
+| Server deployment adapter — F07 | PARTIAL | Electron-free workflow engine, SnapshotStore and HeadlessAdapter; OpenClaw runtime foundation | Standalone Linux/container service bootstrap, configuration/credentials, supervision, host enrollment, remote administration and 24/7 operational validation; HeadlessAdapter does not implement `runAgent` |
+| Shared cross-platform contracts — F08 | PARTIAL | Desktop typed Host API, Agent/workflow types and runtime configuration | Versioned node/capability protocol, common platform data contracts and permission-tier enforcement |
+| User/workspace security boundary — F09 | PARTIAL | Per-Agent workspace directories; admin-console shared-workspace integration | Server authentication/authorization, tenant isolation and enforced filesystem/tool boundaries; physical directory separation is not sandboxing |
+| Cross-device sync layer — F10 | PARTIAL | Admin-console remote-sync handlers for Agent/model/skill operations; scoped office shared-workspace pull/push | Generalized memory/skill/workflow/task sync, conflict resolution, schema compatibility, sensitivity filtering and authorization across all devices |
+| Remote control and node registry — F11 | PARTIAL | Admin-console remote session send/list/history/status request and acknowledgement contracts | User-facing local–cloud node selection, eligible-host registry, health/capability checks and desktop/mobile management; session messaging is not checkpoint transfer |
+| Placement engine — F12 | TODO | Local Gateway execution and provider/model configuration are separate existing systems | Policy engine combining required local capabilities, sensitive locality, >30-minute eligible automation and compute preferences; validated manual override and no-host behavior |
+| Data classification and egress control — F13 | PARTIAL | Local configuration/files, secure credential handling and Computer Use opt-in | Sensitive task/data labels, local-only inference/tool enforcement, explicit cloud file scopes, redacted logs/snapshots and server access denial; secrets storage alone cannot enforce privacy |
+| Local checkpoint store — F14 | DONE | `electron/workflow/snapshot-store.ts` versioned per-run JSON; `engine.ts` resume/rehydrate/retry preserves completed outputs | Scope is local workflow recovery, not portable distributed recovery or exactly-once external effects |
+| Cross-host migration protocol — F15 | TODO | Local snapshots are reusable design inputs | Portable event logs/snapshot format, safe checkpoint negotiation, node compatibility, ownership transfer/fencing and side-effect deduplication |
+| Device lifecycle handoff — F16 | TODO | Existing local startup recovery and quit teardown | Planned sleep/shutdown eligible-task transfer, wake state/result reconciliation and abrupt-loss recovery; no migration for local-only tasks |
+| Chat/artifact, voice and image services — F17, F18, F23 | DONE | Main-owned chat/media/ASR/voice services, streaming events, renderer artifacts and previews; configured providers and developer-gated image page | DONE only for documented modalities; automatic cross-node processing is F22 |
+| Screen perception adapter — F19 | PARTIAL | Computer Use API/runtime with permission gating and image/screenshot input foundations | Full supported-OS perception/control matrix and integrated typed screen-understanding pipeline |
+| Document/chart perception and artifacts — F20 | PARTIAL | Bundled PDF/Office skills and read-only artifact viewers | Native typed layout/chart extraction, semantic understanding and validated chart generation; skill/viewer presence alone does not establish full pipeline |
+| Video perception and script artifacts — F21 | TODO | General model/skill extension mechanisms | Frame extraction and timeline/context pipeline, capability routing and structured video-script outputs |
+| Multimodal placement layer — F22 | TODO | Existing configurable model/media/voice services | Local OCR/transcription adapters, automatic local/cloud capability selection, shared multimodal schemas and privacy-safe escalation |
+| Deterministic workflow kernel — F24 | DONE | XState v5 control flow, explicit model/Agent nodes, schema validation, bounded model retries and per-node trace classification | Model output remains non-deterministic; workflow page availability remains developer-gated |
+| Production workflow governance — F25 | PARTIAL | Local snapshot/retry/recovery, traces and progress delivery | Generic durable approval states/API/UI, comprehensive side-effect audit, execution bounds and production release criteria |
+| Multi-Agent execution boundary — F26 | PARTIAL | Agent models/skill allowlists/personas/channels/workspaces and Gateway-backed Agent workflow adapter | Fully enforced per-Agent permissions, coordinated parallel execution and production acceptance; multi-Agent configuration is not a distributed scheduler |
+| Cron and memory/skills — F27, F28 | DONE | Local runtime Cron CRUD/delivery/history, skill install/toggle/discovery and configured Dreams plugin integration | Continuous cloud uptime is F07; cross-device state is F10; plugin/account setup still required |
+| Messaging and tool/MCP adapters — F29, F30 | PARTIAL | Channel management/plugins, runtime extensions, bundled tools and DingTalk workspace integration | Verified complete messaging/office/developer/MCP compatibility and lifecycle matrix; extension points are not proof of all named connectors |
+| Localization and desktop lifecycle — F31, F32 | DONE | Four locale sets, themes, setup/settings, token usage, diagnostics, supervised Gateway and desktop lifecycle | These guarantees apply to current desktop scope; mobile/server equivalents remain F06/F07 |
+
+### Target Deployment and Ownership
+
+The following is a **target topology**, not an implemented remote transport.
+
+```text
+Desktop UI                     Mobile/tablet console [TODO]
+    |                                  |
+Main-owned Host API [DONE]       Platform host adapter [TODO]
+    |                                  |
+    +--- Authenticated node control / capability registry [PARTIAL] ---+
+    |                                                                  |
+Local OpenClaw + XState [DONE]        Managed Headless server [PARTIAL]
+    |                                                                  |
+Local private data                  Authorized non-sensitive workspace
+    +--- Classified sync [PARTIAL] / checkpoint migration [TODO] -------+
+```
+
+- **Control plane:** Register/authenticate nodes, advertise capabilities and
+  readiness, validate placement and manual selection, and track execution
+  ownership. Existing admin-console commands are a partial foundation, not this
+  complete control plane. Desktop backend access remains Main-owned.
+- **Execution plane:** Reuse runtime and XState contracts on eligible nodes.
+  Keep local-only tasks pinned to their device. A server deployment must own its
+  lifecycle independently of Electron, rather than inheriting desktop shutdown.
+- **Data plane:** Classify source inputs, memories, outputs, logs and snapshots
+  before any transfer. Sync only explicitly scoped non-sensitive data. Apply the
+  same policy to model/tool egress, not just to the selected execution host.
+- **Recovery plane:** Use compatible snapshots and event histories at safe
+  boundaries, transfer ownership explicitly, and deduplicate external effects.
+  Local workflow recovery already exists; distributed ownership and replay
+  guarantees do not. Planned handoff and abrupt-loss recovery are separate paths.
+
+### Architecture Delivery Gaps
+
+1. Establish platform/runtime capability and data contracts before treating mobile
+   and server clients as interchangeable with the desktop (F06–F09).
+2. Extend existing admin-console integration into authorized node management and
+   classified synchronization without weakening Renderer/Main boundaries
+   (F10, F11, F13).
+3. Add placement only after capability/privacy constraints can be enforced;
+   duration and compute preferences must never override them (F12).
+4. Build migration on local checkpoint support with explicit ownership,
+   compatibility and side-effect semantics, then add sleep/wake handoff
+   (F14–F16).
+5. Complete native multimodal adapters and workflow governance independently of
+   mere provider/plugin availability (F19–F22, F25, F26, F29, F30).
+
+These are dependency constraints, not committed milestones. Future implementation
+must start from the required communication task/scenario/rule specs and update
+this matrix together with FEATURELIST; this documentation change introduces no
+new runtime protocol or implemented architecture.
 
 ## Layer Diagram
 

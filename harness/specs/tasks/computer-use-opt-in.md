@@ -23,7 +23,7 @@ touchedAreas:
 expectedUserBehavior:
   - Computer Use defaults off including existing installations without an explicit preference.
   - Startup and activation never request permissions; only an explicit enabled permission action may do so.
-  - The Developer Mode-gated sidebar management page shows the persistent toggle and read-only macOS permission states.
+  - The always-visible Settings Computer Use tab shows the persistent toggle and read-only macOS permission states without Developer Mode.
   - Disabling stops the Main-owned driver and removes its private CLI endpoint descriptor without revoking OS grants.
 requiredProfiles:
   - fast

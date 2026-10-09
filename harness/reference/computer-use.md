@@ -3,9 +3,10 @@
 Computer Use is opt-in, default off. `computerUseEnabled` belongs to the Main
 settings store; both the typed management API and generic settings mutations
 delegate to the same serialized lifecycle service. Reset disables before clearing
-settings. Existing installations without the preference remain disabled. Enable
-Developer Mode in Settings to reveal the sidebar management page; this UI gate
-does not itself enable the service or grant OS permissions.
+settings. Existing installations without the preference remain disabled. Settings
+always exposes the Computer Use management tab, independent of Developer Mode.
+Opening the tab does not enable the service or grant OS permissions. The former
+`/computer-use` page route opens this settings tab for compatibility.
 
 Startup reconciles the stored choice before automatic Gateway startup. Activation
 checks permissions only for enabled instances. Permission status uses Electron's

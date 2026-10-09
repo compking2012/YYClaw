@@ -1,4 +1,6 @@
 <p align="center">
+
+「操作计算机」固定显示在「设置 → 操作计算机」，不再需要开发者模式，功能仍默认关闭并须主动启用。语音输入、提示词优化和发送按钮靠输入框右侧排列。内置供应商目录删除 Anthropic 之前的旧公司网络模型预设，保留官方供应商和用户已保存的账户。
   <img src="src/assets/logo.svg" width="128" height="128" alt="YYClaw Logo" />
 </p>
 

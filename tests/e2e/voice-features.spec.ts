@@ -84,7 +84,8 @@ test.describe('ClawX voice features', () => {
       // shows up as a selectable provider type instead of a bespoke row.
       await page.getByTestId('providers-add-button').click();
       await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
-      await page.getByTestId('add-provider-type-openai-voice').click();
+      await expect(page.getByTestId('add-provider-type-openai-voice')).toHaveCount(0);
+      await page.getByTestId('add-provider-type-openai').click();
 
       // Voice params are built into the runtime now (not user-configurable), so
       // only the model-id row renders — no per-kind voice param editor.
@@ -124,6 +125,20 @@ test.describe('ClawX voice features', () => {
 
       await expect(page.getByTestId('chat-composer-mic')).toBeEnabled();
       await expect(page.getByTestId('chat-composer-mic')).toHaveCount(1);
+      for (const width of [1100, 800]) {
+        await page.setViewportSize({ width, height: 800 });
+        const micBounds = await page.getByTestId('chat-composer-mic').boundingBox();
+        const enhanceBounds = await page.getByTestId('chat-composer-enhance-prompt').boundingBox();
+        const sendBounds = await page.getByTestId('chat-composer-send').boundingBox();
+        expect(micBounds).not.toBeNull();
+        expect(enhanceBounds).not.toBeNull();
+        expect(sendBounds).not.toBeNull();
+        expect(enhanceBounds!.x - (micBounds!.x + micBounds!.width)).toBeGreaterThanOrEqual(0);
+        expect(enhanceBounds!.x - (micBounds!.x + micBounds!.width)).toBeLessThanOrEqual(8);
+        expect(sendBounds!.x - (enhanceBounds!.x + enhanceBounds!.width)).toBeGreaterThanOrEqual(0);
+        expect(sendBounds!.x - (enhanceBounds!.x + enhanceBounds!.width)).toBeLessThanOrEqual(8);
+        expect(Math.abs(micBounds!.y - sendBounds!.y)).toBeLessThanOrEqual(1);
+      }
       await expect(page.getByTestId('chat-composer-voice')).toHaveCount(0);
       await app.evaluate(({ ipcMain }) => {
         type HostRequest = { id?: string; module?: string; action?: string };

@@ -1,4 +1,4 @@
-# Feature and Bug List -- YYClaw Desktop Client
+# Feature and TODO List -- YYClaw AI Workbench
 
 This is the working index of **what ships today** and **what is currently open**.
 `AGENTS.md` Startup Rule 6 points here to decide what to work on next.
@@ -21,7 +21,8 @@ When you add, change, or remove a feature, update this table **and** the matchin
 
 ## Shipped Features
 
-Statuses: **GA** = generally available · **Dev-gated** = only visible with Developer
+All rows in this section are **DONE** for the documented desktop scope, not for
+every corresponding PRD ambition. Availability: **GA** = generally available · **Dev-gated** = only visible with Developer
 Mode enabled · **Requires setup** = needs external configuration to function.
 
 | # | Feature | Entry | Status | Notes |
@@ -38,39 +39,103 @@ Mode enabled · **Requires setup** = needs external configuration to function.
 | 10 | Agent Workspace | Chat right panel | GA | Read-only previews |
 | 11 | Image Generation (dedicated page) | `/image-generation` | Dev-gated | Natural-language generation in Chat needs no dev page |
 | 12 | OpenClaw Dreams (Memory) | System Settings → Memory | Requires setup | Needs the dreaming plugin on the OpenClaw side |
-| 13 | System Settings | System Settings modal | GA | General / Gateway / Voice / Update / Developer |
+| 13 | System Settings | System Settings modal | GA | General / Gateway / Voice / Computer Use / Update / Developer; Computer Use is always visible and defaults off |
 | 14 | System Integration | App shell / tray | GA | Single-instance, tray, autostart, auto-update |
 | 15 | Gateway Lifecycle & Reliability | Background | GA | Supervision, health, port-conflict resolution |
 | 16 | Theming & Localization | Global | GA | Light/dark/system; `en` / `zh` / `ja` / `ru` |
 
-## PRD Target Capabilities — Not Shipped Claims
+## PRD Feature Breakdown and Delivery Status
 
-The [product positioning](PRODUCT.md#product-vision-and-scope) and
-[target architecture](ARCHITECTURE.md#target-architecture-unified-localcloud-workbench)
-define the destination below. These rows are requirements to track, not newly
-implemented features or committed release dates; the shipped table above remains
-unchanged.
+Source: [PRODUCT.md](PRODUCT.md), especially *Product Vision and Scope*,
+*Target Architecture Capabilities*, *Target Users and Core Scenarios*, and
+*Core Features*. Architecture counterparts use the same IDs in
+[ARCHITECTURE.md](ARCHITECTURE.md#prd-architecture-support-matrix).
 
-| Target | Delivery distinction / acceptance boundary |
-|--------|-------------------------------------------|
-| Mobile/tablet console | Target iOS/iPadOS/Android/HarmonyOS chat, voice/camera/upload, monitoring, dispatch, and notifications; no unrestricted local Shell |
-| Cloud-host/Headless runtime management | User-owned Linux hosts/containers, persistent tasks, remote management, multi-user/workspace isolation; not equivalent to self-hosting the catalog |
-| Cross-device synchronization | Common Agent/memory/skill/workflow schemas; only explicitly authorized non-sensitive data synchronizes |
-| Intelligent placement | Enforce local permissions and sensitive-data locality before duration/compute preferences; >30-minute eligible automation prefers authorized hosts |
-| Migration and checkpoint recovery | Safe event-log/snapshot handoff, single execution owner, no duplicate side effects; sleep/wake synchronization for eligible tasks |
-| Full multimodal pipeline | Extend existing chat/voice/image capabilities toward screen perception, deep document/chart parsing, video frames, and structured multimedia outputs |
-| Production workflow and ecosystem coverage | Extend developer-gated XState workflows toward complete retry/approval/recovery/audit guarantees and broader global/Chinese integrations |
+**DONE** = implemented within the stated scope; **PARTIAL** = implemented
+foundation with remaining **TODO** work; **TODO** = target not delivered as an
+integrated YYClaw capability. Setup requirements and developer gating do not mean
+the implementation is absent. Status is based on repository code and documented
+behavior, not a fresh production certification. Aspirations such as “globally
+leading” and “optimal cost” are goals, not completed features. IDs are stable
+tracking references, not delivery order or release commitments.
+
+### Openness, Platforms, and Runtime
+
+| ID | Feature | Status | Implemented scope / evidence | TODO Items / completion boundary |
+|----|---------|--------|------------------------------|----------------------------------|
+| F01 | Open-source neutrality and private customization | DONE | MIT project; OpenClaw runtime; configurable providers and self-hosted catalog/marketplace | Remote Agent hosting is tracked separately in F07 |
+| F02 | Mainstream cloud-model compatibility | PARTIAL | Provider catalog, credentials, OpenAI-compatible custom endpoints; `electron/services/providers/`, `electron/utils/provider-registry.ts` | Verify the complete PRD provider/model/capability matrix; do not interpret configurable endpoints as universal compatibility |
+| F03 | Local-model support | PARTIAL | Ollama provider configuration in `resources/config/providers.json` | First-class Llama.cpp setup, local runtime lifecycle/capability verification, and device-only task validation |
+| F04 | Desktop flagship | PARTIAL | Electron desktop for macOS/Windows/Linux; local Gateway, files and runtime tools | Validate exact Windows 10/11, macOS 11+, Ubuntu 20.04+/Debian/Fedora target ranges and peripheral/platform parity; OS permissions remain mandatory |
+| F05 | Local computer/system execution | PARTIAL | Runtime file/Shell tools; opt-in Computer Use service with permission checks, default off; `electron/services/computer-use-api.ts` | Complete cross-platform screen/process/peripheral coverage and capability-level authorization; local opt-in is not the global placement/privacy policy |
+| F06 | Mobile/tablet portable console | TODO | No integrated mobile client delivery established | iOS/iPadOS/Android/HarmonyOS chat, voice/camera/upload, remote dispatch, monitoring, notifications and light inference; remove unrestricted system execution |
+| F07 | Persistent server/cloud-host mode | PARTIAL | OpenClaw runtime and Electron-free workflow kernel/headless adapter are foundations | Standalone YYClaw Linux/container service, host enrollment/lifecycle, 24/7 operation and desktop/mobile administration; headless adapter alone is not a deployed service |
+| F08 | Unified platform schemas and capability tiers | PARTIAL | Desktop Agent/workflow/config types and Host API boundaries | Versioned cross-platform contracts, OS-specific capability discovery/denial and consistent mobile/server configuration |
+| F09 | Multi-user/workspace isolation | PARTIAL | Per-Agent workspaces and admin-console shared-workspace integration | Server tenant authorization, user/workspace isolation and enforcement tests; directory separation alone is not a security sandbox |
+
+### Local–Cloud Cooperation, Privacy, and Recovery
+
+| ID | Feature | Status | Implemented scope / evidence | TODO Items / completion boundary |
+|----|---------|--------|------------------------------|----------------------------------|
+| F10 | Cross-device configuration/data synchronization | PARTIAL | Admin-console remote Agent/model/skill operations and scoped shared-workspace sync; `electron/services/admin-console/remote-sync/`, `office-shared-workspace.ts` | Generalized authorized synchronization of configuration, memory, skills, workflow definitions and task state; conflict/version handling; exclude private data |
+| F11 | Manual execution-node selection and remote control | PARTIAL | Admin-console remote session send/list/history/status contracts in `session-send-remote.ts` | Unified desktop/mobile local–cloud node selector, host readiness and capability/privacy checks; remote message delivery is not task migration |
+| F12 | Intelligent placement policy | TODO | Local execution and provider selection exist independently | Hard local permission/privacy constraints; >30-minute eligible automation preference; local/cloud compute preferences; user overrides only within policy; safe behavior without eligible hosts |
+| F13 | Sensitive-task locality and selective cloud data access | PARTIAL | Local files/config and secure credential storage; Computer Use opt-in | Task/data classification, model/tool egress enforcement, explicit sync scopes, log/snapshot redaction and server access denial; local Agent plus cloud inference is not device-only |
+| F14 | Local workflow checkpoints and recovery | DONE | Versioned JSON snapshots, rehydrate/resume/retry and completed-step preservation; `electron/workflow/engine.ts`, `snapshot-store.ts` | Cross-host portability and external side-effect guarantees remain F15/F16 |
+| F15 | One-click local–cloud migration | TODO | F14 provides local checkpoint foundation | Portable events/snapshots, compatible nodes, safe checkpoint transfer, single execution ownership and side-effect deduplication; reject local-only tasks |
+| F16 | Sleep/shutdown handoff and wake reconciliation | TODO | Local startup rehydration is not cloud handoff | Planned-sleep/shutdown eligible-task transfer, result/state sync on wake, last-durable-checkpoint recovery after abrupt loss |
+
+### Multimodal Interaction and Artifacts
+
+| ID | Feature | Status | Implemented scope / evidence | TODO Items / completion boundary |
+|----|---------|--------|------------------------------|----------------------------------|
+| F17 | Text/image chat and structured artifacts | DONE | Chat Markdown/LaTeX, images/attachments, streaming and workspace previews; PRODUCT Core Features 2/10 | Broader modality guarantees are separate below |
+| F18 | Voice interaction and speech output | DONE | Config-gated dictation/conversation and TTS; `electron/services/asr-api.ts`, `voice-api.ts` | Local/cloud automatic processing policy remains F22 |
+| F19 | Screen perception and authorized computer control | PARTIAL | Computer Use runtime/settings and screenshot/image input foundations | Integrated screen-understanding capability matrix across supported desktop OSes and permission states |
+| F20 | Deep PDF/Office parsing and chart outputs | PARTIAL | Bundled `pdf`/`docx`/`xlsx`/`pptx` skills, file viewers and generated artifact previews | Native typed layout/chart semantic pipeline and end-to-end chart generation/validation; previews/skills alone do not guarantee deep understanding |
+| F21 | Video-frame understanding and video-script artifacts | TODO | General skills/model extensibility is not an integrated video pipeline | Frame extraction, multimodal routing, timeline/context handling and validated video-script output |
+| F22 | Local–cloud multimodal processing | TODO | Configurable voice/image/model services exist | Local OCR/transcription capability selection, privacy-safe cloud escalation and shared typed inputs/outputs |
+| F23 | Image generation | DONE | Chat generation and developer-gated dedicated page; PRODUCT Core Feature 11 | Model/provider setup remains required |
+
+### Reliable Automation, Agents, and Ecosystems
+
+| ID | Feature | Status | Implemented scope / evidence | TODO Items / completion boundary |
+|----|---------|--------|------------------------------|----------------------------------|
+| F24 | Deterministic XState control flow and marked reasoning | DONE | XState v5, explicit model/agent nodes, schema validation, bounded model retries and per-node classification; `electron/workflow/` | Deterministic control flow does not guarantee identical model answers |
+| F25 | Production workflow governance | PARTIAL | Local retries/recovery, node traces and progress events | Generic durable human approval, comprehensive task/side-effect audit, bounded production execution and release criteria beyond developer gating |
+| F26 | Multi-Agent configuration and concurrent workers | PARTIAL | Agent model/skills/persona/channel/workspace management and Agent workflow adapter | Fully enforced per-Agent permission isolation and complete coordinated parallel execution/production acceptance |
+| F27 | Cron scheduling, delivery and history | DONE | Job CRUD, enable/trigger, external delivery and run history; PRODUCT Core Feature 8 | Persistent cloud operation is F07; mobile management is F06 |
+| F28 | Memory and skill management | DONE | Local-first install/toggle/discovery, marketplaces and configured OpenClaw Dreams integration | Cross-device memory/skill synchronization is F10; external memory plugin setup required |
+| F29 | Global and Chinese messaging integration | PARTIAL | Existing channel account/binding/status flows; Feishu, DingTalk, WeCom, Discord, Telegram, WhatsApp and other configured channels | Validate full PRD connector matrix including Slack and equivalent onboarding/operation coverage; plugins require setup |
+| F30 | Office/developer tools and MCP ecosystem | PARTIAL | Skills/plugins, document tools, DingTalk workspace integration and runtime extension points | Verified GitHub/Notion/Jira/Google Workspace connector coverage and comprehensive MCP lifecycle/compatibility; extensibility is not proof of every integration |
+| F31 | Multilingual consistent UI | DONE | `en`/`zh`/`ja`/`ru`, themes and shared desktop UI conventions | Cross-platform experience remains F06/F08 |
+| F32 | Setup, observability and desktop lifecycle | DONE | Wizard, usage dashboard, settings, Gateway supervision, diagnostics, tray/autostart/update; PRODUCT Core Features 1/5/13–16 | Server/remote observability expansion is F07/F11 |
+
+## TODO Items — PRD Backlog
+
+Every **PARTIAL** row above has outstanding TODO Items; **TODO** rows have no
+integrated delivery yet. This index groups the remaining work without duplicating
+the authoritative completion boundaries or implying a priority commitment.
+
+| Area | Feature IDs | Outstanding work |
+|------|-------------|------------------|
+| Platform delivery | F04–F09 | Compatibility verification, local capabilities, mobile clients, Headless deployment, shared contracts and tenant isolation |
+| Model/ecosystem coverage | F02, F03, F29, F30 | Verified cloud/local model and connector matrices, Llama.cpp and MCP/tool integration |
+| Local–cloud control and privacy | F10–F13 | Generalized sync, node selection, placement and data/model/tool egress enforcement |
+| Migration | F15, F16 | Portable checkpoints/events, ownership/deduplication, sleep/wake handoff and reconciliation |
+| Multimodal pipeline | F19–F22 | Screen parity, deep document/charts, video, local OCR/transcription and privacy-safe routing |
+| Production automation | F25, F26 | Durable approvals/audit, execution guarantees, enforced Agent isolation and coordinated parallel acceptance |
 
 ## Known Open Items
 
 Carried over from the working notes in [`../TODO.md`](../TODO.md). These are not yet
 tracked as GitHub issues.
 
-| # | Item | Area | Notes |
-|---|------|------|-------|
-| 1 | Deploy the anonymous telemetry collection server privately on `aiserver` and enable the related features | Telemetry / infra | `telemetryUploadEnabled` is currently `false` in `package.json` |
-| 2 | Feishu client login, after which granting individual permissions is no longer required | Channels / auth | Reduces per-permission setup during Feishu onboarding |
-| 3 | Setting a variable in a skill does not take effect immediately | Skills | Suspected caching / reload gap on the skill config path |
+| # | Item | Status | Area | Notes |
+|---|------|--------|------|-------|
+| 1 | Deploy the anonymous telemetry collection server privately on `aiserver` and enable the related features | TODO | Telemetry / infra | `telemetryUploadEnabled` is currently `false` in `package.json` |
+| 2 | Feishu client login, after which granting individual permissions is no longer required | TODO | Channels / auth | Reduces per-permission setup during Feishu onboarding |
+| 3 | Setting a variable in a skill does not take effect immediately | TODO | Skills | Suspected caching / reload gap on the skill config path |
 
 ## Documentation Debt
 
@@ -86,6 +151,8 @@ tracked as GitHub issues.
 ## How to Extend This List
 
 1. Add the feature row above with its entry point and status.
+   Update the matching stable PRD feature ID and its architecture support row;
+   use DONE/PARTIAL/TODO separately from GA/developer/setup availability.
 2. Add the full feature section to [`PRODUCT.md`](PRODUCT.md) using the template in
    its *Extending This Document* section.
 3. Add user-facing detail to `docs/<locale>/features.md` for all four locales.

@@ -1788,7 +1788,7 @@ export function ChatInput({
               )}
             </Button>
 
-            <div className="ml-auto flex items-center gap-1">
+            <div className="flex items-center gap-1">
 
               {/* Send Button */}
               <Button

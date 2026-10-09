@@ -341,6 +341,7 @@
   "tabs": {
     "general": "Общее",
     "voice": "Голос",
+    "computerUse": "Управление компьютером",
     "gateway": "Шлюз",
     "developer": "Разработчик",
     "updates": "Обновления",

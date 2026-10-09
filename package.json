@@ -1,7 +1,7 @@
 {
     "name": "clawx.desktop",
     "productName": "YYClaw",
-    "version": "0.5.4",
+    "version": "0.6.0",
     "farmEnabled": false,
     "allowThirdPartyMarketplace": false,
     "farmApiBaseUrl": "",

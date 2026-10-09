@@ -19,7 +19,7 @@
  *
  *   3. colors — On top of shadcn's semantic tokens (primary / destructive /
  *      ...) we add three ClawX-private groups:
- *        - brand        : Apple-system blue used for primary CTAs
+ *        - brand gradient: lavender treatment for branded surfaces
  *        - skill        : highlight blue for inline /skill chips in chat
  *        - surface.{modal,input,sidebar}: a 3-layer neutral background
  *                          system in light mode. In dark mode each layer
@@ -120,8 +120,8 @@ module.exports = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
-        // Secondary warm accent (gold) — for gradient stops + small highlights
-        'accent-gold': 'hsl(var(--accent-gold))',
+        // Secondary lavender accent — for gradient stops + small highlights
+        'accent-lavender': 'hsl(var(--accent-lavender))',
         skill: {
           bg: '#2F6BFF',
           fg: '#1D4ED8',
@@ -152,9 +152,9 @@ module.exports = {
         },
       },
       backgroundImage: {
-        // YYClaw brand gradient: coral primary → gold accent
+        // YYClaw brand gradient: lavender primary → pale lavender accent
         'brand-gradient':
-          'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent-gold)))',
+          'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent-lavender)))',
       },
       boxShadow: {
         // Layered soft shadows to replace the flat default shadow-sm

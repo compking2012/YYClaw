@@ -84,6 +84,35 @@ describe('chat store session label summary hydration', () => {
     vi.useRealTimers();
   });
 
+  it('preserves workspace identity and the local main-session title policy during acknowledgement', async () => {
+    const key = 'agent:research:main';
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      sessions: [{ key: 'agent:main:main' }],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    useChatStore.getState().selectAcpSession(key, '/workspace/research');
+    expect(useChatStore.getState()).toMatchObject({
+      currentSessionKey: key,
+      currentAgentId: 'research',
+    });
+    expect(useChatStore.getState().sessions).toContainEqual(expect.objectContaining({
+      key,
+      workspacePath: '/workspace/research',
+    }));
+
+    useChatStore.getState().acknowledgeAcpSessionCreated(key, '/workspace/research', 'Investigate issue');
+
+    expect(useChatStore.getState().sessions.find((session) => session.key === key)).toMatchObject({
+      workspacePath: '/workspace/research',
+    });
+    expect(useChatStore.getState().sessions.find((session) => session.key === key)).not.toHaveProperty('createdLocally');
+    expect(useChatStore.getState().sessionLabels[key]).toBeUndefined();
+  });
+
   it('restores a newly created session and its first-prompt title after catalog reconciliation removes the placeholder', async () => {
     const sessionKey = 'agent:main:session-raced';
     const { useChatStore } = await import('@/stores/chat');
@@ -110,7 +139,7 @@ describe('chat store session label summary hydration', () => {
     );
   });
 
-  it('only includes persisted main sessions missing workspacePath when workspace hydration is requested', async () => {
+  it('keeps only the default main session special during label hydration', async () => {
     const { getSessionLabelHydrationCandidate } = await import('@/stores/chat/session-label-hydration');
 
     expect(getSessionLabelHydrationCandidate(
@@ -137,6 +166,34 @@ describe('chat store session label summary hydration', () => {
       {},
       {},
     )).toBeNull();
+
+    expect(getSessionLabelHydrationCandidate(
+      {
+        key: 'agent:main:main',
+        displayName: 'ClawX',
+        derivedTitle: '[Working directory: ~/.openclaw/workspace]…',
+        workspacePath: '~/.openclaw/workspace',
+        updatedAt: 1001,
+      },
+      {},
+      {},
+      { includeWorkspacePath: true },
+    )).toEqual({
+      sessionKey: 'agent:main:main',
+      version: '0|1001|[Working directory: ~/.openclaw/workspace]…',
+    });
+
+    expect(getSessionLabelHydrationCandidate(
+      {
+        key: 'agent:research:main',
+        displayName: 'ACP',
+        workspacePath: '/research-workspace',
+        updatedAt: 1001,
+      },
+      {},
+      {},
+      { includeWorkspacePath: true },
+    )).toEqual({ sessionKey: 'agent:research:main', version: '0|1001|' });
   });
 
   it('hydrates sidebar titles immediately after sessions load because summaries do not use gateway chat.history', async () => {
@@ -403,6 +460,72 @@ describe('chat store session label summary hydration', () => {
     expect(hostApiFetchMock).toHaveBeenCalledWith('/api/sessions/summaries', {
       method: 'POST',
       body: JSON.stringify({ sessionKeys: [sessionKey, 'agent:main:main'] }),
+    });
+  });
+
+  it('hydrates a cwd-only truncated title for the canonical main session with a known workspace', async () => {
+    const sessionKey = 'agent:main:main';
+    const workspacePath = '~/.openclaw/workspace';
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [{
+            key: sessionKey,
+            displayName: 'ClawX',
+            derivedTitle: '[Working directory: ~/.openclaw/workspace]…',
+            workspacePath,
+            updatedAt: 1_787_722_940_140,
+          }],
+        };
+      }
+
+      throw new Error(`Unexpected gateway RPC: ${method}`);
+    });
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/sessions/summaries') {
+        return {
+          success: true,
+          summaries: [{
+            sessionKey,
+            firstUserText: '[Working directory: ~/.openclaw/workspace]\n\n给我写一个脚本',
+            lastTimestamp: 1_787_722_940_140,
+            workspacePath,
+          }],
+        };
+      }
+      return { success: true, summaries: [] };
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: sessionKey,
+      currentAgentId: 'main',
+      sessions: [],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+      runError: null,
+    });
+
+    await useChatStore.getState().loadSessions();
+
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().sessionLabels[sessionKey]).toBe('给我写一个脚本');
+    });
+    expect(hostApiFetchMock).toHaveBeenCalledWith('/api/sessions/summaries', {
+      method: 'POST',
+      body: JSON.stringify({ sessionKeys: [sessionKey] }),
     });
   });
 
@@ -924,7 +1047,8 @@ describe('chat store session label summary hydration', () => {
           sessions: [
             { key: 'agent:main:session-a', displayName: 'ClawX', updatedAt: 1000 },
             { key: 'agent:main:session-b', displayName: 'ClawX', updatedAt: 1001 },
-            { key: 'agent:main:main', displayName: 'ClawX', updatedAt: 1002 },
+            { key: 'agent:research:main', displayName: 'ACP', workspacePath: '/research-workspace', updatedAt: 1002 },
+            { key: 'agent:main:main', displayName: 'ClawX', updatedAt: 1003 },
           ],
         };
       }
@@ -949,7 +1073,8 @@ describe('chat store session label summary hydration', () => {
             sessions: [
               { key: 'agent:main:session-a', displayName: 'ClawX', updatedAt: 1000 },
               { key: 'agent:main:session-b', displayName: 'ClawX', updatedAt: 1001 },
-              { key: 'agent:main:main', displayName: 'ClawX', updatedAt: 1002 },
+              { key: 'agent:research:main', displayName: 'ACP', workspacePath: '/research-workspace', updatedAt: 1002 },
+              { key: 'agent:main:main', displayName: 'ClawX', updatedAt: 1003 },
             ],
           },
         };
@@ -959,6 +1084,7 @@ describe('chat store session label summary hydration', () => {
         summaries: [
           { sessionKey: 'agent:main:session-a', firstUserText: 'Alpha title', lastTimestamp: 1_700_000_000_100 },
           { sessionKey: 'agent:main:session-b', firstUserText: 'Beta title', lastTimestamp: 1_700_000_000_200 },
+          { sessionKey: 'agent:research:main', firstUserText: 'Research title', lastTimestamp: 1_700_000_000_300 },
         ],
       };
     });
@@ -991,10 +1117,13 @@ describe('chat store session label summary hydration', () => {
 
     expect(hostApiFetchMock).toHaveBeenCalledWith('/api/sessions/summaries', {
       method: 'POST',
-      body: JSON.stringify({ sessionKeys: ['agent:main:session-a', 'agent:main:session-b', 'agent:main:main'] }),
+      body: JSON.stringify({
+        sessionKeys: ['agent:main:session-a', 'agent:main:session-b', 'agent:research:main', 'agent:main:main'],
+      }),
     });
     expect(useChatStore.getState().sessionLabels['agent:main:session-a']).toBe('Alpha title');
     expect(useChatStore.getState().sessionLabels['agent:main:session-b']).toBe('Beta title');
+    expect(useChatStore.getState().sessionLabels['agent:research:main']).toBe('Research title');
   });
 
   it('hydrates session labels through the host API instead of gateway chat.history fan-out', async () => {

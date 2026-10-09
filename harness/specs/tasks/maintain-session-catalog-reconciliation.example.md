@@ -15,7 +15,7 @@ requiredProfiles:
   - comms
 requiredTests:
   - tests/unit/session-catalog.test.ts
-  - tests/unit/chat-session-management.test.ts
+  - tests/unit/chat-store-delete-session-workflow.test.ts
 acceptance:
   - Renderer does not add direct IPC calls.
   - Renderer does not fetch Gateway HTTP directly.

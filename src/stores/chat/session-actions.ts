@@ -420,13 +420,18 @@ export function createSessionActions(
       // <id>.deleted.jsonl and <id>.jsonl.reset.* siblings, then removes the
       // entry from sessions.json so sessions.list stops surfacing it.
       let deleted = false;
+      let deletionError = 'Failed to delete session';
+      let deletionWarnings: string[] | undefined;
       try {
         const result = await hostApi.sessions.delete(key);
         deleted = result.success;
+        if (result.warnings?.length) deletionWarnings = result.warnings;
         if (!result.success) {
+          deletionError = result.error || deletionError;
           console.warn(`[deleteSession] IPC reported failure for ${key}:`, result.error);
         }
       } catch (err) {
+        deletionError = String(err);
         console.warn(`[deleteSession] IPC call failed for ${key}:`, err);
       }
 
@@ -436,7 +441,7 @@ export function createSessionActions(
         // failure immediately (the row stays) rather than hiding it until the
         // next restart resurrects the entry.
         await get().loadSessions();
-        return;
+        return { success: false as const, error: deletionError };
       }
 
       const { currentSessionKey, sessions } = get();
@@ -471,6 +476,7 @@ export function createSessionActions(
           sessionLastActivity: Object.fromEntries(Object.entries(s.sessionLastActivity).filter(([k]) => k !== key)),
         }));
       }
+      return { success: true as const, ...(deletionWarnings ? { warnings: deletionWarnings } : {}) };
     },
 
     // ── New session ──

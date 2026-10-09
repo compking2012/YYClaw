@@ -30,9 +30,11 @@ import {
 import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToProfile } from '../utils/openclaw-cli';
 import { isQuitting, setQuitting } from './app-state';
 import { getMacTrafficLightPosition, syncMacTrafficLightPosition } from './traffic-light-layout';
-import { getSetting } from '../utils/store';
+import { getSetting, registerComputerUsePreferenceHandler } from '../utils/store';
+import { repairUtf8BomJsonFiles } from '../utils/json-bom-recovery';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
+import { syncNativeThemeFromStore } from './native-theme';
 import { WebBrowserGuestRegistry, installWebBrowserGuestPolicy } from './web-browser-policy';
 import { configureWebBrowserSession } from './web-browser-session';
 import {
@@ -52,10 +54,14 @@ import { ensureBuiltinSkillsInstalled, ensureBundledLarkCliInstalled, ensurePrei
 import { isCiSmokeMode, runCiSmokeProviderSetup } from './ci-smoke';
 import { sendToMainWindow } from '../utils/broadcast-renderer';
 import { getWorkflowEngine } from '../workflow';
+import { getActiveAcpChatService } from '../services/acp-chat-service';
+import { createDefaultCuaRuntimeManager, type CuaRuntimeManager } from '../utils/cua-runtime';
+import { createComputerUseApi, type ComputerUseApi } from '../services/computer-use-api';
 
 import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
+import { cancelDingTalkDwsOAuth } from '../utils/dingtalk-dws';
 import { syncAllProviderAuthToRuntime } from '../services/providers/provider-runtime-sync';
 import { adminConsoleClient } from '../services/admin-console/centrifuge-client';
 
@@ -122,6 +128,8 @@ const gotTheLock = gotElectronLock && gotFileLock;
 // Global references
 let mainWindow: BrowserWindow | null = null;
 let gatewayManager!: GatewayManager;
+let cuaRuntimeManager!: CuaRuntimeManager;
+let computerUseApi!: ComputerUseApi;
 let clawHubService!: ClawHubService;
 const hostApiRegistry = new HostApiRegistry();
 const webBrowserGuestRegistry = new WebBrowserGuestRegistry();
@@ -308,6 +316,23 @@ async function initialize(): Promise<void> {
     `Runtime: platform=${process.platform}/${process.arch}, electron=${process.versions.electron}, node=${process.versions.node}, packaged=${app.isPackaged}, pid=${process.pid}, ppid=${process.ppid}`
   );
 
+  // Older or external Windows tooling can rewrite JSON as UTF-8 with BOM.
+  // Repair those files before settings, provider stores, or extensions parse them.
+  try {
+    const bomRepair = await repairUtf8BomJsonFiles(app.getPath('userData'));
+    if (bomRepair.repairedFiles.length > 0) {
+      logger.warn('Repaired UTF-8 BOM in local JSON files', {
+        files: bomRepair.repairedFiles,
+      });
+    }
+    for (const failure of bomRepair.failures) {
+      logger.warn(`Failed to repair UTF-8 BOM in ${failure.fileName}: ${failure.error}`);
+    }
+  } catch (error) {
+    // Local recovery is best-effort and must never make startup less reliable.
+    logger.warn('Failed to scan local JSON files for UTF-8 BOM:', error);
+  }
+
   webBrowserSession = configureWebBrowserSession({
     registry: webBrowserGuestRegistry,
     getMainWindow: () => mainWindow,
@@ -329,6 +354,11 @@ async function initialize(): Promise<void> {
 
   // Set application menu
   await createMenu();
+
+  // Align native widget rendering (select popups, scrollbars, dialogs) with
+  // the persisted theme before the window is created so the window and its
+  // first popups never flash with a mismatched scheme.
+  await syncNativeThemeFromStore();
 
   // Create the main window
   const window = createMainWindow();
@@ -357,6 +387,11 @@ async function initialize(): Promise<void> {
   );
 
   // Register IPC handlers
+  hostApiRegistry.registerCoreServices({ computerUse: {
+    status: computerUseApi.status,
+    setEnabled: computerUseApi.setEnabled,
+    requestPermissions: computerUseApi.requestPermissions,
+  } });
   registerIpcHandlers(
     gatewayManager,
     clawHubService,
@@ -420,13 +455,11 @@ async function initialize(): Promise<void> {
     });
   }
 
-  // Pre-deploy built-in skills (feishu-doc, feishu-drive, feishu-perm, feishu-wiki)
-  // to ~/.openclaw/skills/ so they are immediately available without manual install.
-  if (!isE2EMode) {
-    void ensureBuiltinSkillsInstalled().catch((error) => {
-      logger.warn('Failed to install built-in skills:', error);
-    });
-  }
+  // Local-only first-party skills also install into the isolated E2E home so
+  // picker tests exercise real startup discovery without downloads or OS input.
+  void ensureBuiltinSkillsInstalled().catch((error) => {
+    logger.warn('Failed to install built-in skills:', error);
+  });
 
   // Keep community builds aligned with Clawx-biz by physically trimming
   // bundled OpenClaw consumer skills on startup (dev + packaged), keeping only
@@ -600,6 +633,14 @@ async function initialize(): Promise<void> {
     await runCiSmokeProviderSetup(gatewayManager);
   }
 
+  if (!isE2EMode) {
+    try {
+      await computerUseApi.initialize();
+    } catch (error) {
+      logger.warn('Local CUA runtime failed to start; continuing with Gateway startup:', error);
+    }
+  }
+
   // Start Gateway automatically (this seeds missing bootstrap files with full templates)
   const gatewayAutoStart = await getSetting('gatewayAutoStart');
   if (!isE2EMode && gatewayAutoStart) {
@@ -664,6 +705,11 @@ if (gotTheLock) {
   }
 
   gatewayManager = new GatewayManager();
+  cuaRuntimeManager = createDefaultCuaRuntimeManager();
+  computerUseApi = createComputerUseApi(cuaRuntimeManager);
+  registerComputerUsePreferenceHandler(async (enabled) => {
+    await computerUseApi.setEnabled({ enabled });
+  });
   registerOpenClawConfigCoordinator(gatewayManager);
   clawHubService = new ClawHubService();
   adminConsoleClient.setGatewayManager(gatewayManager);
@@ -705,6 +751,11 @@ if (gotTheLock) {
     // Register only after initialization so activation cannot race the initial
     // window or claim the single browser guest before host handlers are ready.
     app.on('activate', () => {
+      if (!isE2EMode) {
+        void computerUseApi.refresh().catch((error) => {
+          logger.warn('Failed to refresh local CUA permissions:', error);
+        });
+      }
       if (BrowserWindow.getAllWindows().length === 0) {
         loadMainWindow(createMainWindow());
       } else {
@@ -721,6 +772,7 @@ if (gotTheLock) {
 
   app.on('before-quit', (event) => {
     setQuitting();
+    cancelDingTalkDwsOAuth();
     const action = requestQuitLifecycleAction(quitLifecycleState);
 
     if (action === 'allow-quit') {
@@ -737,9 +789,31 @@ if (gotTheLock) {
     void extensionRegistry.teardownAll();
     adminConsoleClient.stop();
 
-    const stopPromise = gatewayManager.stop().catch((err) => {
-      logger.warn('gatewayManager.stop() error during quit:', err);
-    });
+    const stopPromise = Promise.all([
+      (async () => {
+        // Stop ACP before Gateway so the child cannot reconnect and outlive the app.
+        // Computer Use cleanup runs independently of this ordered pair.
+        try {
+          await getActiveAcpChatService()?.stop();
+        } catch (err) {
+          logger.warn('AcpChatService.stop() error during quit:', err);
+        }
+        try {
+          await gatewayManager.stop();
+        } catch (err) {
+          logger.warn('gatewayManager.stop() error during quit:', err);
+        }
+      })(),
+      (async () => {
+        if (!isE2EMode) {
+          try {
+            await computerUseApi.stop();
+          } catch (err) {
+            logger.warn('cuaRuntimeManager.stop() error during quit:', err);
+          }
+        }
+      })(),
+    ]);
     const timeoutPromise = new Promise<'timeout'>((resolve) => {
       setTimeout(() => resolve('timeout'), 5000);
     });

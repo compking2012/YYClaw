@@ -621,22 +621,6 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
     }
   };
 
-  const copyIntoHandle = async (sourcePath: string, destination: FileHandle) => {
-    const fsP = await import('node:fs/promises');
-    const source = await fsP.open(sourcePath, constants.O_RDONLY);
-    try {
-      const buffer = Buffer.allocUnsafe(64 * 1024);
-      let position = 0;
-      while (true) {
-        const { bytesRead } = await source.read(buffer, 0, buffer.length, position);
-        if (bytesRead === 0) break;
-        await destination.write(buffer, 0, bytesRead, position);
-        position += bytesRead;
-      }
-    } finally {
-      await source.close();
-    }
-  };
   return {
     stagePaths: async (payload) => {
       const body = isRecord(payload) ? payload as StagePathsPayload : {};
@@ -648,11 +632,9 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
       for (const filePath of filePaths) {
         const id = crypto.randomUUID();
         const fileName = basename(filePath);
-        const sourceStat = await fsP.stat(filePath);
-        if (sourceStat.isDirectory()) {
-          const canonicalPath = await fsP.realpath(filePath);
-          const canonicalStat = await fsP.stat(canonicalPath);
-          if (!canonicalStat.isDirectory()) throw new Error('Invalid directory attachment');
+        const canonicalPath = await fsP.realpath(filePath);
+        const canonicalStat = await fsP.stat(canonicalPath);
+        if (canonicalStat.isDirectory()) {
           dependencies.stagedAttachments?.register(id, canonicalPath, filePath);
           results.push({
             id,
@@ -660,19 +642,28 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
             mimeType: DIRECTORY_MIME_TYPE,
             fileSize: 0,
             stagedPath: canonicalPath,
+            sourceKind: 'path' as const,
             preview: null,
           });
           continue;
         }
+        if (!canonicalStat.isFile()) throw new Error('Invalid file attachment');
 
         const ext = extname(filePath);
         const mimeType = getMimeType(ext);
         const preview = mimeType.startsWith('image/')
-          ? await generateImagePreview(filePath, mimeType)
+          ? await generateImagePreview(canonicalPath, mimeType)
           : null;
-        const staged = await createStagedFile(`${id}${ext}`, (handle) => copyIntoHandle(filePath, handle));
-        dependencies.stagedAttachments?.register(id, staged.path, filePath);
-        results.push({ id, fileName, mimeType, fileSize: staged.stat.size, stagedPath: staged.path, preview });
+        dependencies.stagedAttachments?.register(id, canonicalPath, filePath);
+        results.push({
+          id,
+          fileName,
+          mimeType,
+          fileSize: canonicalStat.size,
+          stagedPath: canonicalPath,
+          sourceKind: 'path' as const,
+          preview,
+        });
       }
       return results;
     },
@@ -700,6 +691,7 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
         mimeType,
         fileSize: buffer.length,
         stagedPath: staged.path,
+        sourceKind: 'buffer' as const,
         preview,
       };
     },

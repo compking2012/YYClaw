@@ -46,7 +46,14 @@ import {
   assertValidApiProtocol,
   normalizeOpenClawApiProtocol,
 } from '../shared/providers/types';
-import { inferCustomModelContextWindow, inferCustomModelInputModalities } from '../shared/providers/model-capabilities';
+import {
+  inferCustomModelInputModalities,
+  inferKnownModelContextWindow,
+} from '../shared/providers/model-capabilities';
+import {
+  applyModelAwareCompactionReserveTokensFloor,
+  DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR,
+} from './openclaw-compaction';
 import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
@@ -58,6 +65,12 @@ import {
   writeAuthProfilesToSqlite,
   type PersistedAuthProfilesStore,
 } from './openclaw-auth-sqlite';
+import {
+  DINGTALK_OFFICIAL_PLUGIN_ID,
+  DINGTALK_PLUGIN_ID,
+  migrateDingTalkChannelSection,
+  migrateDingTalkPluginRegistrations,
+} from './dingtalk-plugin-compat';
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
@@ -348,39 +361,60 @@ type AuthProfilesStore = PersistedAuthProfilesStore;
 
 function removeProfilesForProvider(store: AuthProfilesStore, provider: string): boolean {
   const removedProfileIds = new Set<string>();
+  const providerProfilePrefix = `${provider}:`;
+  let modified = false;
 
   for (const [profileId, profile] of Object.entries(store.profiles)) {
-    if (profile?.provider !== provider) {
+    if (profile?.provider !== provider && !profileId.startsWith(providerProfilePrefix)) {
       continue;
     }
     delete store.profiles[profileId];
     removedProfileIds.add(profileId);
-  }
-
-  if (removedProfileIds.size === 0) {
-    return false;
+    modified = true;
   }
 
   if (store.order) {
     for (const [orderProvider, profileIds] of Object.entries(store.order)) {
-      const nextProfileIds = profileIds.filter((profileId) => !removedProfileIds.has(profileId));
-      if (nextProfileIds.length > 0) {
-        store.order[orderProvider] = nextProfileIds;
-      } else {
+      if (orderProvider === provider) {
         delete store.order[orderProvider];
+        modified = true;
+        continue;
+      }
+      const nextProfileIds = profileIds.filter((profileId) => (
+        !removedProfileIds.has(profileId) && !profileId.startsWith(providerProfilePrefix)
+      ));
+      if (nextProfileIds.length !== profileIds.length) {
+        modified = true;
+        if (nextProfileIds.length > 0) {
+          store.order[orderProvider] = nextProfileIds;
+        } else {
+          delete store.order[orderProvider];
+        }
       }
     }
   }
 
   if (store.lastGood) {
     for (const [lastGoodProvider, profileId] of Object.entries(store.lastGood)) {
-      if (removedProfileIds.has(profileId)) {
+      if (lastGoodProvider === provider
+        || removedProfileIds.has(profileId)
+        || profileId.startsWith(providerProfilePrefix)) {
         delete store.lastGood[lastGoodProvider];
+        modified = true;
       }
     }
   }
 
-  return true;
+  if (store.usageStats) {
+    for (const profileId of Object.keys(store.usageStats)) {
+      if (removedProfileIds.has(profileId) || profileId.startsWith(providerProfilePrefix)) {
+        delete store.usageStats[profileId];
+        modified = true;
+      }
+    }
+  }
+
+  return modified;
 }
 
 function removeProfileFromStore(
@@ -417,6 +451,11 @@ function removeProfileFromStore(
         changed = true;
       }
     }
+  }
+
+  if (shouldCleanReferences && store.usageStats?.[profileId] !== undefined) {
+    delete store.usageStats[profileId];
+    changed = true;
   }
 
   return changed;
@@ -534,8 +573,9 @@ async function discoverAgentIds(): Promise<string[]> {
 
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
-/** Matches OpenClaw's 200k+ context-window recommendation (see computeContextAwareReserveTokensFloor). */
-const DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR = 50_000;
+const CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS = 'Preserve only identifiers referenced by unresolved asks, active constraints, modified files, or pending next steps.';
+const CLAWX_COMPACTION_KEEP_RECENT_TOKENS = 0;
+const CLAWX_COMPACTION_RECENT_TURNS_PRESERVE = 0;
 // OpenClaw 2026.7.1 bundles these channel extensions. Discord, WhatsApp,
 // QQBot, and the remaining catalog channels are external plugins and their
 // explicit allowlist registrations must be preserved.
@@ -872,7 +912,8 @@ function normalizeAgentsDefaultsCompactionMode(config: Record<string, unknown>):
 /**
  * Seed `agents.defaults.compaction.mode = "safeguard"` when the user has no
  * compaction config at all, so long sessions are compacted before they hit the
- * provider's context limit. Never touches an existing compaction object.
+ * provider's context limit. The reserve floor is applied separately from
+ * explicit model context metadata or the conservative 50000-token fallback.
  */
 function ensureCompactionSafeguardDefault(config: Record<string, unknown>): boolean {
   const agents = (config.agents && typeof config.agents === 'object'
@@ -885,7 +926,13 @@ function ensureCompactionSafeguardDefault(config: Record<string, unknown>): bool
 
   defaults.compaction = {
     mode: 'safeguard',
+    qualityGuard: { enabled: false },
+    keepRecentTokens: CLAWX_COMPACTION_KEEP_RECENT_TOKENS,
+    recentTurnsPreserve: CLAWX_COMPACTION_RECENT_TURNS_PRESERVE,
+    identifierPolicy: 'custom',
+    identifierInstructions: CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS,
     reserveTokensFloor: DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR,
+    midTurnPrecheck: { enabled: true },
   };
   agents.defaults = defaults;
   config.agents = agents;
@@ -893,11 +940,11 @@ function ensureCompactionSafeguardDefault(config: Record<string, unknown>): bool
 }
 
 /**
- * Backfill `reserveTokensFloor` on compaction configs that ClawX or OpenClaw
- * seeded without one. OpenClaw's built-in default (20k) is too low once
- * contextWindow backfill activates safeguard compaction on 200k+ models.
+ * Enforce ClawX's compaction quality policy and backfill missing safety fields.
+ * Explicit keepRecentTokens, recentTurnsPreserve, reserveTokensFloor, and
+ * midTurnPrecheck.enabled choices are preserved.
  */
-function backfillCompactionReserveTokensFloor(config: Record<string, unknown>): boolean {
+function syncCompactionSafetyDefaults(config: Record<string, unknown>): boolean {
   const agents = (config.agents && typeof config.agents === 'object'
     ? config.agents as Record<string, unknown>
     : null);
@@ -911,45 +958,71 @@ function backfillCompactionReserveTokensFloor(config: Record<string, unknown>): 
   const compaction = (defaults.compaction && typeof defaults.compaction === 'object'
     ? defaults.compaction as Record<string, unknown>
     : null);
-  if (!compaction || compaction.reserveTokensFloor !== undefined) return false;
+  if (!compaction) return false;
 
-  compaction.reserveTokensFloor = DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR;
+  let changed = false;
+  if (
+    !isPlainRecord(compaction.qualityGuard)
+    || compaction.qualityGuard.enabled !== false
+    || Object.keys(compaction.qualityGuard).some((key) => key !== 'enabled')
+  ) {
+    compaction.qualityGuard = { enabled: false };
+    changed = true;
+  }
+  if (compaction.recentTurnsPreserve === undefined) {
+    compaction.recentTurnsPreserve = CLAWX_COMPACTION_RECENT_TURNS_PRESERVE;
+    changed = true;
+  }
+  if (compaction.keepRecentTokens === undefined) {
+    compaction.keepRecentTokens = CLAWX_COMPACTION_KEEP_RECENT_TOKENS;
+    changed = true;
+  }
+  if (compaction.identifierPolicy !== 'custom') {
+    compaction.identifierPolicy = 'custom';
+    changed = true;
+  }
+  if (compaction.identifierInstructions !== CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS) {
+    compaction.identifierInstructions = CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS;
+    changed = true;
+  }
+
+  if (compaction.reserveTokensFloor === undefined) {
+    compaction.reserveTokensFloor = DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR;
+    changed = true;
+  }
+
+  if (compaction.midTurnPrecheck === undefined) {
+    compaction.midTurnPrecheck = { enabled: true };
+    changed = true;
+  } else if (
+    isPlainRecord(compaction.midTurnPrecheck)
+    && compaction.midTurnPrecheck.enabled === undefined
+  ) {
+    compaction.midTurnPrecheck.enabled = true;
+    changed = true;
+  }
+
+  if (!changed) return false;
   defaults.compaction = compaction;
   agents.defaults = defaults;
   config.agents = agents;
   return true;
 }
 
-/**
- * Self-heal helper: walk `models.providers.custom-*` entries and fill in an
- * inferred `contextWindow` on model rows that have neither `contextWindow`
- * nor `contextTokens`. Rows written by older ClawX versions only carried
- * `{ id, name, input }`, which disables OpenClaw's preemptive compaction and
- * context-window guard for custom providers.
- *
- * Deliberately scoped to `custom-` keys: registry providers own their
- * metadata, and small local models (ollama) must not inherit a large window.
- */
-function backfillCustomProviderModelContextWindows(config: Record<string, unknown>): string[] {
-  const models = (config.models || {}) as Record<string, unknown>;
-  const providers = (models.providers || {}) as Record<string, unknown>;
-  const backfilled: string[] = [];
-
-  for (const [providerKey, entry] of Object.entries(providers)) {
-    if (!providerKey.startsWith('custom-') || !isPlainRecord(entry)) continue;
-    const rows = Array.isArray(entry.models) ? entry.models : [];
-    for (const row of rows) {
-      if (!isPlainRecord(row) || typeof row.id !== 'string' || !row.id) continue;
-      if (typeof row.contextWindow === 'number' || typeof row.contextTokens === 'number') continue;
-      row.contextWindow = inferCustomModelContextWindow(row.id, {
-        providerKey,
-        apiProtocol: typeof entry.api === 'string' ? entry.api : undefined,
-      });
-      backfilled.push(`${providerKey}/${row.id}`);
-    }
+function getDefaultModelRef(config: Record<string, unknown>): string | undefined {
+  const agents = config.agents;
+  const defaults = agents && typeof agents === 'object'
+    ? (agents as Record<string, unknown>).defaults
+    : undefined;
+  const model = defaults && typeof defaults === 'object'
+    ? (defaults as Record<string, unknown>).model
+    : undefined;
+  if (typeof model === 'string' && model.trim()) return model.trim();
+  if (model && typeof model === 'object') {
+    const primary = (model as Record<string, unknown>).primary;
+    if (typeof primary === 'string' && primary.trim()) return primary.trim();
   }
-
-  return backfilled;
+  return undefined;
 }
 
 // ── Exported Functions (all async) ───────────────────────────────
@@ -1133,6 +1206,49 @@ function getModelRefProviderKey(modelRef: string): string | null {
   return modelRef.slice(0, separatorIndex);
 }
 
+function removeProviderEntriesFromModelCatalog(
+  parent: Record<string, unknown>,
+  providerKeys: ReadonlySet<string>,
+): boolean {
+  const configuredModels = parent.models;
+  if (!isPlainRecord(configuredModels)) return false;
+
+  let modified = false;
+  for (const modelRef of Object.keys(configuredModels)) {
+    const providerKey = getModelRefProviderKey(modelRef);
+    if (providerKey && providerKeys.has(providerKey)) {
+      delete configuredModels[modelRef];
+      modified = true;
+    }
+  }
+  // Keep an explicit empty object when the last entry is removed. OpenClaw
+  // treats agents.*.models as a protected map: omitting the field during
+  // config.set preserves the previous map, while `models: {}` clears it.
+  return modified;
+}
+
+function removeProviderEntriesFromAgentModelCatalogs(
+  config: Record<string, unknown>,
+  providerKeys: ReadonlySet<string>,
+): boolean {
+  const agents = config.agents;
+  if (!isPlainRecord(agents)) return false;
+
+  let modified = false;
+  if (isPlainRecord(agents.defaults)
+    && removeProviderEntriesFromModelCatalog(agents.defaults, providerKeys)) {
+    modified = true;
+  }
+  if (Array.isArray(agents.list)) {
+    for (const entry of agents.list) {
+      if (isPlainRecord(entry) && removeProviderEntriesFromModelCatalog(entry, providerKeys)) {
+        modified = true;
+      }
+    }
+  }
+  return modified;
+}
+
 const RUNTIME_GENERATED_PROVIDER_KEY = /^(custom|ollama)-[a-z0-9]+$/i;
 
 function isRuntimeGeneratedProviderKey(providerKey: string): boolean {
@@ -1309,6 +1425,16 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
       if (modified) {
         normalizeAgentsDefaultsCompactionMode(config);
       }
+  });
+
+  // Keep model-catalog removal in its own transaction. The running Gateway can
+  // normalize provider deletion independently, so verify the latest snapshot
+  // after that commit instead of relying on both removals landing together.
+  const providerKeySet = new Set(providerKeysToRemove);
+  await mutateOpenClawConfig((config) => {
+    if (removeProviderEntriesFromAgentModelCatalogs(config, providerKeySet)) {
+      normalizeAgentsDefaultsCompactionMode(config);
+    }
   });
 
   // Remove the provider from each per-agent model registry used by pi-ai.
@@ -1735,6 +1861,7 @@ export async function setOpenClawDefaultModel(
         modelIds: [modelId, ...fallbackModelIds],
         includeRegistryModels: true,
         mergeExistingModels: true,
+        inferRuntimeModelInputs: true,
       });
       console.log(`Configured models.providers.${provider} with baseUrl=${providerCfg.baseUrl}, model=${modelId}`);
     } else if (provider === 'openai-codex') {
@@ -1781,6 +1908,9 @@ export async function setOpenClawDefaultModel(
     if (!gateway.mode) gateway.mode = 'local';
     config.gateway = gateway;
 
+    if (targetSlot === 'model') {
+      applyModelAwareCompactionReserveTokensFloor(config, getDefaultModelRef(config));
+    }
     normalizeAgentsDefaultsCompactionMode(config);
     console.log(`Set OpenClaw default model to "${model}" for provider "${provider}"`);
   });
@@ -1827,17 +1957,91 @@ function mergeProviderModels(
   ...groups: Array<Array<Record<string, unknown>>>
 ): Array<Record<string, unknown>> {
   const merged: Array<Record<string, unknown>> = [];
-  const seen = new Set<string>();
+  const indexes = new Map<string, number>();
 
+  // Groups are ordered from lowest to highest priority. This lets registry and
+  // inferred metadata fill gaps without replacing values explicitly persisted
+  // in the user's existing OpenClaw model row.
   for (const group of groups) {
     for (const item of group) {
       const id = typeof item?.id === 'string' ? item.id : '';
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      merged.push(item);
+      if (!id) continue;
+
+      const existingIndex = indexes.get(id);
+      if (existingIndex === undefined) {
+        indexes.set(id, merged.length);
+        merged.push({ ...item });
+        continue;
+      }
+
+      const next = { ...merged[existingIndex], ...item };
+      if (Object.hasOwn(item, 'contextTokens') && !Object.hasOwn(item, 'contextWindow')) {
+        delete next.contextWindow;
+      } else if (Object.hasOwn(item, 'contextWindow') && !Object.hasOwn(item, 'contextTokens')) {
+        delete next.contextTokens;
+      }
+      merged[existingIndex] = next;
     }
   }
   return merged;
+}
+
+function hasConfiguredReasoningEffort(params: Record<string, unknown>): boolean {
+  const candidates = [params, params.extra_body, params.extraBody];
+  return candidates.some((candidate) => (
+    isPlainRecord(candidate)
+      && (Object.hasOwn(candidate, 'reasoning_effort') || Object.hasOwn(candidate, 'reasoningEffort'))
+  ));
+}
+
+function ensureCustomAstraCompletionsReasoningEffort(
+  config: Record<string, unknown>,
+  provider: string,
+  api: string | undefined,
+  modelIds: string[],
+): boolean {
+  if (!provider.startsWith('custom-') || api !== 'openai-completions') return false;
+
+  const astraModelIds = modelIds.filter((modelId) => /astra/i.test(modelId));
+  if (astraModelIds.length === 0) return false;
+
+  const agents = isPlainRecord(config.agents) ? config.agents : {};
+  const defaults = isPlainRecord(agents.defaults) ? agents.defaults : {};
+  const defaultParams = isPlainRecord(defaults.params) ? defaults.params : {};
+  const hasDefaultReasoningEffort = hasConfiguredReasoningEffort(defaultParams);
+
+  const configuredModels = isPlainRecord(defaults.models) ? defaults.models : {};
+  let modified = false;
+  for (const modelId of astraModelIds) {
+    const modelRef = `${provider}/${modelId}`;
+    const model = isPlainRecord(configuredModels[modelRef]) ? configuredModels[modelRef] : {};
+    const params = isPlainRecord(model.params) ? model.params : {};
+    const extraBody = isPlainRecord(params.extra_body)
+      ? params.extra_body
+      : (isPlainRecord(params.extraBody) ? params.extraBody : {});
+    const hasLegacyNone = extraBody.reasoning_effort === 'none';
+    if (!hasLegacyNone
+      && (hasDefaultReasoningEffort || hasConfiguredReasoningEffort(params))) continue;
+
+    configuredModels[modelRef] = {
+      ...model,
+      params: {
+        ...params,
+        extra_body: {
+          ...extraBody,
+          reasoning_effort: 'low',
+        },
+      },
+    };
+    modified = true;
+  }
+
+  if (modified) {
+    defaults.models = configuredModels;
+    agents.defaults = defaults;
+    config.agents = agents;
+  }
+  return modified;
 }
 
 /**
@@ -2099,22 +2303,39 @@ function upsertOpenClawProviderEntry(
   const registryModels = options.includeRegistryModels
     ? ((getProviderConfig(provider)?.models ?? []).map((m) => ({ ...m })) as Array<Record<string, unknown>>)
     : [];
-  const runtimeModels = (options.modelIds ?? []).map((id) => ({
-    id,
-    name: id,
-    ...(options.inferRuntimeModelInputs
-      ? {
-        input: inferCustomModelInputModalities(id),
-        // Without an explicit contextWindow OpenClaw cannot budget compaction
-        // for custom providers and long sessions die with context overflow.
-        contextWindow: inferCustomModelContextWindow(id, {
-          providerKey: provider,
-          apiProtocol: options.api,
-        }),
-      }
-      : {}),
-  }));
-  let mergedModels = mergeProviderModels(registryModels, existingModels, runtimeModels);
+  const registeredProvider = getProviderConfig(provider);
+  const runtimeModels = (options.modelIds ?? []).map((id) => {
+    const registeredModel = registeredProvider?.models?.find((model) => model.id === id);
+    const hasRegisteredContext = typeof registeredModel?.contextTokens === 'number'
+      || typeof registeredModel?.contextWindow === 'number';
+    const inferredContextWindow = registeredProvider && !hasRegisteredContext
+      ? inferKnownModelContextWindow(id, { providerKey: provider, apiProtocol: options.api })
+      : undefined;
+
+    return {
+      ...(registeredModel ? { ...registeredModel } : {}),
+      id,
+      name: registeredModel?.name ?? id,
+      ...(options.inferRuntimeModelInputs && !registeredModel?.input
+        ? { input: inferCustomModelInputModalities(id) }
+        : {}),
+      ...(inferredContextWindow === undefined ? {} : { contextWindow: inferredContextWindow }),
+    };
+  });
+  // Keep the established row ordering while reapplying persisted rows last so
+  // explicit user metadata wins over registry defaults and inferred values.
+  let mergedModels = mergeProviderModels(
+    registryModels,
+    existingModels,
+    runtimeModels,
+    existingModels,
+  );
+  if (options.inferRuntimeModelInputs) {
+    mergedModels = mergedModels.map((model) => ({
+      ...model,
+      input: model.input ?? inferCustomModelInputModalities(String(model.id)),
+    }));
+  }
   if (options.api === 'anthropic-messages') {
     mergedModels = mergedModels.map((model) => ensureAnthropicMessagesModelEntry(model, provider, existingProvider));
   }
@@ -2153,6 +2374,12 @@ function upsertOpenClawProviderEntry(
   providers[provider] = nextProvider;
   models.providers = providers;
   config.models = models;
+  ensureCustomAstraCompletionsReasoningEffort(
+    config,
+    provider,
+    options.api,
+    mergedModels.flatMap((model) => typeof model.id === 'string' ? [model.id] : []),
+  );
 
   if (removedLegacyMoonshot) {
     console.log('Removed legacy models.providers.moonshot alias entry');
@@ -2562,6 +2789,9 @@ export async function setOpenClawDefaultModelWithOverride(
       ensureOAuthPluginEnabled(config, provider);
     }
 
+    if (targetSlot === 'model') {
+      applyModelAwareCompactionReserveTokensFloor(config, getDefaultModelRef(config));
+    }
     normalizeAgentsDefaultsCompactionMode(config);
     console.log(
       `Set OpenClaw default model to "${model}" for provider "${provider}" (runtime override)`
@@ -2843,14 +3073,12 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
   let pinnedProviderRuntimes: string[] = [];
   let compactionLog: string | undefined;
   let memorySearchDefaultResult: 'migrated' | 'seeded' | 'unchanged' = 'unchanged';
-  let backfilledContextWindows: string[] = [];
 
   const changed = await mutateOpenClawConfig((config) => {
     let modified = true;
     pinnedProviderRuntimes = [];
     compactionLog = undefined;
     memorySearchDefaultResult = 'unchanged';
-    backfilledContextWindows = [];
 
     // ── Gateway token + controlUi ──
     const gateway = (
@@ -2937,10 +3165,10 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     // ── Compaction safeguard default ──
     if (ensureCompactionSafeguardDefault(config)) {
       modified = true;
-      compactionLog = `[batch-sync] Seeded agents.defaults.compaction.mode=safeguard reserveTokensFloor=${DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR}`;
-    } else if (backfillCompactionReserveTokensFloor(config)) {
+      compactionLog = `[batch-sync] Seeded agents.defaults.compaction.mode=safeguard qualityGuard.enabled=false keepRecentTokens=${CLAWX_COMPACTION_KEEP_RECENT_TOKENS} recentTurnsPreserve=${CLAWX_COMPACTION_RECENT_TURNS_PRESERVE} identifierPolicy=custom reserveTokensFloor=${DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR} midTurnPrecheck.enabled=true`;
+    } else if (syncCompactionSafetyDefaults(config)) {
       modified = true;
-      compactionLog = `[batch-sync] Backfilled agents.defaults.compaction.reserveTokensFloor=${DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR}`;
+      compactionLog = '[batch-sync] Synchronized ClawX-managed agents.defaults.compaction settings';
     }
 
     // ── Memory search default ──
@@ -2962,12 +3190,6 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
       modified = true;
     }
 
-    // ── Custom provider contextWindow backfill ──
-    backfilledContextWindows = backfillCustomProviderModelContextWindows(config);
-    if (backfilledContextWindows.length > 0) {
-      modified = true;
-    }
-
     if (modified) {
       normalizeAgentsDefaultsCompactionMode(config);
     }
@@ -2983,9 +3205,6 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
       `[batch-sync] ${memorySearchDefaultResult === 'migrated' ? 'Migrated' : 'Seeded'} `
       + 'agents.defaults.memorySearch to FTS-only mode',
     );
-  }
-  if (backfilledContextWindows.length > 0) {
-    console.log(`[batch-sync] Backfilled contextWindow for custom provider models: ${backfilledContextWindows.join(', ')}`);
   }
   if (changed) {
     console.log('Synced gateway token, browser config, web_fetch SSRF policy, and session idle to openclaw.json');
@@ -3012,6 +3231,8 @@ type AgentModelProviderEntry = {
     [key: string]: unknown;
   }>;
   apiKey?: string;
+  headers?: Record<string, string>;
+  timeoutSeconds?: number;
   /** When true, pi-ai sends Authorization: Bearer instead of x-api-key */
   authHeader?: boolean;
 };
@@ -3046,20 +3267,9 @@ async function updateModelsJsonProviderEntriesForAgents(
     const mergedModels = (entry.models ?? []).map((m) => {
       const prev = existingModels.find((e) => e.id === m.id);
       const base = prev ? { ...prev, id: m.id, name: m.name } : { ...m };
-      // Custom-provider rows need an explicit contextWindow so the embedded
-      // runner can budget compaction (see backfillCustomProviderModelContextWindows).
-      if (
-        providerType.startsWith('custom-')
-        && typeof base.contextWindow !== 'number'
-        && typeof base.contextTokens !== 'number'
-      ) {
-        base.contextWindow = inferCustomModelContextWindow(m.id, {
-          providerKey: providerType,
-          apiProtocol: entry.api,
-        });
-      }
       return {
         ...base,
+        input: base.input ?? m.input ?? inferCustomModelInputModalities(m.id),
         cost: normalizePiAiModelCost((base as { cost?: unknown }).cost),
       };
     });
@@ -3068,6 +3278,8 @@ async function updateModelsJsonProviderEntriesForAgents(
     if (entry.api !== undefined) existing.api = entry.api;
     if (mergedModels.length > 0) existing.models = mergedModels;
     if (entry.apiKey !== undefined) existing.apiKey = entry.apiKey;
+    if (entry.headers !== undefined) existing.headers = entry.headers;
+    if (entry.timeoutSeconds !== undefined) existing.timeoutSeconds = entry.timeoutSeconds;
     if (entry.authHeader !== undefined) existing.authHeader = entry.authHeader;
     ensureAnthropicMessagesProviderDefaults(existing, providerType);
 
@@ -3234,12 +3446,21 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     // ── plugins section ──────────────────────────────────────────────
+    // Channel-key migration must run even when plugins metadata is absent.
+    // Otherwise an imported official-connector config remains under the
+    // unsupported channels.dingtalk-connector key and is omitted from plugin
+    // recovery and the Channels UI.
+    if (migrateDingTalkChannelSection(config)) {
+      modified = true;
+      console.log('[sanitize] Normalized DingTalk channel config onto channels.dingtalk');
+    }
+
     // OpenClaw 2026.7.1 moved these formerly bundled channels to external
     // plugins. Recover old channel-only configs before plugin sanitization.
     let plugins = config.plugins;
     if (!plugins && isPlainRecord(config.channels)) {
       const channels = config.channels as Record<string, unknown>;
-      const externalChannelIds = ['discord', 'whatsapp', 'qqbot'].filter((channelId) => {
+      const externalChannelIds = ['discord', 'whatsapp', 'qqbot', DINGTALK_PLUGIN_ID].filter((channelId) => {
         const section = channels[channelId];
         return isPlainRecord(section) && section.enabled !== false && Object.keys(section).length > 0;
       });
@@ -3326,6 +3547,28 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     // plugins.entries.moonshot.config.webSearch. Migrate the old key and strip
     // any inline apiKey so auth-profiles/env remain the single source of truth.
     const providers = ((config.models as Record<string, unknown> | undefined)?.providers as Record<string, unknown> | undefined) || {};
+
+    // Older ClawX releases generated reasoning_effort="none" for custom Astra
+    // completions models. Astra no longer accepts that value, so repair those
+    // runtime entries before Gateway launch and seed the supported low default
+    // when an existing provider has no per-model effort yet.
+    for (const [providerKey, rawProvider] of Object.entries(providers)) {
+      if (!isPlainRecord(rawProvider)) continue;
+      const providerModels = Array.isArray(rawProvider.models) ? rawProvider.models : [];
+      const modelIds = providerModels.flatMap((model) => (
+        isPlainRecord(model) && typeof model.id === 'string' ? [model.id] : []
+      ));
+      if (ensureCustomAstraCompletionsReasoningEffort(
+        config,
+        providerKey,
+        typeof rawProvider.api === 'string' ? rawProvider.api : undefined,
+        modelIds,
+      )) {
+        modified = true;
+        console.log(`[sanitize] Set custom Astra reasoning effort to low for "${providerKey}"`);
+      }
+    }
+
     if (providers[OPENCLAW_PROVIDER_KEY_MOONSHOT]) {
       const tools = isPlainRecord(config.tools) ? config.tools : null;
       const web = tools && isPlainRecord(tools.web) ? tools.web : null;
@@ -3775,6 +4018,46 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         modified = true;
       }
 
+      // ── official DingTalk connector → dingtalk identity ─────────
+      if (migrateDingTalkPluginRegistrations(config)) {
+        modified = true;
+        console.log('[sanitize] Normalized DingTalk plugin registration onto dingtalk');
+      }
+      const dingtalkConfigured = Boolean(
+        (config.channels as Record<string, unknown> | undefined)?.[DINGTALK_PLUGIN_ID],
+      );
+      if (dingtalkConfigured) {
+        if (Array.isArray(pluginsObj.allow) && !(pluginsObj.allow as string[]).includes(DINGTALK_PLUGIN_ID)) {
+          (pluginsObj.allow as string[]).push(DINGTALK_PLUGIN_ID);
+          modified = true;
+        }
+        if (!pEntries[DINGTALK_PLUGIN_ID]) {
+          pEntries[DINGTALK_PLUGIN_ID] = { enabled: true };
+          modified = true;
+        } else if (pEntries[DINGTALK_PLUGIN_ID].enabled !== true) {
+          pEntries[DINGTALK_PLUGIN_ID].enabled = true;
+          modified = true;
+        }
+      } else {
+        if (Array.isArray(pluginsObj.allow)) {
+          const nextAllow = (pluginsObj.allow as string[]).filter((id) => (
+            id !== DINGTALK_PLUGIN_ID && id !== DINGTALK_OFFICIAL_PLUGIN_ID
+          ));
+          if (nextAllow.length !== (pluginsObj.allow as string[]).length) {
+            pluginsObj.allow = nextAllow;
+            modified = true;
+          }
+        }
+        if (pEntries[DINGTALK_PLUGIN_ID]) {
+          delete pEntries[DINGTALK_PLUGIN_ID];
+          modified = true;
+        }
+        if (pEntries[DINGTALK_OFFICIAL_PLUGIN_ID]) {
+          delete pEntries[DINGTALK_OFFICIAL_PLUGIN_ID];
+          modified = true;
+        }
+      }
+
       // ── external channel plugin registration cleanup ────────────
       // Channel account configuration belongs under channels.<id>. OpenClaw's
       // PluginEntryConfig rejects ClawX's legacy accounts/defaultAccount mirror.
@@ -4053,10 +4336,10 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     // there so the runtime can discover them.
     //
     // Channels whose top-level schema (additionalProperties:false) does NOT
-    // include `defaultAccount` but DOES include `accounts`.  Strip only
-    // `defaultAccount` to allow multi-account support.
+    // include `defaultAccount` but DOES include `accounts`. Official DingTalk
+    // 0.8.25 accepts `defaultAccount`, so nothing is stripped here.
     const channelsObj = config.channels as Record<string, Record<string, unknown>> | undefined;
-    const CHANNELS_OMIT_DEFAULT_ACCOUNT_KEY = new Set(['dingtalk']);
+    const CHANNELS_OMIT_DEFAULT_ACCOUNT_KEY = new Set<string>();
 
     if (channelsObj && typeof channelsObj === 'object') {
       for (const [channelType, section] of Object.entries(channelsObj)) {

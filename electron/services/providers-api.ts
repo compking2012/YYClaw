@@ -434,7 +434,7 @@ async function requestOAuth(payload: ProviderPayload<'requestOAuth'>) {
     label: typeof body.label === 'string' ? body.label : undefined,
   };
   try {
-    if (provider === 'openai') {
+    if (provider === 'openai' || provider === 'tokendance') {
       await browserOAuthManager.startFlow(provider as BrowserOAuthProviderType, options);
     } else {
       await deviceOAuthManager.startFlow(provider as OAuthProviderType, region, options);
@@ -474,7 +474,6 @@ async function submitOAuth(payload: ProviderPayload<'submitOAuth'>) {
 export function createProvidersApi(ctx: ProvidersApiContext): CompleteHostServiceRegistry['providers'] {
   const providerService = getProviderService();
   deviceOAuthManager.setWindow(ctx.mainWindow);
-  browserOAuthManager.setWindow(ctx.mainWindow);
 
   return {
     list: async () => providerService._listProvidersWithKeyInfoInternal(),

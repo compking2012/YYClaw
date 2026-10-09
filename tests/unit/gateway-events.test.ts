@@ -1249,7 +1249,10 @@ describe('gateway store event wiring', () => {
     firstList.resolve({ ts: 10, sessions: [{ key: 'agent:main:old', status: 'running' }] });
     await ordinaryLoad;
     await vi.waitFor(() => expect(listCalls).toBe(2));
-    expect(useChatStore.getState().sessions).toEqual([expect.objectContaining({ key: 'agent:main:main', status: 'done' })]);
+    expect(useChatStore.getState().sessions).toEqual(expect.arrayContaining([expect.objectContaining({ key: 'agent:main:main', status: 'done' })]));
+    expect(useChatStore.getState().sessions.some((session) => session.key === 'agent:main:old')).toBe(false);
+    expect(useChatStore.getState().sessions.filter((session) => session.key !== 'agent:main:main'))
+      .toEqual([expect.objectContaining({ createdLocally: true, key: expect.stringMatching(/^agent:main:session-/) })]);
   });
 
   it('routes sessions.changed through the generic notification handler', async () => {

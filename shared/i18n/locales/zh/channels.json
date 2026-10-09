@@ -32,7 +32,9 @@
         "defaultUpdated": "默认账号已更新",
         "accountDeleted": "账号已删除",
         "channelDeleted": "频道已删除",
-        "feishuAppDisabled": "已停用对应的飞书应用，请到飞书开发者后台手动删除。"
+        "feishuAppDisabled": "已停用对应的飞书应用，请到飞书开发者后台手动删除。",
+        "dingtalkWorkspaceAuthReset": "已取消钉钉办公能力授权",
+        "dingtalkWorkspaceAuthResetFailed": "无法取消钉钉办公能力授权"
     },
     "account": {
         "add": "添加账号",
@@ -65,7 +67,11 @@
             "error": "异常"
         },
         "accountIdPrompt": "请输入该频道的新账号 ID",
-        "accountIdExists": "账号 ID {{accountId}} 已存在"
+        "accountIdExists": "账号 ID {{accountId}} 已存在",
+        "authorizeWorkspace": "授权办公能力",
+        "resetWorkspaceAuth": "取消办公授权",
+        "resetWorkspaceAuthConfirm": "确定取消本机保存的钉钉办公能力授权吗？此授权由已配置的钉钉账号共享；取消后基础聊天仍可使用，但日历、文档、待办等办公能力需要重新授权。",
+        "resetWorkspaceAuthConfirmAction": "取消授权"
     },
     "dialog": {
         "updateTitle": "更新 {{name}}",
@@ -96,7 +102,38 @@
         "generateQRCode": "生成二维码",
         "updateAndReconnect": "更新并重新连接",
         "saveAndConnect": "保存并连接",
-        "envVar": "环境变量: {{var}}"
+        "envVar": "环境变量: {{var}}",
+        "dingtalkWorkspaceAuthTitle": "授权钉钉办公能力",
+        "dingtalkWorkspaceAuthDescription": "机器人已连接。授权后可使用日历、文档、待办等钉钉办公能力；此步骤不会影响基础聊天。",
+        "dingtalkWorkspaceAuthStarting": "正在准备安全的钉钉授权…",
+        "dingtalkWorkspaceAuthCodeHint": "请在钉钉授权页面确认以下授权码：",
+        "dingtalkWorkspaceAuthOpen": "打开钉钉授权",
+        "dingtalkWorkspaceAuthWaiting": "正在等待授权。你也可以暂时跳过，仅使用聊天功能。",
+        "dingtalkWorkspaceAuthSkip": "暂不授权",
+        "dingtalkWorkspaceAuthStart": "立即授权",
+        "dingtalkWorkspaceAuthRetry": "重试",
+        "dingtalkWorkspaceAuthSuccess": "钉钉办公能力授权成功",
+        "dingtalkWorkspaceAuthErrors": {
+            "unavailable": "钉钉工作台工具当前不可用，你可以暂时仅使用聊天功能。",
+            "authorization_expired": "授权码已过期，请生成新授权码后重试。",
+            "authorization_start_timeout": "未能及时获取钉钉授权码，请重试。",
+            "authorization_not_completed": "钉钉授权尚未完成，请重试。",
+            "authorization_user_not_allowed": "当前钉钉用户不在该应用的可用范围内，请在开发者后台调整应用可用范围。",
+            "authorization_denied": "你取消或拒绝了钉钉授权，请重试并确认授权。",
+            "authorization_invalid_client": "钉钉应用凭证无法用于 OAuth，请检查 Client ID、Client Secret 和应用配置。",
+            "authorization_org_cli_disabled": "当前组织尚未开启 CLI 数据访问权限，请由组织主管理员在钉钉开发者后台开启“允许成员通过 CLI 访问其个人数据”。",
+            "authorization_permission_denied": "钉钉应用缺少所需权限或管理员尚未批准，请在开发者后台开通权限。",
+            "authorization_network_error": "连接钉钉授权服务失败，请检查网络或代理设置后重试。",
+            "authorization_failed": "钉钉办公能力授权失败，请重试或暂时仅使用聊天功能。"
+        },
+        "validationErrors": {
+            "feishuAppIdRequired": "请填写 App ID。",
+            "feishuAppSecretRequired": "请填写 App Secret。",
+            "feishuAppSecretReenter": "请重新输入 App Secret 后再更新。Gateway 运行时不会回显已保存的密钥。",
+            "feishuAppSecretEqualsAppId": "App Secret 与 App ID 相同。请到飞书开发者后台 → 凭证与基础信息 复制 App Secret。",
+            "feishuRejected": "飞书拒绝了该凭证：{{error}}。请核对开发者后台中的 App ID / App Secret。",
+            "feishuConnectionError": "无法连接飞书验证凭证：{{error}}"
+        }
     },
     "health": {
         "state": {
@@ -110,7 +147,11 @@
             "rpc_timeout": "最近的网关 RPC 调用发生超时。",
             "gateway_not_running": "网关当前未运行。",
             "gateway_error": "网关当前处于错误状态。",
-            "runtime_error": "频道运行时返回了错误。"
+            "runtime_error": "频道运行时返回了错误。",
+            "gateway_verifying": "ClawX 正在验证网关响应。",
+            "external_gateway_unavailable": "外部管理的网关当前不可用。",
+            "dingtalk_dws_missing": "聊天可用。日历、文档等办公技能需要已随包提供的钉钉工作台 CLI（dws）。",
+            "dingtalk_dws_auth_required": "聊天可用。日历、文档等办公技能还需要完成钉钉工作台授权。"
         },
         "restartGateway": "重启网关",
         "copyDiagnostics": "复制诊断快照",
@@ -120,7 +161,13 @@
         "diagnosticsCopied": "诊断快照已复制到剪贴板",
         "diagnosticsCopyFailed": "收集诊断快照失败：{{error}}",
         "restartTriggered": "已请求重启网关",
-        "restartFailed": "重启网关失败：{{error}}"
+        "restartFailed": "重启网关失败：{{error}}",
+        "recovery": {
+            "verifying": "ClawX 正在验证网关响应。",
+            "restart-pending": "ClawX 正在等待重启其网关。",
+            "restart-executing": "ClawX 正在重启其网关。",
+            "external-unavailable": "外部管理的网关当前不可用。ClawX 正在重连；如有需要，请使用“重启网关”。"
+        }
     },
     "meta": {
         "telegram": {
@@ -194,7 +241,7 @@
             ]
         },
         "dingtalk": {
-            "description": "通过 OpenClaw 渠道插件连接钉钉（Stream 模式）",
+            "description": "通过官方 OpenClaw 连接器接入钉钉（Stream 聊天）。日历、文档等办公技能使用随包提供的 dws CLI。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnr8KfaA2mNPeQUeHO83eDPh",
             "fields": {
                 "clientId": {
@@ -207,9 +254,10 @@
                 }
             },
             "instructions": [
-                "先在 OpenClaw 安装并启用 dingtalk 插件",
+                "ClawX 会安装官方钉钉连接器，并继续使用现有的 dingtalk 频道身份",
                 "在钉钉开发者后台创建企业内部应用并开启 Stream 模式",
-                "填写 Client ID (AppKey) 和 Client Secret (AppSecret)"
+                "填写 Client ID (AppKey) 和 Client Secret (AppSecret)",
+                "聊天可立即使用；日历、文档和待办需要完成钉钉工作台授权（dws）"
             ]
         },
         "feishu": {
@@ -253,7 +301,7 @@
             ]
         },
         "qqbot": {
-            "description": "连接 QQ 机器人频道（OpenClaw 3.31 起内置）",
+            "description": "连接 QQ 机器人频道",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/KPIJwlyiGiupMrkiS9ice39Zn2c",
             "fields": {
                 "appId": {
@@ -288,9 +336,9 @@
         "iconLabel": "应用图标 (可选)",
         "iconRequirement": "支持 JPEG/PNG/SVG/BMP 格式，2 MB 以内，大于 240*240 px，无圆角",
         "botMenu": {
-          "title": "机器人快捷指令菜单",
-          "menuLabel": "快捷指令",
-          "description": "创建后将自动为机器人配置「快捷指令」菜单，点击菜单项即可向 OpenClaw 发送对应命令："
+            "title": "机器人快捷指令菜单",
+            "menuLabel": "快捷指令",
+            "description": "创建后将自动为机器人配置「快捷指令」菜单，点击菜单项即可向 OpenClaw 发送对应命令："
         },
         "iconTooLarge": "图标大小不能超过 2MB",
         "selectExisting": "选取已有应用",

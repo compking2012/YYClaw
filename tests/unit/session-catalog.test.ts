@@ -158,6 +158,31 @@ describe('Gateway session catalog projection', () => {
     }]);
   });
 
+  it('retains native subagent rows in the catalog while applying status updates', () => {
+    const childKey = 'agent:main:subagent:child-1';
+    const inserted = applyGatewaySessionsChanged(
+      [],
+      {
+        sessionKey: childKey,
+        ts: 10,
+        session: { key: childKey, status: 'running', hasActiveRun: true },
+      },
+      new Map(),
+    );
+    const settled = applyGatewaySessionsChanged(
+      inserted.sessions,
+      {
+        sessionKey: childKey,
+        ts: 11,
+        session: { key: childKey, status: 'done', hasActiveRun: false },
+      },
+      new Map(),
+    );
+
+    expect(inserted.sessions).toEqual([{ key: childKey, status: 'running', hasActiveRun: true }]);
+    expect(settled.sessions).toEqual([{ key: childKey, status: 'done', hasActiveRun: false }]);
+  });
+
   it('does not insert hidden legacy office sessions', () => {
     const officeKey = 'agent:pm:office:task:proj-1:role:dev:node:gen-0';
     const result = applyGatewaySessionsChanged(

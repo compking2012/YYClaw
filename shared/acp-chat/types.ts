@@ -11,15 +11,41 @@ export type AcpSessionKeyPayload = {
   sessionKey: string;
 };
 
+export type AcpSessionFamilyPayload = AcpSessionKeyPayload;
+
+export type AcpSessionFamilyMember = {
+  sessionKey: string;
+  title: string;
+  updatedAt: string | null;
+  parentSessionKey: string | null;
+};
+
+export type AcpSessionFamilyResult =
+  | {
+    success: true;
+    current: AcpSessionFamilyMember | null;
+    children: AcpSessionFamilyMember[];
+    error?: never;
+  }
+  | {
+    success: false;
+    current: null;
+    children: [];
+    error: string;
+  };
+
 export type AcpChatLoadPayload = AcpSessionKeyPayload & {
   workspaceRoot: string;
   cwd: string;
   createIfMissing?: boolean;
+  /** ClawX-internal: obtain an authoritative Gateway transcript through a fresh ACP session. */
+  forceDurableReplay?: true;
 };
 
 export type AcpPromptMediaItem = {
   filePath: string;
   stagingId: string;
+  sourceKind?: 'path' | 'buffer';
   fileName?: string;
   mimeType?: string;
 };

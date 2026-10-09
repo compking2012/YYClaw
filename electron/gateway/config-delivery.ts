@@ -6,13 +6,20 @@ import { isDeepStrictEqual } from 'node:util';
 import JSON5 from 'json5';
 import type { GatewayManager } from './manager';
 import { withConfigLock } from '../utils/config-mutex';
+import { logger } from '../utils/logger';
 import { resolveOpenClawConfigPath } from '../utils/paths';
+import { decryptJson } from '../utils/crypto-helper';
 
 export type OpenClawConfig = Record<string, unknown>;
 /** Mutators may be replayed after a compare-and-swap conflict and must not perform external writes. */
 export type OpenClawConfigMutator = (
   config: OpenClawConfig,
 ) => void | Promise<void>;
+/** Runs inside the serialized transaction before each pure mutator application. */
+export type OpenClawConfigBeforeApply = () => void | Promise<void>;
+export type OpenClawConfigMutationOptions = {
+  beforeApply?: OpenClawConfigBeforeApply;
+};
 
 type ConfigDeliveryGatewayManager = Pick<GatewayManager, 'getStatus' | 'rpc'>;
 
@@ -42,6 +49,11 @@ let gatewayManager: ConfigDeliveryGatewayManager | undefined;
 let transactionTail: Promise<void> = Promise.resolve();
 const activeMutation = new AsyncLocalStorage<ActiveMutationContext>();
 
+/** Placeholder OpenClaw substitutes for sensitive values in `config.get` snapshots. */
+export const OPENCLAW_REDACTED_SENTINEL = '__OPENCLAW_REDACTED__';
+/** `meta` fields OpenClaw stamps automatically on every config write. */
+const OPENCLAW_AUTO_MANAGED_META_FIELDS = ['lastTouchedAt', 'lastTouchedVersion'] as const;
+
 function parseConfig(raw: string): OpenClawConfig {
   const parsed = JSON5.parse(raw) as unknown;
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -70,23 +82,118 @@ function isBaseHashConflict(error: unknown): boolean {
   return /config changed since last load; re-run config\.get and retry/i.test(message);
 }
 
-function isConfigSetResponseLost(error: unknown): boolean {
+/**
+ * The Gateway socket went away underneath an RPC: stopped, never connected, or
+ * an OpenClaw code-1012 in-process restart (typically triggered by an earlier
+ * config commit). The request outcome is unknown, but nothing else writes the
+ * config file while the Gateway is down.
+ */
+function isGatewayUnavailableError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return message.includes('RPC timeout: config.set')
-    || message.includes('Gateway stopped')
+  return message.includes('Gateway stopped')
     || message.includes('Gateway not connected')
     || message.includes('Gateway service restart')
     || message.includes('Failed to send RPC request:');
 }
 
+function isConfigSetResponseLost(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('RPC timeout: config.set') || isGatewayUnavailableError(error);
+}
+
+function stripAutoManagedMeta(config: OpenClawConfig): OpenClawConfig {
+  const clone = structuredClone(config);
+  const meta = clone.meta;
+  if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
+    const nextMeta: Record<string, unknown> = { ...(meta as Record<string, unknown>) };
+    for (const field of OPENCLAW_AUTO_MANAGED_META_FIELDS) delete nextMeta[field];
+    if (Object.keys(nextMeta).length === 0) {
+      delete clone.meta;
+    } else {
+      clone.meta = nextMeta;
+    }
+  }
+  return clone;
+}
+
+/**
+ * Compare what ClawX submitted through `config.set` with what OpenClaw persisted.
+ * `config.get` redacts sensitive values to a sentinel that `config.set` restores
+ * from its base snapshot, so a sentinel on the submitted side matches any real
+ * persisted value.
+ */
+function isPersistedValueEquivalent(persisted: unknown, submitted: unknown): boolean {
+  if (submitted === OPENCLAW_REDACTED_SENTINEL) {
+    return persisted !== undefined && persisted !== null;
+  }
+  if (Array.isArray(submitted)) {
+    return Array.isArray(persisted)
+      && persisted.length === submitted.length
+      && submitted.every((item, index) => isPersistedValueEquivalent(persisted[index], item));
+  }
+  if (submitted && typeof submitted === 'object') {
+    if (!persisted || typeof persisted !== 'object' || Array.isArray(persisted)) return false;
+    const submittedRecord = submitted as Record<string, unknown>;
+    const persistedRecord = persisted as Record<string, unknown>;
+    const keys = new Set([...Object.keys(submittedRecord), ...Object.keys(persistedRecord)]);
+    for (const key of keys) {
+      if (!isPersistedValueEquivalent(persistedRecord[key], submittedRecord[key])) return false;
+    }
+    return true;
+  }
+  return isDeepStrictEqual(persisted, submitted);
+}
+
+export function isPersistedConfigSetCommitEquivalent(
+  persisted: OpenClawConfig,
+  submitted: OpenClawConfig,
+): boolean {
+  return isPersistedValueEquivalent(stripAutoManagedMeta(persisted), stripAutoManagedMeta(submitted));
+}
+
+/**
+ * A mutator that started from a redacted `config.get` snapshot can write
+ * `__OPENCLAW_REDACTED__` over real secrets when it is replayed against the
+ * durable file. Put the file's original values back before persisting.
+ */
+export function restoreRedactedSentinelsFromBaseline(current: unknown, baseline: unknown): void {
+  if (Array.isArray(current) && Array.isArray(baseline)) {
+    const length = Math.min(current.length, baseline.length);
+    for (let index = 0; index < length; index += 1) {
+      if (current[index] === OPENCLAW_REDACTED_SENTINEL) {
+        current[index] = baseline[index];
+      } else {
+        restoreRedactedSentinelsFromBaseline(current[index], baseline[index]);
+      }
+    }
+    return;
+  }
+  if (
+    !current || typeof current !== 'object' || Array.isArray(current)
+    || !baseline || typeof baseline !== 'object' || Array.isArray(baseline)
+  ) {
+    return;
+  }
+  const currentRecord = current as Record<string, unknown>;
+  const baselineRecord = baseline as Record<string, unknown>;
+  for (const key of Object.keys(currentRecord)) {
+    if (currentRecord[key] === OPENCLAW_REDACTED_SENTINEL && key in baselineRecord) {
+      currentRecord[key] = baselineRecord[key];
+    } else {
+      restoreRedactedSentinelsFromBaseline(currentRecord[key], baselineRecord[key]);
+    }
+  }
+}
+
 async function acceptPersistedConfigSetCommitIfMatched(config: OpenClawConfig): Promise<boolean> {
   const persisted = await readFileConfig(resolveOpenClawConfigPath());
-  return isDeepStrictEqual(persisted.config, config);
+  return isPersistedConfigSetCommitEquivalent(persisted.config, config);
 }
 
 async function mutateRunningConfig(
   manager: ConfigDeliveryGatewayManager,
   mutator: OpenClawConfigMutator,
+  options: OpenClawConfigMutationOptions,
 ): Promise<boolean> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const snapshot = await manager.rpc<ConfigSnapshot>('config.get', {});
@@ -96,6 +203,7 @@ async function mutateRunningConfig(
     }
 
     const config = parseRunningConfigSnapshot(snapshot);
+    await options.beforeApply?.();
     if (!await applyMutator(config, mutator, true)) return false;
 
     try {
@@ -146,14 +254,37 @@ async function applyNestedMutator(
 }
 
 async function readFileConfig(configPath: string): Promise<FileConfigSnapshot> {
-  try {
-    const raw = await readFile(configPath, 'utf8');
-    return { config: parseConfig(raw), raw };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { config: {}, raw: undefined };
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      const raw = await readFile(configPath, 'utf8');
+      if (raw.startsWith('CLAWX_ENCRYPTED_v1:')) {
+        const { getSetting } = await import('../utils/store');
+        const configKey = await getSetting('configKey');
+        if (!configKey) throw new Error('Missing key for encrypted OpenClaw config');
+        return { config: parseConfig(JSON.stringify(decryptJson(raw, configKey))), raw };
+      }
+      return { config: parseConfig(raw), raw };
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const retriable = error instanceof SyntaxError
+        || ['EPERM', 'EBUSY', 'EACCES', 'ENOENT', 'EMFILE'].includes(code ?? '');
+      if (retriable && attempt < 4) {
+        await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+        continue;
+      }
+      if (code === 'ENOENT') return { config: {}, raw: undefined };
+      throw error;
     }
-    throw error;
+  }
+  throw new Error('Failed to read durable OpenClaw config');
+}
+
+export function assertNoRedactedSentinels(value: unknown): void {
+  if (value === OPENCLAW_REDACTED_SENTINEL) {
+    throw new Error('Cannot save redacted OpenClaw credentials without a durable value; re-enter the credential');
+  }
+  if (value && typeof value === 'object') {
+    for (const child of Object.values(value)) assertNoRedactedSentinels(child);
   }
 }
 
@@ -177,15 +308,21 @@ async function removeTemporaryFile(temporaryPath: string): Promise<void> {
 async function mutateFileConfig(
   manager: ConfigDeliveryGatewayManager | undefined,
   mutator: OpenClawConfigMutator,
+  options: OpenClawConfigMutationOptions,
 ): Promise<boolean> {
   return await withConfigLock(async () => {
     const configPath = resolveOpenClawConfigPath();
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const snapshot = await readFileConfig(configPath);
-      const changed = await applyMutator(snapshot.config, mutator, snapshot.raw !== undefined);
+      const durableBaseline = structuredClone(snapshot.config);
+      await options.beforeApply?.();
+      await applyMutator(snapshot.config, mutator, snapshot.raw !== undefined);
+      restoreRedactedSentinelsFromBaseline(snapshot.config, durableBaseline);
+      assertNoRedactedSentinels(snapshot.config);
+      const changed = !isDeepStrictEqual(snapshot.config, durableBaseline);
 
       if (manager?.getStatus().state === 'running') {
-        return await mutateRunningConfig(manager, mutator);
+        return await mutateRunningConfig(manager, mutator, options);
       }
       if (!changed) return false;
 
@@ -199,12 +336,12 @@ async function mutateFileConfig(
 
       try {
         if (manager?.getStatus().state === 'running') {
-          return await mutateRunningConfig(manager, mutator);
+          return await mutateRunningConfig(manager, mutator, options);
         }
 
         const currentRaw = await readFileRaw(configPath);
         if (manager?.getStatus().state === 'running') {
-          return await mutateRunningConfig(manager, mutator);
+          return await mutateRunningConfig(manager, mutator, options);
         }
         if (currentRaw !== snapshot.raw) {
           if (attempt === 0) continue;
@@ -222,19 +359,39 @@ async function mutateFileConfig(
   });
 }
 
-async function runMutation(mutator: OpenClawConfigMutator): Promise<boolean> {
+async function runMutation(
+  mutator: OpenClawConfigMutator,
+  options: OpenClawConfigMutationOptions,
+): Promise<boolean> {
   const manager = gatewayManager;
   if (manager?.getStatus().state === 'running') {
-    return await mutateRunningConfig(manager, mutator);
+    try {
+      return await mutateRunningConfig(manager, mutator, options);
+    } catch (error) {
+      if (!isGatewayUnavailableError(error)) throw error;
+      // The socket dropped mid-transaction (usually a code-1012 reload caused by
+      // this or a previous commit). Mutators are pure and replayable, so apply
+      // it again against the durable file: an already-landed commit becomes a
+      // no-op, a lost one is written by ClawX, and the file path switches back
+      // to RPC by itself once the Gateway is running again.
+      logger.info(
+        `[config-delivery] Gateway unavailable during running mutation; replaying through file path (${error instanceof Error ? error.message : String(error)})`,
+      );
+    }
   }
-  return await mutateFileConfig(manager, mutator);
+  return await mutateFileConfig(manager, mutator, options);
 }
 
 async function runRead(): Promise<OpenClawConfigSnapshot> {
   const manager = gatewayManager;
   if (manager?.getStatus().state === 'running') {
-    const snapshot = await manager.rpc<ConfigSnapshot>('config.get', {});
-    return { config: parseRunningConfigSnapshot(snapshot), exists: true };
+    try {
+      const snapshot = await manager.rpc<ConfigSnapshot>('config.get', {});
+      return { config: parseRunningConfigSnapshot(snapshot), exists: true };
+    } catch (error) {
+      if (!isGatewayUnavailableError(error)) throw error;
+      // Fall through to the durable file; the Gateway restarts from that same file.
+    }
   }
 
   const snapshot = await readFileConfig(resolveOpenClawConfigPath());
@@ -256,6 +413,7 @@ export function registerOpenClawConfigCoordinator(
 
 export function mutateOpenClawConfig(
   mutator: OpenClawConfigMutator,
+  options: OpenClawConfigMutationOptions = {},
 ): Promise<boolean> {
   const context = activeMutation.getStore();
   if (context?.active) {
@@ -263,14 +421,22 @@ export function mutateOpenClawConfig(
   }
 
   const transaction = transactionTail.then(
-    () => runMutation(mutator),
-    () => runMutation(mutator),
+    () => runMutation(mutator, options),
+    () => runMutation(mutator, options),
   );
   transactionTail = transaction.then(
     () => undefined,
     () => undefined,
   );
   return transaction;
+}
+
+/** Always read the on-disk config, never a redacted `config.get` snapshot. */
+export async function readDurableOpenClawConfig(
+  configPath: string = resolveOpenClawConfigPath(),
+): Promise<OpenClawConfig> {
+  const snapshot = await readFileConfig(configPath);
+  return snapshot.config;
 }
 
 export function readOpenClawConfigSnapshot(): Promise<OpenClawConfigSnapshot> {

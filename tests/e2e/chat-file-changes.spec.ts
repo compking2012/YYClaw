@@ -208,7 +208,16 @@ async function installFileActivityMocks(app: ElectronApplication, options: {
         const message = String(request.payload?.message ?? '');
         const updates = (payload.liveByPrompt as Record<string, AcpSessionUpdate[]>)[message] ?? [];
         if (sessionKey === activeSessionKey) {
-          setTimeout(() => sendUpdates(sessionKey, promptGeneration, false, updates), payload.liveDelayMs);
+          await new Promise((resolve) => setTimeout(resolve, payload.liveDelayMs));
+          sendUpdates(sessionKey, promptGeneration, false, updates);
+          if (sessionKey === activeSessionKey) {
+            const messageId = String(request.payload?.messageId ?? `fixture-user-${promptGeneration}`);
+            replayBySession.set(sessionKey, [
+              ...(replayBySession.get(sessionKey) ?? []),
+              user(messageId, message),
+              ...updates,
+            ]);
+          }
         }
         return { id: request.id, ok: true, data: { success: true, generation: promptGeneration } };
       }
@@ -615,6 +624,59 @@ test.describe('ClawX chat file changes', () => {
         || request.module === 'shell'
       ))).toEqual([]);
       expect(await getRecordedLegacyIpcInvocations(app)).toEqual([]);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('keeps tool cards and file activity aligned with assistant prose in a wide transcript', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    try {
+      await installFileActivityMocks(app, {
+        liveByPrompt: {
+          'Create aligned file': [
+            ...writeSequence('write-align', 'src/aligned.ts', 'one\ntwo\n'),
+            {
+              sessionUpdate: 'agent_message_chunk',
+              messageId: 'align-assistant',
+              content: {
+                type: 'text',
+                text: [
+                  '## Result',
+                  '',
+                  '| File | Status |',
+                  '| --- | --- |',
+                  '| src/aligned.ts | created |',
+                  '',
+                  'The write finished successfully.',
+                ].join('\n'),
+              },
+            },
+          ],
+        },
+      });
+      const page = await openChat(app);
+      await page.setViewportSize({ width: 1600, height: 900 });
+      await sendPrompt(page, 'Create aligned file');
+
+      const turn = page.getByTestId('acp-assistant-turn');
+      const message = turn.getByTestId('acp-assistant-message');
+      const files = turn.getByTestId('acp-turn-file-activity');
+      await expect(message).toContainText('The write finished successfully.', { timeout: 30_000 });
+      await expect(files).toBeVisible();
+      await expectVisibleToolCallCards(page, 1);
+      const tool = turn.getByTestId('acp-tool-call-card');
+
+      await expect.poll(async () => {
+        const boxes = await Promise.all([
+          message.boundingBox(),
+          tool.boundingBox(),
+          files.boundingBox(),
+        ]);
+        if (boxes.some((box) => !box)) return false;
+        const widths = boxes.map((box) => box!.width);
+        return Math.min(...widths) > 600 && Math.max(...widths) - Math.min(...widths) <= 2;
+      }).toBe(true);
     } finally {
       await closeElectronApp(app);
     }

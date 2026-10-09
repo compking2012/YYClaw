@@ -1,6 +1,7 @@
 const ACP_WORKING_DIRECTORY_PREFIX = /^\[Working directory: [^\r\n]*\](?:\r?\n){0,2}/
 const ACP_WORKING_DIRECTORY_TRUNCATED_TITLE = /^\[Working directory: [^\r\n]*\]…$/
 const OPENCLAW_SESSION_ID_FALLBACK_TITLE = /^([0-9a-f]{8}) \((\d{4}-\d{2}-\d{2})\)$/i
+const GATEWAY_ACP_PLACEHOLDER_DISPLAY_NAME = 'ACP'
 
 export type SessionTitleSource = {
   key: string
@@ -18,6 +19,10 @@ export function isAcpWorkingDirectoryTruncatedTitle(text: string): boolean {
   return ACP_WORKING_DIRECTORY_TRUNCATED_TITLE.test(text.trim())
 }
 
+export function isGatewayAcpPlaceholderDisplayName(text: string): boolean {
+  return text.trim() === GATEWAY_ACP_PLACEHOLDER_DISPLAY_NAME
+}
+
 export function isOpenClawSessionIdFallbackTitle(
   text: string,
   sessionId: string | null | undefined,
@@ -33,14 +38,26 @@ export function getSessionDisplayTitle(
   session: SessionTitleSource,
   sessionLabels: Record<string, string> = {},
 ): string {
-  const candidates = [
-    sessionLabels[session.key],
-    session.label,
-    session.derivedTitle,
-    session.displayName,
-  ]
-  return candidates.find((candidate) => (
+  const explicitTitle = [sessionLabels[session.key], session.label].find((candidate) => (
     candidate?.trim()
     && !isOpenClawSessionIdFallbackTitle(candidate, session.sessionId)
-  ))?.trim() ?? session.key
+  ))?.trim()
+  if (explicitTitle) return explicitTitle
+
+  const automaticCandidates: Array<[string | undefined, boolean]> = [
+    [session.derivedTitle, false],
+    [session.displayName, true],
+  ]
+  for (const [candidate, isDisplayName] of automaticCandidates) {
+    if (!candidate?.trim()
+      || (isDisplayName && isGatewayAcpPlaceholderDisplayName(candidate))
+      || isAcpWorkingDirectoryTruncatedTitle(candidate)
+      || isOpenClawSessionIdFallbackTitle(candidate, session.sessionId)) {
+      continue
+    }
+    const automaticTitle = stripAcpWorkingDirectoryPrefix(candidate).trim()
+    if (automaticTitle) return automaticTitle
+  }
+
+  return session.key
 }

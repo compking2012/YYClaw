@@ -5,7 +5,7 @@
  *
  * Build a self-contained mirror of OpenClaw third-party plugins for packaging.
  * Current plugins:
- *   - @soimy/dingtalk -> build/openclaw-plugins/dingtalk
+ *   - @dingtalk-real-ai/dingtalk-connector -> build/openclaw-plugins/dingtalk
  *   - @wecom/wecom-openclaw-plugin -> build/openclaw-plugins/wecom
  *   - @tencent-weixin/openclaw-weixin -> build/openclaw-plugins/openclaw-weixin
  *   - @openclaw/tokenjuice -> build/openclaw-plugins/tokenjuice
@@ -52,7 +52,7 @@ function calculateHash() {
 const currentHash = calculateHash();
 
 const PLUGINS = [
-  { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
+  { npmName: '@dingtalk-real-ai/dingtalk-connector', pluginId: 'dingtalk' },
   { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
   { npmName: '@larksuite/openclaw-lark', pluginId: 'openclaw-lark' },
   { npmName: '@tencent-weixin/openclaw-weixin', pluginId: 'openclaw-weixin' },

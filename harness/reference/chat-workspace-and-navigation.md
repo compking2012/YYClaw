@@ -1,12 +1,12 @@
 # Chat Workspace And Navigation
 
-Status: current workspace reference, reviewed 2026-07-23.
+Status: current workspace reference, reviewed 2026-09-01.
 
 Related scenario: `chat-workspace-and-navigation`
 
 Related rules: `session-workspace-authority`, `sidebar-session-attention-authority`, `ui-i18n-design-tokens`, `office-preview-safety`, `web-browser-security-and-lifecycle`
 
-Related tasks: `chat-workspace-context`, `sidebar-session-attention`, `office-document-preview`, `web-browser`
+Related tasks: `chat-workspace-context`, `fix-default-main-cwd-title`, `sidebar-session-attention`, `office-document-preview`, `web-browser`, `embed-subagent-sessions-in-parent-chat`
 
 ## Workspace Authority
 
@@ -18,13 +18,13 @@ OpenClaw's persisted ACP `cwd` is authoritative for a bound session. The global 
 
 The effective workspace is shared by ACP load/prompt, the composer, sidebar grouping, the right-side workspace browser, and tool-derived file activity. A bound session is read-only in the composer and is not moved when the global selection changes. Missing or unreadable bound paths show unavailable/error state instead of silently changing roots.
 
-ClawX persists global and recent workspace selections plus custom display labels through Main-owned settings APIs. On editable new or unbound chats, the composer menu shows the canonical default once, followed by deduplicated non-default workspaces from the most-recent list and known session paths, then the native folder picker. Recent entries stay first; all entries use custom display labels when available, keep the full path as hover text, and update only the global selection until first send binds the session. Custom labels are keyed by canonical path and never replace path identity or ACP cwd authority. Renderer session state may mirror the bound path for UI coordination, but must not become a competing persistent session-to-path authority. Targeted `@agent` sends intentionally use the target agent workspace and remain an explicit branch. Navigation records that workspace on the target session placeholder before reactive loading; a newly targeted agent's first send creates its main ACP session and shares one load identity with the prompt so navigation cannot supersede delivery.
+ClawX persists global and recent workspace selections plus custom display labels through Main-owned settings APIs. On editable new or unbound chats, the composer menu shows the canonical default once, followed by deduplicated non-default workspaces from the most-recent list and known session paths, then the native folder picker. Recent entries stay first; all entries use custom display labels when available, keep the full path as hover text, and update only the global selection until first send binds the session. When Agent deletion successfully removes a ClawX-managed workspace, its recent entry and custom label are removed as well, and a matching global selection resets to the default workspace. Chat also validates historical recent entries that are neither selected nor referenced by an Agent or conversation and removes those confirmed unavailable, while existing or referenced unmanaged workspaces remain intact. Custom labels are keyed by canonical path and never replace path identity or ACP cwd authority. Renderer session state may mirror the bound path for UI coordination, but must not become a competing persistent session-to-path authority. Targeted `@agent` sends intentionally use the target agent workspace and remain an explicit branch. Navigation records that workspace on the target session placeholder before reactive loading; a newly targeted agent's first send creates its main ACP session and shares one load identity with the prompt so navigation cannot supersede delivery.
 
 ## First Send And Titles
 
 First send initializes the ACP session with the selected cwd and then marks the local session as created/bound. A fresh session generated at cold start to replace hidden heartbeat history is marked as the same kind of local placeholder; it cannot appear as a normal empty session or bypass first-send creation. Gateway event and canonical-list reconciliation preserve the local `createdLocally` marker until acknowledgement, even when OpenClaw already reports the same key with the ACP bridge display name. The acknowledgement atomically restores a raced-away placeholder when necessary, clears the marker, and seeds a missing automatic sidebar title from the raw first prompt. The newly visible row therefore never falls back to the bridge client identity while transcript title hydration catches up. Existing explicit or cached labels win. ACP keeps `_meta.prefixCwd: true`; disabling cwd injection would break OpenClaw context. Automatic titles instead normalize away one leading `[Working directory: ...]` envelope and subsequent whitespace.
 
-Normalization applies to automatic sources such as Gateway-derived title and Main transcript summary. It never changes an explicit user label, never removes a non-leading marker, and treats the exact truncated envelope form as a missing title so a better summary can replace it. OpenClaw's synthetic `<first 8 session UUID characters> (YYYY-MM-DD)` fallback is also treated as missing only when it matches the row's full session id; Main's transcript summary then supplies the first user prompt. Opening and closing rename mode without changing the value must not persist any displayed fallback as an explicit label.
+Normalization applies to automatic sources such as Gateway-derived title and Main transcript summary. It never changes an explicit user label, never removes a non-leading marker, and treats the exact truncated envelope form as a missing title so a better summary can replace it. This summary repair also applies to the canonical `agent:main:main` conversation after its default workspace is known; workspace hydration must not suppress title hydration. OpenClaw's synthetic `<first 8 session UUID characters> (YYYY-MM-DD)` fallback is also treated as missing only when it matches the row's full session id; Main's transcript summary then supplies the first user prompt. Opening and closing rename mode without changing the value must not persist any displayed fallback as an explicit label.
 
 ## Sidebar Navigation
 
@@ -36,6 +36,8 @@ Sessions are grouped by workspace, not by date bucket. The default workspace sor
 4. Zero.
 
 Each group initially displays five sessions and loads five more at a time. Collapse and visible-count state are per workspace and in memory. Relative time and ordering use the same timestamp; actions replace the timestamp on hover or keyboard focus.
+
+An exact canonical `agent:<agentId>:subagent:<childId>` row is hidden from sidebar presentation and visible workspace counts. This filtering is presentation-only: the row remains in the shared session catalog for exact-key status and attention, direct navigation, and unavailable-workspace cleanup. For embedded child titles only, ClawX removes one leading `[Subagent Context]` marker from the rendered ACP title. This is never a session-data mutation, and keys such as `agent:<agentId>:acp:<id>` are not native subagents.
 
 Non-default workspace headers expose a rename action on hover or keyboard focus. A custom name updates both the sidebar group and the composer workspace chip; the header and chip keep the full filesystem path in their title text.
 
@@ -52,6 +54,14 @@ Read state follows visible Chat integration rather than the retained current-ses
 The versioned attention store persists only exact-key `observedBusy` and `unread` state. This allows a later idle canonical snapshot to recover completion when ClawX previously observed the run as busy, including across an app restart. A run that starts and finishes while ClawX is fully offline cannot be inferred and must not create unread state. Run-scoped cron keys also cannot drive base-row attention because the bundled Gateway does not expose a recoverable canonical relationship.
 
 The complete projection, persistence, list/event ordering, failure recovery, and future `sessions.patch({ unread: false })` migration are documented in `harness/reference/sidebar-session-attention.md`.
+
+## Embedded Subagent Navigation
+
+A parent conversation presents only its direct native children returned by bounded ACP `session/list`. ACP `session/list` is the sole lineage membership and title authority. Latest exact-key Gateway catalog presence gates current child visibility and actionability plus direct-parent return-target availability. Presence does not invent lineage membership or titles. For available children, Gateway `status` and `hasActiveRun` remain the sole run-state authority, projected by the shared helper with exact-key `observedBusy` as the unknown-state fallback. A successful structured `sessions_spawn` result invalidates this family and triggers a canonical ACP refresh; its output does not directly add a child.
+
+Selecting a child uses the existing exact session-selection and ACP-load path. The child header shows a localized marker and returns to its direct ACP parent, including when that parent is itself a subagent; it never follows browser history. Child and return actions are present only while their exact targets remain in the latest catalog and recheck that catalog when activated. If the direct parent is deleted, the selected child's marker remains but its return action disappears. If a child is deleted, it disappears from the parent's panel and a stale click is ignored.
+
+Hidden native children are excluded from every implicit fallback candidate set, so startup, catalog repair, and deletion repair cannot select one merely because it is newest. A selected child remains valid while its exact catalog row exists, but a missing selected child is not recreated as a local placeholder. Deletion is exact and non-cascading: deleting a parent does not delete a child, deleting a parent while a child is selected leaves that child selected, and deleting the current parent chooses only a visible fallback. Workspace cleanup still includes retained hidden children even though workspace groups and counts use displayed rows only.
 
 ## Workspace Browser And Local HTML Preview
 
@@ -73,6 +83,6 @@ The Chat question directory belongs to the active ACP timeline rather than works
 
 ## Validation Anchors
 
-Key tests include `tests/unit/workspace-context.test.ts`, `tests/unit/session-title.test.ts`, `tests/unit/session-buckets.test.ts`, `tests/unit/sidebar-session-buckets.test.ts`, `tests/unit/use-new-chat-action.test.tsx`, `tests/unit/chat-store-session-label-fetch.test.ts`, `tests/unit/workspace-browser-body.test.tsx`, `tests/unit/office-file-viewers.test.tsx`, `tests/unit/chat-acp-page.test.tsx`, `tests/unit/artifact-panel-store.test.ts`, `tests/unit/artifact-panel.test.tsx`, `tests/unit/main-layout.test.tsx`, `tests/unit/web-browser-host.test.tsx`, `tests/e2e/chat-workspace-context.spec.ts`, `tests/e2e/chat-acp-attachments.spec.ts`, `tests/e2e/chat-file-changes.spec.ts`, and `tests/e2e/office-document-preview.spec.ts`.
+Key tests include `tests/unit/workspace-context.test.ts`, `tests/unit/session-title.test.ts`, `tests/unit/session-buckets.test.ts`, `tests/unit/sidebar-session-buckets.test.ts`, `tests/unit/chat-session-selection.test.ts`, `tests/unit/chat-store-delete-session-workflow.test.ts`, `tests/unit/chat-acp-inline-timeline.test.tsx`, `tests/unit/use-new-chat-action.test.tsx`, `tests/unit/chat-store-session-label-fetch.test.ts`, `tests/unit/workspace-browser-body.test.tsx`, `tests/unit/office-file-viewers.test.tsx`, `tests/unit/chat-acp-page.test.tsx`, `tests/unit/artifact-panel-store.test.ts`, `tests/unit/artifact-panel.test.tsx`, `tests/unit/main-layout.test.tsx`, `tests/unit/web-browser-host.test.tsx`, `tests/e2e/chat-workspace-context.spec.ts`, `tests/e2e/chat-subagent-sessions.spec.ts`, `tests/e2e/chat-acp-attachments.spec.ts`, `tests/e2e/chat-file-changes.spec.ts`, and `tests/e2e/office-document-preview.spec.ts`.
 
 This reference consolidates the former workspace sidebar, chat workspace context, sidebar workspace UI, and ACP working-directory title designs. The later flat activity-sorted sidebar supersedes the earlier recency buckets.

@@ -109,11 +109,23 @@
  *     `bg-brand` / `bg-brand-hover` are reserved for branded surfaces
  *     where an explicit brand treatment is desired (rare).
  *     Reference: pages/Models "+ Add Provider" trigger.
+ *
+ *   NATIVE <select> BACKGROUNDS
+ *   ─────────────────────────────────────────────────────────────────────
+ *     Native selects MUST keep an opaque themed background
+ *     (`bg-background` or `bg-surface-input`) — never `bg-transparent`.
+ *     Chromium paints the dropdown popup with the select's own computed
+ *     background/color, so a transparent select renders a white popup
+ *     behind light option text in dark mode (Windows especially).
+ *     When sharing `inputClasses` (which use `bg-transparent`) with a
+ *     select, append `bg-background` to the select's className.
+ *     Reference: components/ui/select.tsx, components/settings/AsrSettings.tsx.
  * ────────────────────────────────────────────────────────────────────────── */
 
 @layer base {
   /* YYClaw lavender palette — neutral base + soft purple accent */
   :root {
+    color-scheme: light;
     --background: 0 0% 100%;
     --foreground: 260 14% 14%;
     --card: 260 50% 99%;
@@ -154,6 +166,8 @@
 
   /* Charcoal dark palette + soft lavender accent */
   .dark {
+    color-scheme: dark;
+
     --background: 240 4% 11%;
     --foreground: 260 18% 92%;
     --card: 260 7% 13%;
@@ -269,6 +283,7 @@
   .clawx-chat-thinking-dot-pulse-inner::after {
     animation: clawx-chat-thinking-dot-pulse var(--uib-speed) ease-in-out calc(var(--uib-speed) * -0.125) infinite;
   }
+
 }
 
 @keyframes clawx-chat-thinking-dot-pulse {

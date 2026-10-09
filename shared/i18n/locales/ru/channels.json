@@ -32,7 +32,9 @@
         "defaultUpdated": "Учётная запись по умолчанию обновлена",
         "accountDeleted": "Учётная запись удалена",
         "channelDeleted": "Канал удалён",
-        "feishuAppDisabled": "Соответствующее приложение Feishu отключено. Удалите его в консоли Feishu."
+        "feishuAppDisabled": "Соответствующее приложение Feishu отключено. Удалите его в консоли Feishu.",
+        "dingtalkWorkspaceAuthReset": "Авторизация DingTalk Workspace отменена",
+        "dingtalkWorkspaceAuthResetFailed": "Не удалось отменить авторизацию DingTalk Workspace"
     },
     "account": {
         "add": "Добавить учётную запись",
@@ -65,7 +67,11 @@
             "error": "Ошибка"
         },
         "accountIdPrompt": "Введите новый ID учётной записи для этого канала",
-        "accountIdExists": "ID учётной записи {{accountId}} уже существует"
+        "accountIdExists": "ID учётной записи {{accountId}} уже существует",
+        "authorizeWorkspace": "Авторизовать рабочее пространство",
+        "resetWorkspaceAuth": "Отменить авторизацию рабочего пространства",
+        "resetWorkspaceAuthConfirm": "Отменить локально сохранённую авторизацию DingTalk Workspace? Настроенные учётные записи DingTalk используют её совместно. Чат продолжит работать, но календарь, документы, задачи и другие функции потребуется авторизовать снова.",
+        "resetWorkspaceAuthConfirmAction": "Отменить авторизацию"
     },
     "dialog": {
         "updateTitle": "Обновить {{name}}",
@@ -96,7 +102,38 @@
         "generateQRCode": "Сгенерировать QR-код",
         "updateAndReconnect": "Обновить и переподключить",
         "saveAndConnect": "Сохранить и подключить",
-        "envVar": "Переменная окружения: {{var}}"
+        "envVar": "Переменная окружения: {{var}}",
+        "dingtalkWorkspaceAuthTitle": "Авторизация рабочего пространства DingTalk",
+        "dingtalkWorkspaceAuthDescription": "Бот подключён. При желании разрешите доступ к календарям, документам, задачам и другим функциям DingTalk.",
+        "dingtalkWorkspaceAuthStarting": "Подготовка безопасной авторизации DingTalk…",
+        "dingtalkWorkspaceAuthCodeHint": "Подтвердите этот код на странице авторизации DingTalk:",
+        "dingtalkWorkspaceAuthOpen": "Открыть авторизацию DingTalk",
+        "dingtalkWorkspaceAuthWaiting": "Ожидание авторизации. Этот шаг можно пропустить и использовать только чат.",
+        "dingtalkWorkspaceAuthSkip": "Не сейчас",
+        "dingtalkWorkspaceAuthStart": "Авторизовать сейчас",
+        "dingtalkWorkspaceAuthRetry": "Повторить",
+        "dingtalkWorkspaceAuthSuccess": "Авторизация рабочего пространства DingTalk завершена",
+        "dingtalkWorkspaceAuthErrors": {
+            "unavailable": "Инструмент DingTalk Workspace недоступен. Можно продолжить, используя только чат.",
+            "authorization_expired": "Срок действия кода истёк. Создайте новый код и повторите попытку.",
+            "authorization_start_timeout": "DingTalk не вернул код авторизации вовремя. Повторите попытку.",
+            "authorization_not_completed": "Авторизация DingTalk не была завершена. Повторите попытку.",
+            "authorization_user_not_allowed": "Этот пользователь DingTalk не входит в область доступности приложения. Обновите её в консоли разработчика.",
+            "authorization_denied": "Авторизация DingTalk была отменена или отклонена. Повторите попытку и подтвердите запрос.",
+            "authorization_invalid_client": "Учётные данные приложения DingTalk нельзя использовать для OAuth. Проверьте Client ID, Client Secret и настройки приложения.",
+            "authorization_org_cli_disabled": "В этой организации не включён доступ к данным через CLI. Главный администратор должен разрешить участникам доступ к личным данным через CLI в консоли разработчика DingTalk.",
+            "authorization_permission_denied": "Приложению DingTalk не хватает необходимых разрешений или одобрения администратора.",
+            "authorization_network_error": "Не удалось подключиться к сервису авторизации DingTalk. Проверьте сеть или прокси.",
+            "authorization_failed": "Не удалось авторизовать рабочее пространство DingTalk. Повторите попытку или используйте только чат."
+        },
+        "validationErrors": {
+            "feishuAppIdRequired": "Укажите App ID.",
+            "feishuAppSecretRequired": "Укажите App Secret.",
+            "feishuAppSecretReenter": "Введите App Secret ещё раз, чтобы обновить аккаунт. Сохранённый секрет скрыт, пока Gateway запущен.",
+            "feishuAppSecretEqualsAppId": "App Secret совпадает с App ID. Скопируйте App Secret в консоли разработчика Feishu → Credentials & Basic Info.",
+            "feishuRejected": "Feishu отклонил учётные данные: {{error}}. Проверьте App ID / App Secret в консоли разработчика.",
+            "feishuConnectionError": "Не удалось связаться с Feishu для проверки учётных данных: {{error}}"
+        }
     },
     "health": {
         "state": {
@@ -106,11 +143,21 @@
         "reasons": {
             "gateway_degraded": "Сердцебиение шлюза недавно деградировало.",
             "gateway_unresponsive": "Управляющая плоскость шлюза не отвечает.",
+            "gateway_verifying": "ClawX проверяет доступность шлюза.",
+            "external_gateway_unavailable": "Внешне управляемый шлюз недоступен.",
             "channels_status_timeout": "Истёк таймаут проверки статуса канала.",
             "rpc_timeout": "Недавние RPC-вызовы шлюза завершились по таймауту.",
             "gateway_not_running": "Шлюз не запущен.",
             "gateway_error": "Шлюз находится в состоянии ошибки.",
-            "runtime_error": "Среда выполнения канала сообщила об ошибке."
+            "runtime_error": "Среда выполнения канала сообщила об ошибке.",
+            "dingtalk_dws_missing": "Чат работает. Календарь, документы и другие офисные навыки требуют встроенный DingTalk workspace CLI (dws).",
+            "dingtalk_dws_auth_required": "Чат работает. Календарь, документы и другие офисные навыки требуют авторизацию DingTalk workspace."
+        },
+        "recovery": {
+            "verifying": "ClawX проверяет доступность шлюза.",
+            "restart-pending": "ClawX ожидает перезапуска своего шлюза.",
+            "restart-executing": "ClawX перезапускает свой шлюз.",
+            "external-unavailable": "Внешне управляемый шлюз недоступен. ClawX переподключается; при необходимости используйте «Перезапустить шлюз»."
         },
         "restartGateway": "Перезапустить шлюз",
         "copyDiagnostics": "Скопировать диагностику",
@@ -194,7 +241,7 @@
             ]
         },
         "dingtalk": {
-            "description": "Подключите DingTalk через плагин канала OpenClaw (режим Stream)",
+            "description": "Подключите DingTalk через официальный коннектор OpenClaw (чат Stream). Календарь, документы и другие офисные навыки используют встроенный dws CLI.",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
             "fields": {
                 "clientId": {
@@ -207,9 +254,10 @@
                 }
             },
             "instructions": [
-                "Установите и включите плагин dingtalk в OpenClaw",
+                "ClawX устанавливает официальный коннектор DingTalk и сохраняет существующий идентификатор канала dingtalk",
                 "Создайте внутреннее приложение DingTalk и включите режим Stream",
-                "Заполните Client ID (AppKey) и Client Secret (AppSecret)"
+                "Заполните Client ID (AppKey) и Client Secret (AppSecret)",
+                "Чат работает сразу; календарь, документы и задачи требуют авторизацию DingTalk workspace (dws)"
             ]
         },
         "feishu": {
@@ -252,7 +300,7 @@
             ]
         },
         "qqbot": {
-            "description": "Подключите канал QQ Bot (встроенный с OpenClaw 3.31)",
+            "description": "Подключите канал QQ Bot",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/KPIJwlyiGiupMrkiS9ice39Zn2c",
             "fields": {
                 "appId": {
@@ -287,9 +335,9 @@
         "iconLabel": "Иконка приложения (необязательно)",
         "iconRequirement": "JPEG/PNG/SVG/BMP, < 2 МБ, > 240x240 px, без скругленных углов",
         "botMenu": {
-          "title": "Меню быстрых команд бота",
-          "menuLabel": "Быстрые команды",
-          "description": "После создания для бота автоматически настраивается меню «Быстрые команды». Нажатие на пункт отправляет соответствующую команду в OpenClaw:"
+            "title": "Меню быстрых команд бота",
+            "menuLabel": "Быстрые команды",
+            "description": "После создания для бота автоматически настраивается меню «Быстрые команды». Нажатие на пункт отправляет соответствующую команду в OpenClaw:"
         },
         "iconTooLarge": "Размер иконки не может превышать 2 МБ",
         "selectExisting": "Выбрать существующее приложение",

@@ -18,8 +18,9 @@ import { isCronSessionKey, sessionKeysAreEquivalent } from './chat/cron-session-
 import {
   findHiddenOpenClawHeartbeatSession,
   isClawXDesktopSessionKey,
+  isNativeSubagentSessionKey,
   isOpenClawHeartbeatOnlySession,
-  shouldIncludeSessionInSidebarList,
+  shouldRetainSessionInCatalog,
 } from './chat/session-key-utils';
 import {
   isOpenClawHeartbeatPollText,
@@ -58,6 +59,7 @@ import {
   getSessionLabelHydrationVersion,
   isSessionLabelHydrationVersionCurrent,
 } from './chat/session-label-hydration';
+import { useComposerDraftStore } from './composer-drafts';
 import {
   DEFAULT_CANONICAL_PREFIX,
   DEFAULT_SESSION_KEY,
@@ -124,6 +126,30 @@ let _lastChatEventAt = 0;
 function toMs(ts: number): number {
   // Timestamps < 1e12 are in seconds (before ~2033); >= 1e12 are milliseconds
   return ts < 1e12 ? ts * 1000 : ts;
+}
+
+const deletedAgentSessionIds = new Set<string>();
+
+function belongsToDeletedAgent(sessionKey: string): boolean {
+  for (const agentId of deletedAgentSessionIds) {
+    if (sessionKey.startsWith(`agent:${agentId}:`)) return true;
+  }
+  return false;
+}
+
+function isDeletedAgentSessionEvent(payload: GatewaySessionsChangedPayload): boolean {
+  const keys = [payload.sessionKey, payload.key, payload.session?.key];
+  return keys.some((key) => typeof key === 'string' && belongsToDeletedAgent(key.trim()));
+}
+
+function markLocalSessionCatalogMutation(): void {
+  _lastLoadSessionsAt = 0;
+  if (_loadSessionsInFlight) {
+    _queuedForcedSessionGeneration = Math.max(
+      _queuedForcedSessionGeneration ?? _sessionCatalogGeneration,
+      _sessionCatalogGeneration,
+    );
+  }
 }
 
 // ── Inline workflow cards persistence ─────────────────────────
@@ -420,7 +446,7 @@ function applySessionBackendLabels(set: ChatSet, sessions: ChatSession[]): void 
     let nextLabels = state.sessionLabels;
 
     for (const session of sessions) {
-      if (session.key.endsWith(':main')) continue;
+      if (session.key === DEFAULT_SESSION_KEY) continue;
 
       if (hasExplicitSessionLabel(session)) {
         const label = toSessionLabel(session.label || '');
@@ -633,9 +659,10 @@ async function refreshVisibleSessionSummaries(
   sessionKeys?: string[],
 ): Promise<void> {
   const sessions = get().sessions;
+  if (!sessionKeys?.length && sessions.some((session) => session.key === get().currentSessionKey && session.createdLocally)) return;
   const targetKeys = (sessionKeys && sessionKeys.length > 0
     ? sessionKeys
-    : sessions.map((session) => session.key)
+    : sessions.filter((session) => !session.createdLocally).map((session) => session.key)
   ).filter((key) => key && key.startsWith('agent:'));
   if (targetKeys.length === 0) return;
   const sessionLastActivity = get().sessionLastActivity;
@@ -3208,7 +3235,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const normalizedSessions: ChatSession[] = rawSessions.map(
             (session: Record<string, unknown>) => normalizeGatewaySessionRow(session),
           );
-          const sessions = normalizedSessions.filter((s: ChatSession) => s.key && !isSidebarHiddenSessionKey(s.key) && shouldIncludeSessionInSidebarList(s));
+          const sessions = normalizedSessions.filter((session) => session.key && !belongsToDeletedAgent(session.key) && !isSidebarHiddenSessionKey(session.key) && shouldRetainSessionInCatalog(session));
 
           const canonicalBySuffix = new Map<string, string>();
           for (const session of sessions) {
@@ -3275,7 +3302,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const listTs = typeof data.ts === 'number' && Number.isFinite(data.ts)
             ? data.ts
             : undefined;
-          const uncertainty = getSessionEventUncertainty(context.events);
+          const applicableEvents = context.events.filter((event) => !isDeletedAgentSessionEvent(event));
+          const uncertainty = getSessionEventUncertainty(applicableEvents);
           const toOrderableAttentionRows = (rows: ChatSession[]): ChatSession[] => (
             uncertainty.keys.size === 0
               ? rows
@@ -3302,7 +3330,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
           }
 
-          for (const event of context.events) {
+          for (const event of applicableEvents) {
             const eventTs = typeof event.ts === 'number' && Number.isFinite(event.ts)
               ? event.ts
               : undefined;
@@ -3378,6 +3406,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           // `createdLocally` session that must skip the retarget logic and be
           // injected into the sidebar list as a pending session.
           let mintedFreshLocalSession = replacedHiddenHeartbeatSession;
+          if (isNativeSubagentSessionKey(nextSessionKey) && !visibleMergedSessions.some((session) => session.key === nextSessionKey)) {
+            const prefix = getCanonicalPrefixFromSessionKey(nextSessionKey) ?? resolveDefaultAgentPrefix();
+            nextSessionKey = `${prefix}:session-${Date.now()}`;
+            mintedFreshLocalSession = true;
+          }
 
           // When the resolved key still points at the legacy `agent:main`
           // placeholder (or any agent missing from the snapshot) — e.g. a fresh
@@ -3416,7 +3449,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               && (startedFromBootDefault || keyMissingFromList)
             ) {
               const selectableSessions = visibleMergedSessions.filter(
-                (session) => isClawXDesktopSessionKey(session.key) && !isSidebarHiddenSessionKey(session.key),
+                (session) => isClawXDesktopSessionKey(session.key) && !isNativeSubagentSessionKey(session.key) && !isSidebarHiddenSessionKey(session.key),
               );
               if (selectableSessions.length > 0) {
                 // Mint the fresh conversation under a REAL agent id. The
@@ -3566,7 +3599,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           console.warn('Failed to load sessions:', err);
           if (generation === _sessionCatalogGeneration) {
             let reducedSessions = get().sessions;
-            const uncertainty = getSessionEventUncertainty(context.events);
+            const applicableEvents = context.events.filter((event) => !isDeletedAgentSessionEvent(event));
+            const uncertainty = getSessionEventUncertainty(applicableEvents);
             const toOrderableAttentionRows = (rows: ChatSession[]): ChatSession[] => (
               uncertainty.keys.size === 0
                 ? rows
@@ -3575,7 +3609,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const attentionTransitions: SessionAttentionTransition[] = [];
             const deletedSessionKeys = new Set<string>();
             let appliedAny = false;
-            for (const event of context.events) {
+
+            for (const event of applicableEvents) {
               if (typeof event.ts !== 'number' || !Number.isFinite(event.ts)) continue;
               if (_successfulSessionListTsFloor !== null && event.ts < _successfulSessionListTsFloor) continue;
               const result = applyGatewaySessionsChanged(
@@ -3664,6 +3699,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   handleSessionsChanged: (payload) => {
+    if (isDeletedAgentSessionEvent(payload)) return;
+
     if (_loadSessionsContext?.generation === _sessionCatalogGeneration) {
       _loadSessionsContext.events.push(payload);
       return;
@@ -3736,6 +3773,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Stop any background polling for the old session before switching.
     // This prevents the poll timer from firing after the switch and loading
     // the wrong session's history into the new session's view.
+    const currentSession = get().sessions.find((session) => session.key === get().currentSessionKey);
+    if (currentSession?.createdLocally) useComposerDraftStore.getState().clearDraft(currentSession.key);
+    markLocalSessionCatalogMutation();
     clearHistoryPoll();
     clearBaselines();
     set((s) => buildSessionSwitchPatch(s, key));
@@ -3764,174 +3804,143 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // (rather than silently vanishing and reappearing after a restart).
 
   deleteSession: async (key: string) => {
-    clearCachedSessionHistory(key);
-    clearCachedSessionRunState(key);
-    clearSessionLabelHydrationTracking(key);
-    clearPendingOptimisticUserMessages(key);
-
-    // Workflow cleanup. Collect every run tied to this session (the live run
-    // mapping plus all persisted cards), abort the ones still running, then
-    // drop the local run state + persisted cards. Leftover cards in localStorage
-    // would make mergeWorkflowParentSessions re-inject the session into the
-    // sidebar on the next startup ("deleted session resurrects" bug).
     const { workflowRunBySession, workflowCardsBySession } = get();
     const cards = workflowCardsBySession[key] ?? [];
     const activeRunId = workflowRunBySession[key];
     const workflowRunIds = [...new Set([
       ...(activeRunId ? [activeRunId] : []),
-      ...cards.map((c) => c.runId),
+      ...cards.map((card) => card.runId),
     ])];
-    const runningRunIds = new Set(cards.filter((c) => c.status === 'running').map((c) => c.runId));
+    const runningRunIds = new Set(cards.filter((card) => card.status === 'running').map((card) => card.runId));
     if (activeRunId) runningRunIds.add(activeRunId);
     for (const runId of runningRunIds) {
       try {
         await abortWorkflow(runId);
-      } catch (err) {
-        console.warn(`[deleteSession] failed to abort workflow ${runId} for ${key}:`, err);
+      } catch (error) {
+        console.warn('[deleteSession] Failed to abort workflow:', runId, key, error);
       }
     }
-    get().clearWorkflowRun(key);
-    set((s) => {
-      if (!(key in s.workflowCardsBySession)) return {};
-      const next = { ...s.workflowCardsBySession };
-      delete next[key];
-      saveWorkflowCards(next);
-      return { workflowCardsBySession: next };
-    });
 
-    // Hard-delete the session's JSONL transcript on disk.
-    // The main process unlinks <id>.jsonl plus any leftover
-    // <id>.deleted.jsonl and <id>.jsonl.reset.* siblings, then removes the
-    // entry from sessions.json so sessions.list stops surfacing it. Passing the
-    // workflow run ids lets it also discard the runs' snapshots and
-    // `wf:<runId>:<step>` child sessions.
-    let deleted = false;
-    let hardDeleteSucceeded = false;
+    let deletionError: string | undefined;
+    let deletionWarnings: string[] | undefined;
     try {
       const result = await hostApi.sessions.delete(key, workflowRunIds.length ? workflowRunIds : undefined);
-      deleted = result.success;
-      if (!result.success) {
-        console.warn(`[deleteSession] IPC reported failure for ${key}:`, result.error);
-      } else {
-        hardDeleteSucceeded = true;
+      if (!result.success) deletionError = result.error || 'Failed to delete session';
+      else if (result.warnings?.length) deletionWarnings = result.warnings;
+    } catch (error) {
+      deletionError = String(error);
+    }
+    if (deletionError) {
+      try {
+        await get().loadSessions();
+      } catch (error) {
+        console.warn('[deleteSession] Failed to reconcile after deletion failure:', error);
       }
-    } catch (err) {
-      console.warn(`[deleteSession] IPC call failed for ${key}:`, err);
-    }
-    if (hardDeleteSucceeded) {
-      useSessionAttentionStore.getState().removeSession(key);
+      return { success: false as const, error: deletionError };
     }
 
-    if (!deleted) {
-      // Backend could not delete it — reconcile the sidebar with the Gateway's
-      // real state instead of optimistically dropping the row. This surfaces the
-      // failure immediately (the session stays visible) rather than hiding it
-      // until the next restart resurrects the entry.
-      await get().loadSessions();
-      return;
+    clearCachedSessionHistory(key);
+    clearCachedSessionRunState(key);
+    clearSessionLabelHydrationTracking(key);
+    clearPendingOptimisticUserMessages(key);
+    useComposerDraftStore.getState().clearDraft(key);
+    useSessionAttentionStore.getState().removeSession(key);
+    get().clearWorkflowRun(key);
+    markLocalSessionCatalogMutation();
+    set((state) => {
+      const workflowCards = { ...state.workflowCardsBySession };
+      delete workflowCards[key];
+      saveWorkflowCards(workflowCards);
+      return {
+        workflowCardsBySession: workflowCards,
+        sessions: state.sessions.filter((session) => session.key !== key),
+        sessionLabels: clearSessionEntryFromMap(state.sessionLabels, key),
+        sessionLastActivity: clearSessionEntryFromMap(state.sessionLastActivity, key),
+        sessionModelOverrideBySessionKey: clearSessionEntryFromMap(state.sessionModelOverrideBySessionKey, key),
+        workspaceOverrideBySessionKey: clearSessionEntryFromMap(state.workspaceOverrideBySessionKey, key),
+      };
+    });
+    if (get().currentSessionKey === key) {
+      const replacementSession = get().sessions.find((session) => (
+        isClawXDesktopSessionKey(session.key) && !isNativeSubagentSessionKey(session.key) && !isSidebarHiddenSessionKey(session.key)
+      ));
+      if (replacementSession) get().switchSession(replacementSession.key);
+      else get().newSession();
     }
-
-    const { currentSessionKey, sessions } = get();
-    const remaining = sessions.filter((s) => s.key !== key);
-
-    if (currentSessionKey === key) {
-      // Switched away from deleted session — pick the first remaining or create new
-      const next = remaining[0];
-      set((s) => ({
-        sessions: remaining,
-        sessionLabels: Object.fromEntries(Object.entries(s.sessionLabels).filter(([k]) => k !== key)),
-        sessionLastActivity: Object.fromEntries(Object.entries(s.sessionLastActivity).filter(([k]) => k !== key)),
-        sessionModelOverrideBySessionKey: clearSessionEntryFromMap(s.sessionModelOverrideBySessionKey, key),
-        messages: [],
-        streamingText: '',
-        streamingMessage: null,
-        streamingTools: [],
-        activeRunId: null,
-        error: null,
-        runError: null,
-        pendingFinal: false,
-        lastUserMessageAt: null,
-        pendingToolImages: [],
-        currentSessionKey: next?.key ?? DEFAULT_SESSION_KEY,
-        currentAgentId: getAgentIdFromSessionKey(next?.key ?? DEFAULT_SESSION_KEY),
-        openWorkflowPopupRunId: null,
-      }));
-      if (next) {
-        get().loadHistory();
-      }
-    } else {
-      set((s) => ({
-        sessions: remaining,
-        sessionLabels: Object.fromEntries(Object.entries(s.sessionLabels).filter(([k]) => k !== key)),
-        sessionLastActivity: Object.fromEntries(Object.entries(s.sessionLastActivity).filter(([k]) => k !== key)),
-        sessionModelOverrideBySessionKey: clearSessionEntryFromMap(s.sessionModelOverrideBySessionKey, key),
-      }));
-    }
+    return { success: true as const, ...(deletionWarnings ? { warnings: deletionWarnings } : {}) };
   },
 
   deleteSessions: async (keys: string[]) => {
-    const requestedKeys = [...new Set(keys)].filter(Boolean);
     const deletedKeys: string[] = [];
     const failedKeys: string[] = [];
-
-    // Main rewrites each agent's sessions.json during deletion. Keep these
-    // operations sequential so two sessions for the same agent cannot race.
-    for (const key of requestedKeys) {
-      try {
-        const result = await hostApi.sessions.delete(key);
-        if (result.success) deletedKeys.push(key);
-        else failedKeys.push(key);
-      } catch {
-        failedKeys.push(key);
-      }
+    const warnings: string[] = [];
+    for (const key of [...new Set(keys)].filter(Boolean)) {
+      const result = await get().deleteSession(key);
+      if (result.success) {
+        deletedKeys.push(key);
+        if (result.warnings) warnings.push(...result.warnings);
+      } else failedKeys.push(key);
     }
-
-    if (deletedKeys.length === 0) return { deletedKeys, failedKeys };
-
-    const deletedSet = new Set(deletedKeys);
-    for (const key of deletedKeys) {
-      clearCachedSessionHistory(key);
-      clearCachedSessionRunState(key);
-      clearSessionLabelHydrationTracking(key);
-      clearPendingOptimisticUserMessages(key);
-    }
-
-    const before = get();
-    const remaining = before.sessions.filter((session) => !deletedSet.has(session.key));
-    const currentWasDeleted = deletedSet.has(before.currentSessionKey);
-    const next = currentWasDeleted ? remaining[0] : undefined;
-
-    set((state) => ({
-      sessions: state.sessions.filter((session) => !deletedSet.has(session.key)),
-      sessionLabels: Object.fromEntries(
-        Object.entries(state.sessionLabels).filter(([key]) => !deletedSet.has(key)),
-      ),
-      sessionLastActivity: Object.fromEntries(
-        Object.entries(state.sessionLastActivity).filter(([key]) => !deletedSet.has(key)),
-      ),
-      ...(currentWasDeleted
-        ? {
-          messages: [],
-          streamingText: '',
-          streamingMessage: null,
-          streamingTools: [],
-          activeRunId: null,
-          error: null,
-          runError: null,
-          pendingFinal: false,
-          lastUserMessageAt: null,
-          pendingToolImages: [],
-          currentSessionKey: next?.key ?? DEFAULT_SESSION_KEY,
-          currentAgentId: getAgentIdFromSessionKey(next?.key ?? DEFAULT_SESSION_KEY),
-        }
-        : {}),
-    }));
-
-    if (currentWasDeleted && next) await get().loadHistory();
-    return { deletedKeys, failedKeys };
+    return { deletedKeys, failedKeys, ...(warnings.length ? { warnings } : {}) };
   },
 
-  // ── New session ──
+  removeAgentSessions: (agentId) => {
+    const normalizedAgentId = agentId.trim();
+    if (!normalizedAgentId) return;
+    deletedAgentSessionIds.add(normalizedAgentId);
+    const sessionPrefix = `agent:${normalizedAgentId}:`;
+    const belongsToAgent = (sessionKey: string): boolean => sessionKey.startsWith(sessionPrefix);
+    const state = get();
+    const composerDrafts = useComposerDraftStore.getState().drafts;
+    const attentionKeys = Object.keys(useSessionAttentionStore.getState().bySessionKey);
+    const removedKeys = new Set([
+      ...state.sessions.map((session) => session.key),
+      ...Object.keys(state.sessionLabels),
+      ...Object.keys(state.sessionLastActivity),
+      ...Object.keys(composerDrafts),
+      ...attentionKeys,
+      state.currentSessionKey,
+    ].filter(belongsToAgent));
+
+    for (const key of removedKeys) {
+      clearSessionLabelHydrationTracking(key);
+      useComposerDraftStore.getState().clearDraft(key);
+      useSessionAttentionStore.getState().removeSession(key);
+    }
+
+    markLocalSessionCatalogMutation();
+    set((current) => {
+      const remaining = current.sessions.filter((session) => !belongsToAgent(session.key));
+      const currentWasRemoved = belongsToAgent(current.currentSessionKey);
+      const replacement = remaining.find((session) => isClawXDesktopSessionKey(session.key) && !isNativeSubagentSessionKey(session.key));
+      const selection = {
+        sessions: remaining,
+        currentSessionKey: currentWasRemoved ? replacement?.key ?? DEFAULT_SESSION_KEY : current.currentSessionKey,
+        currentAgentId: currentWasRemoved ? getAgentIdFromSessionKey(replacement?.key ?? DEFAULT_SESSION_KEY) : current.currentAgentId,
+      };
+      return {
+        sessions: selection.sessions,
+        sessionLabels: Object.fromEntries(
+          Object.entries(current.sessionLabels).filter(([key]) => !belongsToAgent(key)),
+        ),
+        sessionLastActivity: Object.fromEntries(
+          Object.entries(current.sessionLastActivity).filter(([key]) => !belongsToAgent(key)),
+        ),
+        currentSessionKey: selection.currentSessionKey,
+        currentAgentId: selection.currentAgentId,
+      };
+    });
+  },
+
+  reconcileAgentSessionTombstones: (agentIds) => {
+    let changed = false;
+    for (const agentId of agentIds) {
+      const normalizedAgentId = agentId.trim();
+      if (normalizedAgentId && deletedAgentSessionIds.delete(normalizedAgentId)) changed = true;
+    }
+    if (changed) markLocalSessionCatalogMutation();
+  },
+
 
   newSession: () => {
     // Generate a new unique session key and switch to it.

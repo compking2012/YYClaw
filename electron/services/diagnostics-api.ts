@@ -7,12 +7,30 @@ import { getOpenClawConfigDir } from '../utils/paths';
 import { buildGatewayHealthSummary } from '../utils/gateway-health';
 import { buildChannelAccountsView, getChannelStatusDiagnostics } from './channels-api';
 import { getAcpTraceSnapshot, recordRendererAcpTrace } from './acp-trace';
+import { exportIssueReport } from './issue-report-api';
 
 const DEFAULT_TAIL_LINES = 200;
 
 type DiagnosticsApiContext = {
   gatewayManager: GatewayManager;
 };
+
+function sanitizeGatewayRecovery(
+  recovery: ReturnType<GatewayManager['getDiagnostics']>['recovery'],
+) {
+  if (!recovery) return undefined;
+
+  return {
+    state: recovery.state,
+    lastAliveAt: recovery.lastAliveAt,
+    deadlineAt: recovery.deadlineAt,
+    lastDeadlineProbeAt: recovery.lastDeadlineProbeAt,
+    lastDeadlineProbeResult: recovery.lastDeadlineProbeResult,
+    lastDeadlineProbeError: recovery.lastDeadlineProbeError,
+    escalationReason: recovery.escalationReason,
+    externallyManaged: recovery.externallyManaged,
+  };
+}
 
 async function readTail(filePath: string, tailLines = DEFAULT_TAIL_LINES): Promise<string> {
   const safeTailLines = Math.max(1, Math.floor(tailLines));
@@ -62,9 +80,11 @@ export function createDiagnosticsApi(ctx: DiagnosticsApiContext): CompleteHostSe
         lastChannelsStatusOkAt: channelStatusDiagnostics.lastChannelsStatusOkAt,
         lastChannelsStatusFailureAt: channelStatusDiagnostics.lastChannelsStatusFailureAt,
       });
+      const recovery = sanitizeGatewayRecovery(diagnostics.recovery);
       const gateway = {
         ...gatewayStatus,
         ...gatewaySummary,
+        recovery,
         capabilities: typeof ctx.gatewayManager.getCapabilitySnapshot === 'function'
           ? ctx.gatewayManager.getCapabilitySnapshot(gatewaySummary)
           : undefined,
@@ -82,5 +102,6 @@ export function createDiagnosticsApi(ctx: DiagnosticsApiContext): CompleteHostSe
     },
     acpTrace: async () => getAcpTraceSnapshot(),
     recordAcpTrace: async (payload) => recordRendererAcpTrace(payload),
+    exportIssueReport: async (payload) => exportIssueReport(payload),
   };
 }

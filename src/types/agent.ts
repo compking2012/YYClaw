@@ -15,6 +15,7 @@ export interface AgentSummary {
   modelDisplay: string;
   modelRef?: string | null;
   overrideModelRef?: string | null;
+  contextWindow?: number;
   overrideImageModelRef?: string | null;
   overrideImageGenerationModelRef?: string | null;
   overrideVideoGenerationModelRef?: string | null;

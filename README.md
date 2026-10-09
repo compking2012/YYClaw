@@ -52,6 +52,15 @@ four UI languages. Everything else is reachable through
 It is, in short, an **open-source alternative to hosted office-agent products** —
 see [Positioning](#positioning-the-open-source-option-in-the-office-agent-category).
 
+
+### Upstream Integration
+
+The composer keeps local account names and conversation-only model selection. ACP context usage appears before Gateway status; fresh runtime totals remain authoritative. Compaction and embedded subagent status with live read-only child drill-down and direct-parent return coexist with the independent local workflow timeline. Switching with `@agent` starts a fresh target-agent conversation.
+
+Only changing the global default conversation model recalculates the compaction reserve floor (25% of explicit context metadata, otherwise 50,000 tokens). Per-agent overrides, media slots and startup synchronization do not recalculate it. Explicit compaction settings remain preserved.
+
+DingTalk uses the upstream official connector while retaining local multi-account support and optional workspace authorization. Computer Use follows the upstream local driver lifecycle and permissions. Settings → About exports redacted diagnostics and optionally selected raw conversation transcripts to a local ZIP; no automatic upload occurs.
+
 ## Design Goals and Philosophy
 
 ### Positioning: the open-source option in the office-agent category
@@ -161,11 +170,11 @@ Multiple sessions with persisted history, assistant replies rendered as Markdown
 with GitHub-flavored tables and KaTeX math (user input stays literal text), and
 streaming responses that keep running when you navigate away.
 
-Type `@agent` to target another agent — YYClaw switches into that agent's own
-conversation context instead of relaying through the default agent. Insert skills
+Type `@agent` to target another agent — YYClaw starts a fresh conversation for that
+agent instead of relaying through the default agent. Insert skills
 as `/skill` chips and click one to read its `SKILL.md`. When several models are
-configured, a model picker switches the current agent's model through OpenClaw's
-native hot reload, no Gateway restart. The session sidebar is workspace-first,
+configured, the model picker shows account names and overrides only the current
+conversation's model, without changing agent defaults or restarting Gateway. The session sidebar is workspace-first,
 and the right panel offers Workspace, Preview, and Changes tabs with read-only
 previews for Markdown, `.docx`, `.pptx`, and local HTML.
 
@@ -294,6 +303,8 @@ and startup update checks that prompt before downloading or installing.
 - **Memory:** 4 GB RAM minimum, 8 GB recommended
 - **Storage:** 1 GB available disk space
 
+- **Computer Use**: macOS 13+ on x64/arm64, or Windows 10+ on x64; other supported YYClaw platforms continue to work without this feature
+
 ### Install a Release
 
 Download the build for your platform from the
@@ -329,6 +340,10 @@ The **Setup Wizard** guides you through four steps:
    supported
 3. **Skill bundles** — pick pre-configured skills for common use cases
 4. **Verification** — test the configuration before entering the main interface
+
+### Local Computer Use
+
+On supported macOS and Windows systems, enable Computer Use explicitly in Settings and grant the requested native permissions. The bundled driver runs locally under Electron Main supervision. Its private `CLAWX_CUA_CONNECTION_FILE` descriptor is supplied to OpenClaw; no runtime download or external pairing is required. Disable the setting to stop the driver.
 
 ### Proxy Settings
 
@@ -383,6 +398,8 @@ the main process.
 │  • Provider abstraction layer                                    │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+- **Local Computer Use**: Electron Main retains `EmbeddedCuaDriverHost`, native SDK loading, permission checks, and daemon supervision. `CLAWX_CUA_CONNECTION_FILE` identifies a private descriptor `{ v: 2, generation, driverVersion, binaryPath, socketPath }`. Existing OpenClaw `exec` invokes that absolute bundled binary with the explicit socket, and `read` supplies screenshot images to the model. No custom plugin, MCP proxy, node host, pairing, or runtime download is involved.
 
 ### Architectural Characteristics
 

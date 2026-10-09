@@ -6,7 +6,10 @@
  * Files are staged through the typed Host API and included as local media
  * references in the ACP session/prompt request.
  */
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import {
+  useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo,
+  type SetStateAction,
+} from 'react';
 import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown, Mic, Check, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,12 +17,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { hostApi } from '@/lib/host-api';
 import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
+import { useSettingsStore } from '@/stores/settings';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import { useProviderStore } from '@/stores/providers';
-import { useSettingsStore } from '@/stores/settings';
 import { buildConfiguredModelOptions, formatModelRefLabel, resolveConfiguredModelRef } from '@/lib/model-options';
 import { buildEnhancePromptGenPrompt } from '@/lib/enhance-prompt';
 import type { AgentSummary } from '@/types/agent';
@@ -35,6 +38,11 @@ import { startDictation, type DictationHandle } from '@/lib/voice/dictation';
 import { TalkOverlay } from './TalkOverlay';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DEFAULT_WORKSPACE_CWD, isDefaultWorkspacePath, normalizeWorkspacePath } from '@/lib/workspace-context';
+import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
+import { MicrophonePermissionDialog } from '@/components/voice/MicrophonePermissionDialog';
+import type { AsrMicrophoneAccessResult } from '@shared/host-api/contract';
+import { AcpSessionPlan } from './AcpSessionPlan';
+import { AcpSubagentSessions, type AcpSubagentSession } from './AcpSubagentSessions';
 
 // Sensitive-task origin gate (mirrors electron/shared/model-routing/select-model —
 // kept local to avoid coupling the renderer to the electron project boundary).
@@ -62,7 +70,8 @@ export interface FileAttachment {
   fileName: string;
   mimeType: string;
   fileSize: number;
-  stagedPath: string;        // Host-staged path included in ACP prompt media
+  stagedPath: string;        // Host-authorized source or buffer-staging path included in ACP prompt media
+  sourceKind: 'path' | 'buffer';
   preview: string | null;    // data URL for images, null for others
   status: 'staging' | 'ready' | 'error';
   error?: string;
@@ -73,11 +82,17 @@ export interface ChatWorkspaceOption {
   label: string;
 }
 
+type ComposerExpandedPanel = 'subagents' | 'plan' | null;
+
 interface ChatInputProps {
   onSend: (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => void;
   onStop?: () => void;
+  draft?: string;
+  draftKey?: string;
+  onDraftChange?: (update: SetStateAction<string>) => void;
   disabled?: boolean;
   sending?: boolean;
+  statusOnly?: boolean;
   imageGenerating?: boolean;
   workspaceLabel?: string;
   workspacePath?: string;
@@ -88,11 +103,101 @@ interface ChatInputProps {
   sessionModelOverride?: string | null;
   /** Switch (or clear, when `modelRef` is null) the temporary per-conversation model override. */
   onSelectModel?: (modelRef: string | null) => void | Promise<void>;
+  contextUsage?: unknown;
+  currentPlan?: AcpCurrentPlan | null;
+  subagentSessions?: AcpSubagentSession[];
+  onSelectSubagent?: (sessionKey: string) => void;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
 
 const DIRECTORY_MIME_TYPE = 'application/x-directory';
+
+type ContextUsage = {
+  used: number;
+  size: number;
+  percent: number;
+};
+
+function getContextUsage(value: unknown, modelContextWindow?: number): ContextUsage | null {
+  if (!value || typeof value !== 'object') return null;
+  const { used, size: reportedSize } = value as Record<string, unknown>;
+  if (
+    typeof used !== 'number'
+    || typeof reportedSize !== 'number'
+    || !Number.isFinite(used)
+    || !Number.isFinite(reportedSize)
+    || used < 0
+    || reportedSize <= 0
+  ) return null;
+
+  const size = typeof modelContextWindow === 'number'
+    && Number.isFinite(modelContextWindow)
+    && modelContextWindow > 0
+    ? Math.floor(modelContextWindow)
+    : reportedSize;
+  return {
+    used,
+    size,
+    percent: Math.min(100, Math.max(0, (used / size) * 100)),
+  };
+}
+
+function ContextUsageIndicator({
+  usage,
+  label,
+  percentageLabel,
+}: {
+  usage: ContextUsage;
+  label: string;
+  percentageLabel: string;
+}) {
+  const radius = 7;
+  const circumference = 2 * Math.PI * radius;
+  const roundedPercent = Math.round(usage.percent);
+  const strokeDashoffset = circumference * (1 - usage.percent / 100);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          role="progressbar"
+          tabIndex={0}
+          data-testid="chat-composer-context-usage"
+          data-percent={roundedPercent}
+          aria-label={label}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={roundedPercent}
+          aria-valuetext={label}
+          className="inline-flex shrink-0 items-center gap-1 rounded-md px-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+        >
+          <svg viewBox="0 0 20 20" className="h-3 w-3 text-primary" aria-hidden="true">
+            <circle cx="10" cy="10" r={radius} fill="none" stroke="currentColor" strokeWidth="2" className="text-black/10 dark:text-white/15" />
+            <circle
+              cx="10"
+              cy="10"
+              r={radius}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              transform="rotate(-90 10 10)"
+            />
+          </svg>
+          <span aria-hidden="true" className="text-tiny font-medium tabular-nums">
+            {percentageLabel}
+          </span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-xs">
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -229,8 +334,12 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
 export function ChatInput({
   onSend,
   onStop,
+  draft,
+  draftKey,
+  onDraftChange,
   disabled = false,
   sending = false,
+  statusOnly = false,
   imageGenerating = false,
   workspaceLabel,
   workspacePath,
@@ -239,9 +348,18 @@ export function ChatInput({
   onSelectWorkspace,
   sessionModelOverride = null,
   onSelectModel,
+  contextUsage,
+  currentPlan,
+  subagentSessions = [],
+  onSelectSubagent,
 }: ChatInputProps) {
-  const { t } = useTranslation('chat');
-  const [input, setInput] = useState('');
+  const { t, i18n } = useTranslation('chat');
+  const [uncontrolledInput, setUncontrolledInput] = useState('');
+  const input = onDraftChange ? (draft ?? '') : uncontrolledInput;
+  const setInput = useCallback((update: SetStateAction<string>) => {
+    if (onDraftChange) onDraftChange(update);
+    else setUncontrolledInput(update);
+  }, [onDraftChange]);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [targetAgentId, setTargetAgentId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -260,10 +378,16 @@ export function ChatInput({
   const [micState, setMicState] = useState<'idle' | 'starting' | 'recording' | 'transcribing'>('idle');
   const [talkOpen, setTalkOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const draftSelectionsRef = useRef(new Map<string, {
+    start: number;
+    end: number;
+    direction: 'forward' | 'backward' | 'none';
+  }>());
   const pickerRef = useRef<HTMLDivElement>(null);
   const skillPickerRef = useRef<HTMLDivElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
+  const contextUsageSourceRef = useRef<{ value: unknown; modelRef: string | null } | undefined>(undefined);
   const isComposingRef = useRef(false);
   const dictationHandleRef = useRef<DictationHandle | null>(null);
   const dictationBaseRef = useRef('');
@@ -373,9 +497,36 @@ export function ChatInput({
   const hasAgents = (agents ?? []).length > 0;
   const showModelPicker = hasAgents && textModelOptions.length > 0;
   const inputDisabled = disabled || !isGatewayUsable || !hasAgents || !!switchingModelRef;
+  const attachmentsLocked = inputDisabled;
   const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
+  const [microphoneAccess, setMicrophoneAccess] = useState<AsrMicrophoneAccessResult | null>(null);
+  if (!contextUsageSourceRef.current || contextUsageSourceRef.current.value !== contextUsage) {
+    contextUsageSourceRef.current = { value: contextUsage, modelRef: effectiveModelRef };
+  }
+  const selectedModelOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
+  const selectedModelAccount = providerAccounts.find((account) => account.id === selectedModelOption?.accountId);
+  const selectedModelVendor = providerVendors.find((vendor) => vendor.id === selectedModelAccount?.vendorId);
+  const selectedModelContextWindow = selectedModelOption
+    ? selectedModelVendor?.models?.[selectedModelOption.modelId]?.contextWindow
+    : undefined;
+  const contextWindowOverride = contextUsageSourceRef.current.modelRef === effectiveModelRef
+    ? undefined
+    : effectiveModelRef === currentAgent?.modelRef
+      ? currentAgent.contextWindow
+      : selectedModelContextWindow;
+  const activeContextUsage = getContextUsage(contextUsage, contextWindowOverride);
+  const contextUsagePercentage = activeContextUsage
+    ? new Intl.NumberFormat(i18n.resolvedLanguage, { style: 'percent', maximumFractionDigits: 0 }).format(activeContextUsage.percent / 100)
+    : null;
+  const contextUsageLabel = activeContextUsage && contextUsagePercentage
+    ? t('composer.contextUsage', {
+      percentage: contextUsagePercentage,
+      used: new Intl.NumberFormat(i18n.resolvedLanguage).format(activeContextUsage.used),
+      total: new Intl.NumberFormat(i18n.resolvedLanguage).format(activeContextUsage.size),
+    })
+    : null;
   useEffect(() => {
     void refreshProviderSnapshot();
   }, [refreshProviderSnapshot]);
@@ -406,6 +557,14 @@ export function ChatInput({
     }
   }, [workspaceSelectorDisabled]);
 
+  useEffect(() => {
+    if (!inputDisabled) return;
+    setPickerOpen(false);
+    setSkillPickerOpen(false);
+    setModelPickerOpen(false);
+    setWorkspaceMenuOpen(false);
+  }, [inputDisabled]);
+
   // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
@@ -414,12 +573,30 @@ export function ChatInput({
     }
   }, [input]);
 
-  // Focus textarea on mount (avoids Windows focus loss after session delete + native dialog)
-  useEffect(() => {
-    if (!inputDisabled && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [inputDisabled]);
+  const rememberDraftSelection = useCallback((textarea = textareaRef.current) => {
+    if (!draftKey || !textarea) return;
+    draftSelectionsRef.current.set(draftKey, {
+      start: textarea.selectionStart ?? 0,
+      end: textarea.selectionEnd ?? 0,
+      direction: textarea.selectionDirection ?? 'none',
+    });
+  }, [draftKey]);
+
+  // Focus the composer when it becomes available. When changing conversations,
+  // restore that conversation's last selection instead of leaving the controlled
+  // textarea at the position produced while React swapped its value.
+  useLayoutEffect(() => {
+    if (inputDisabled || !textareaRef.current) return;
+    const textarea = textareaRef.current;
+    textarea.focus();
+    if (!draftKey) return;
+
+    const savedSelection = draftSelectionsRef.current.get(draftKey);
+    const fallbackPosition = textarea.value.length;
+    const start = Math.min(savedSelection?.start ?? fallbackPosition, fallbackPosition);
+    const end = Math.max(start, Math.min(savedSelection?.end ?? start, fallbackPosition));
+    textarea.setSelectionRange(start, end, savedSelection?.direction ?? 'none');
+  }, [draftKey, inputDisabled]);
 
   useEffect(() => {
     if (!targetAgentId) return;
@@ -482,7 +659,7 @@ export function ChatInput({
     setSkillQuery('');
     setQuickSkills([]);
     setSkillsError(null);
-  }, [currentAgentId]);
+  }, [currentAgentId, setInput]);
 
   useEffect(() => {
     if (!selectedSkill) return;
@@ -494,29 +671,32 @@ export function ChatInput({
 
   const handleInputChange = useCallback((value: string) => {
     setInput(value);
-  }, []);
+  }, [setInput]);
 
   const moveCaretTo = useCallback((position: number) => {
-    textareaRef.current?.focus();
-    textareaRef.current?.setSelectionRange(position, position);
-    requestAnimationFrame(() => {
+    const move = () => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(position, position);
-    });
-  }, []);
+      rememberDraftSelection();
+    };
+    move();
+    requestAnimationFrame(move);
+  }, [rememberDraftSelection]);
 
-  const normalizeSelectionAroundSkill = useCallback(() => {
-    if (skillTokenRanges.length === 0) return;
+  const handleComposerSelection = useCallback(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     const selectionStart = textarea.selectionStart ?? 0;
     const selectionEnd = textarea.selectionEnd ?? 0;
-    if (selectionStart !== selectionEnd) return;
-    const tokenRange = skillTokenRanges.find((range) => selectionStart > range.start && selectionStart < range.end);
-    if (tokenRange) {
-      moveCaretTo(tokenRange.end);
+    if (selectionStart === selectionEnd) {
+      const tokenRange = skillTokenRanges.find((range) => selectionStart > range.start && selectionStart < range.end);
+      if (tokenRange) {
+        moveCaretTo(tokenRange.end);
+        return;
+      }
     }
-  }, [moveCaretTo, skillTokenRanges]);
+    rememberDraftSelection(textarea);
+  }, [moveCaretTo, rememberDraftSelection, skillTokenRanges]);
 
   const loadQuickSkills = useCallback(async (): Promise<QuickAccessSkill[]> => {
     if (!currentAgent) {
@@ -652,7 +832,7 @@ export function ChatInput({
     } finally {
       setEnhancingPrompt(false);
     }
-  }, [currentAgentId, enhancingPrompt, input, t, targetAgentId]);
+  }, [currentAgentId, enhancingPrompt, input, setInput, t, targetAgentId]);
 
   const handleWorkspaceButtonClick = useCallback(() => {
     if (workspaceSelectorDisabled) return;
@@ -701,7 +881,7 @@ export function ChatInput({
   // ── File staging via native dialog / Electron drag-drop paths ──
 
   const stagePathFiles = useCallback(async (filePaths: string[]) => {
-    if (filePaths.length === 0) return;
+    if (attachmentsLocked || filePaths.length === 0) return;
 
     const tempIds: string[] = [];
     for (const filePath of filePaths) {
@@ -714,6 +894,7 @@ export function ChatInput({
         mimeType: '',
         fileSize: 0,
         stagedPath: '',
+        sourceKind: 'path',
         preview: null,
         status: 'staging' as const,
       }]);
@@ -755,9 +936,10 @@ export function ChatInput({
           : a,
       ));
     }
-  }, []);
+  }, [attachmentsLocked]);
 
   const pickFiles = useCallback(async () => {
+    if (attachmentsLocked) return;
     try {
       const result = await hostApi.dialog.open({
         properties: ['openFile', 'multiSelections'],
@@ -767,11 +949,12 @@ export function ChatInput({
     } catch (err) {
       console.error('[pickFiles] Failed to open file dialog:', err);
     }
-  }, [stagePathFiles]);
+  }, [attachmentsLocked, stagePathFiles]);
 
   // ── Stage browser File objects (paste / drag-drop) ─────────────
 
   const stageBufferFiles = useCallback(async (files: globalThis.File[]) => {
+    if (attachmentsLocked) return;
     for (const file of files) {
       const tempId = crypto.randomUUID();
       setAttachments(prev => [...prev, {
@@ -780,6 +963,7 @@ export function ChatInput({
         mimeType: file.type || 'application/octet-stream',
         fileSize: file.size,
         stagedPath: '',
+        sourceKind: 'buffer',
         preview: null,
         status: 'staging' as const,
       }]);
@@ -807,13 +991,14 @@ export function ChatInput({
         ));
       }
     }
-  }, []);
+  }, [attachmentsLocked]);
 
   // ── Attachment management ──────────────────────────────────────
 
   const removeAttachment = useCallback((id: string) => {
+    if (attachmentsLocked) return;
     setAttachments(prev => prev.filter(a => a.id !== id));
-  }, []);
+  }, [attachmentsLocked]);
 
   const allReady = attachments.length === 0 || attachments.every(a => a.status === 'ready');
   const hasFailedAttachments = attachments.some((a) => a.status === 'error');
@@ -887,7 +1072,7 @@ export function ChatInput({
     setPickerOpen(false);
     setSkillPickerOpen(false);
     setWorkspaceMenuOpen(false);
-  }, [input, attachments, canSend, onSend, targetAgentId, currentAgent, availableOrigins, language]);
+  }, [input, attachments, canSend, onSend, setInput, targetAgentId, currentAgent, availableOrigins, language]);
 
   const handleStop = useCallback(() => {
     if (!canStop) return;
@@ -898,6 +1083,12 @@ export function ChatInput({
     dictationBaseRef.current = input.trim() ? `${input.trimEnd()} ` : '';
     setMicState('starting');
     try {
+      const access = await hostApi.asr.getMicrophoneAccess();
+      if (access.status === 'denied' || access.status === 'restricted') {
+        setMicrophoneAccess(access);
+        setMicState('idle');
+        return;
+      }
       const handle = await startDictation({
         onState: (state) => setMicState(state),
         onFinal: (text) => {
@@ -915,14 +1106,29 @@ export function ChatInput({
     } catch (error) {
       setMicState('idle');
       dictationHandleRef.current = null;
+      if (error instanceof Error && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) {
+        const access = await hostApi.asr.getMicrophoneAccess().catch(() => null);
+        if (access && (access.status === 'denied' || access.status === 'restricted')) {
+          setMicrophoneAccess(access);
+          return;
+        }
+      }
       toast.error(t('voice.dictationStartFailed', { error: String(error) }));
     }
-  }, [input, t]);
+  }, [input, setInput, t]);
 
   const handleMicClick = useCallback(() => {
     if (inputDisabled || sending) return;
     if (voiceInputMode === 'conversation') {
-      setTalkOpen(true);
+      void hostApi.asr.getMicrophoneAccess().then((access) => {
+        if (access.status === 'denied' || access.status === 'restricted') {
+          setMicrophoneAccess(access);
+        } else {
+          setTalkOpen(true);
+        }
+      }).catch((error) => {
+        toast.error(t('voice.dictationStartFailed', { error: String(error) }));
+      });
       return;
     }
     if (micState === 'recording') {
@@ -930,7 +1136,7 @@ export function ChatInput({
     } else if (micState === 'idle') {
       void startDictationCapture();
     }
-  }, [inputDisabled, micState, sending, startDictationCapture, voiceInputMode]);
+  }, [inputDisabled, micState, sending, startDictationCapture, t, voiceInputMode]);
 
   useEffect(() => {
     return () => {
@@ -1009,7 +1215,7 @@ export function ChatInput({
         handleSend();
       }
     },
-    [handleSend, input, moveCaretTo, selectedSkill, skillTokenRanges],
+    [handleSend, input, moveCaretTo, selectedSkill, setInput, skillTokenRanges],
   );
 
   // Handle paste (Ctrl/Cmd+V with files)
@@ -1026,11 +1232,12 @@ export function ChatInput({
         }
       }
       if (pastedFiles.length > 0) {
+        if (attachmentsLocked) return;
         e.preventDefault();
         stageBufferFiles(pastedFiles);
       }
     },
-    [stageBufferFiles],
+    [attachmentsLocked, stageBufferFiles],
   );
 
   // Handle drag & drop
@@ -1039,8 +1246,9 @@ export function ChatInput({
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (attachmentsLocked) return;
     setDragOver(true);
-  }, []);
+  }, [attachmentsLocked]);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -1053,6 +1261,7 @@ export function ChatInput({
       e.preventDefault();
       e.stopPropagation();
       setDragOver(false);
+      if (attachmentsLocked) return;
       if (!e.dataTransfer) return;
 
       const { pathFiles, bufferFiles } = collectDroppedFiles(e.dataTransfer);
@@ -1063,27 +1272,34 @@ export function ChatInput({
       if (pathFiles.length > 0) void stagePathFiles(pathFiles);
       if (bufferFiles.length > 0) void stageBufferFiles(bufferFiles);
     },
-    [stageBufferFiles, stagePathFiles, t],
+    [attachmentsLocked, stageBufferFiles, stagePathFiles, t],
   );
 
-  return (
-    <div
-      className={cn(
-        "shrink-0 p-4 pb-6 w-full mx-auto max-w-3xl"
-      )}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      <div className="w-full">
-        {sending && (
-          <div
-            data-testid="chat-composer-working-indicator"
-            role="status"
-            aria-live="polite"
-            aria-label={t('composer.thinking')}
-            className="mb-2 flex h-5 items-center gap-2 text-sm text-muted-foreground"
-          >
+  const hasWorkingSubagents = subagentSessions.some((session) => session.busy);
+  const composerSessionKey = draftKey ?? '';
+  const [expandedComposerPanel, setExpandedComposerPanel] = useState<{
+    sessionKey: string;
+    panel: ComposerExpandedPanel;
+  }>({ sessionKey: composerSessionKey, panel: null });
+  const activeComposerPanel = expandedComposerPanel.sessionKey === composerSessionKey
+    ? expandedComposerPanel.panel
+    : null;
+  const showWorkingIndicator = sending || hasWorkingSubagents;
+  const showSubagentControl = typeof onSelectSubagent === 'function' && subagentSessions.length > 0;
+  const showStatusRow = showWorkingIndicator || showSubagentControl || currentPlan != null;
+  const workingLabel = sending ? t('composer.thinking') : t('composer.subagentsWorking');
+
+  if (statusOnly) {
+    return (
+      <div className="relative mx-auto w-full max-w-3xl shrink-0 p-4 pb-6">
+        <div
+          data-testid="chat-composer-working-indicator"
+          role="status"
+          aria-live="polite"
+          aria-label={workingLabel}
+          className="mb-2 flex min-h-5 items-center justify-between gap-2 text-sm text-muted-foreground"
+        >
+          <span className="flex min-w-0 items-center gap-2">
             <span
               data-testid="chat-composer-dot-pulse"
               aria-hidden="true"
@@ -1093,7 +1309,68 @@ export function ChatInput({
                 <span className="clawx-chat-thinking-dot-pulse-dot" />
               </span>
             </span>
-            <span>{t('composer.thinking')}</span>
+            <span>{workingLabel}</span>
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        'relative mx-auto w-full max-w-3xl shrink-0 p-4 pb-6',
+      )}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <div className="w-full">
+        {showStatusRow && (
+          <div
+            data-testid="chat-composer-working-indicator"
+            role={showWorkingIndicator ? 'status' : undefined}
+            aria-live={showWorkingIndicator ? 'polite' : undefined}
+            aria-label={showWorkingIndicator ? workingLabel : undefined}
+            className="mb-2 flex min-h-5 items-center justify-between gap-2 text-sm text-muted-foreground"
+          >
+            {showWorkingIndicator ? (
+              <span className="flex min-w-0 items-center gap-2">
+                <span
+                  data-testid="chat-composer-dot-pulse"
+                  aria-hidden="true"
+                  className="clawx-chat-thinking-dot-pulse"
+                >
+                  <span className="clawx-chat-thinking-dot-pulse-inner">
+                    <span className="clawx-chat-thinking-dot-pulse-dot" />
+                  </span>
+                </span>
+                <span>{workingLabel}</span>
+              </span>
+            ) : <span aria-hidden="true" />}
+            <div className="flex shrink-0 items-center gap-2">
+              {showSubagentControl && typeof onSelectSubagent === 'function' && (
+                <AcpSubagentSessions
+                  sessions={subagentSessions}
+                  sessionKey={composerSessionKey}
+                  onSelectSession={onSelectSubagent}
+                  isExpanded={activeComposerPanel === 'subagents'}
+                  onExpandedChange={(isExpanded) => setExpandedComposerPanel({
+                    sessionKey: composerSessionKey,
+                    panel: isExpanded ? 'subagents' : null,
+                  })}
+                />
+              )}
+              <AcpSessionPlan
+                plan={currentPlan}
+                sessionKey={composerSessionKey}
+                isExpanded={activeComposerPanel === 'plan'}
+                onExpandedChange={(isExpanded) => setExpandedComposerPanel({
+                  sessionKey: composerSessionKey,
+                  panel: isExpanded ? 'plan' : null,
+                })}
+              />
+            </div>
           </div>
         )}
 
@@ -1126,18 +1403,23 @@ export function ChatInput({
                 key={att.id}
                 attachment={att}
                 onRemove={() => removeAttachment(att.id)}
+                disabled={attachmentsLocked}
               />
             ))}
           </div>
         )}
 
         {/* Input Container */}
-        <div className={`relative bg-surface-modal rounded-2xl shadow-sm border px-3 pt-2.5 pb-1.5 transition-all ${dragOver ? 'border-primary ring-1 ring-primary' : 'border-black/10 dark:border-white/10'}`}>
+        <div
+          data-testid="chat-composer-box"
+          className={`relative bg-surface-modal rounded-2xl shadow-sm border px-3 pt-2.5 pb-1.5 transition-all ${dragOver ? 'border-primary ring-1 ring-primary' : 'border-black/10 dark:border-white/10'}`}
+        >
           {selectedTarget && (
             <div className="flex flex-wrap gap-2 pb-1.5">
               <button
                 type="button"
                 onClick={() => setTargetAgentId(null)}
+                disabled={inputDisabled}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1 text-meta font-medium text-foreground transition-colors hover:bg-primary/10"
                 title={t('composer.clearTarget')}
               >
@@ -1166,10 +1448,14 @@ export function ChatInput({
             <Textarea
               ref={textareaRef}
               value={input}
-              onChange={(e) => handleInputChange(e.target.value)}
+              onChange={(e) => {
+                handleInputChange(e.target.value);
+                rememberDraftSelection(e.currentTarget);
+              }}
               onKeyDown={handleKeyDown}
-              onSelect={normalizeSelectionAroundSkill}
-              onClick={normalizeSelectionAroundSkill}
+              onSelect={handleComposerSelection}
+              onClick={handleComposerSelection}
+              onBlur={(e) => rememberDraftSelection(e.currentTarget)}
               onCompositionStart={() => {
                 isComposingRef.current = true;
               }}
@@ -1502,29 +1788,35 @@ export function ChatInput({
               )}
             </Button>
 
-            {/* Send Button */}
-            <Button
-              onClick={sending ? handleStop : handleSend}
-              disabled={sending ? !canStop : !canSend}
-              size="icon"
-              data-testid="chat-composer-send"
-              className={`shrink-0 h-8 w-8 rounded-lg transition-colors ${
-                (sending || canSend)
-                  ? 'bg-black/5 dark:bg-white/10 text-foreground hover:bg-black/10 dark:hover:bg-white/20'
-                  : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
-              }`}
-              variant="ghost"
-              title={sending ? t('composer.stop') : t('composer.send')}
-            >
-              {sending ? (
-                <Square className="h-3.5 w-3.5" fill="currentColor" />
-              ) : (
-                <SendHorizontal className="h-4 w-4" strokeWidth={2} />
-              )}
-            </Button>
+            <div className="ml-auto flex items-center gap-1">
+
+              {/* Send Button */}
+              <Button
+                onClick={sending ? handleStop : handleSend}
+                disabled={sending ? !canStop : !canSend}
+                size="icon"
+                data-testid="chat-composer-send"
+                className={`shrink-0 h-8 w-8 rounded-lg transition-colors ${
+                  (sending || canSend)
+                    ? 'bg-black/5 dark:bg-white/10 text-foreground hover:bg-black/10 dark:hover:bg-white/20'
+                    : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
+                }`}
+                variant="ghost"
+                title={sending ? t('composer.stop') : t('composer.send')}
+              >
+                {sending ? (
+                  <Square className="h-3.5 w-3.5" fill="currentColor" />
+                ) : (
+                  <SendHorizontal className="h-4 w-4" strokeWidth={2} />
+                )}
+              </Button>
+            </div>
           </div>
         </div>
-        <div className="mt-2.5 flex min-w-0 items-center justify-between gap-2 text-tiny text-muted-foreground/60">
+        <div
+          data-testid="chat-composer-footer"
+          className="mt-2.5 flex min-w-0 items-center justify-between gap-2 text-tiny text-muted-foreground/60"
+        >
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
             {workspaceLabel && workspacePath && (
               <div ref={workspaceMenuRef} className="relative min-w-0 shrink" onKeyDown={handleWorkspaceKeyDown}>
@@ -1611,7 +1903,15 @@ export function ChatInput({
           </div>
 
           <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 overflow-hidden text-right">
-            <div className="flex min-w-0 items-center justify-end gap-1.5 overflow-hidden">
+            <div className="flex min-w-0 items-center justify-end gap-2 overflow-hidden">
+              {activeContextUsage && contextUsageLabel && contextUsagePercentage && (
+                <ContextUsageIndicator
+                  usage={activeContextUsage}
+                  label={contextUsageLabel}
+                  percentageLabel={contextUsagePercentage}
+                />
+              )}
+            <div data-testid="chat-composer-gateway-status" className="flex min-w-0 items-center justify-end gap-1.5 overflow-hidden">
               <div className={cn(
                 'h-1.5 w-1.5 shrink-0 rounded-full',
                 isGatewayUsable ? 'bg-green-500/80' : 'bg-red-500/80',
@@ -1630,6 +1930,7 @@ export function ChatInput({
               {chatComposerStatusComponents.map((Component, index) => (
                 <Component key={`${index}`} gatewayStatus={gatewayStatus} />
               ))}
+              </div>
             </div>
             {hasFailedAttachments && (
               <Button
@@ -1637,9 +1938,11 @@ export function ChatInput({
                 size="sm"
                 className="h-auto shrink-0 p-0 text-tiny"
                 onClick={() => {
+                  if (attachmentsLocked) return;
                   setAttachments((prev) => prev.filter((att) => att.status !== 'error'));
                   void pickFiles();
                 }}
+                disabled={attachmentsLocked}
               >
                 {t('composer.retryFailedAttachments')}
               </Button>
@@ -1661,6 +1964,7 @@ export function ChatInput({
         onConfirm={() => sensitiveResolveRef.current?.(true)}
         onCancel={() => sensitiveResolveRef.current?.(false)}
       />
+      {microphoneAccess && <MicrophonePermissionDialog access={microphoneAccess} onClose={() => setMicrophoneAccess(null)} />}
     </div>
   );
 }
@@ -1670,9 +1974,11 @@ export function ChatInput({
 function AttachmentPreview({
   attachment,
   onRemove,
+  disabled,
 }: {
   attachment: FileAttachment;
   onRemove: () => void;
+  disabled: boolean;
 }) {
   const { t } = useTranslation('chat');
   const isImage = attachment.mimeType.startsWith('image/') && attachment.preview;
@@ -1726,7 +2032,10 @@ function AttachmentPreview({
 
       {/* Remove button */}
       <button
+        type="button"
+        data-testid="chat-attachment-remove"
         onClick={onRemove}
+        disabled={disabled}
         className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
       >
         <X className="h-3 w-3" />

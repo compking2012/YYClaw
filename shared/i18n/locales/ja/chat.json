@@ -58,6 +58,17 @@
   "acp": {
     "thought": "思考",
     "tool": "ツール",
+    "toolName": {
+      "updatePlan": "計画を更新",
+      "webFetch": "Webページを読む",
+      "browser": "ブラウザーを操作",
+      "computer": "コンピューターを操作",
+      "execCommand": "コマンドを実行",
+      "read": "読み取り",
+      "write": "書き込み",
+      "spawnSubagent": "サブエージェントを起動",
+      "memorySearch": "メモリを検索"
+    },
     "expandTool": "ツール結果を展開",
     "collapseTool": "ツール結果を折りたたむ",
     "expandToolGroup": "ツール呼び出しを展開",
@@ -68,10 +79,35 @@
     "running": "実行中",
     "pending": "保留中",
     "completed": "完了",
+    "sessionPlan": {
+      "progress": "タスク {{completed}} / {{total}}",
+      "expand": "計画を展開",
+      "collapse": "計画を折りたたむ",
+      "tasks": "計画のタスク"
+    },
+    "subagentSessions": {
+      "count": "{{count}} 件のサブエージェントを派出済み",
+      "expand": "サブエージェントセッションを展開",
+      "collapse": "サブエージェントセッションを折りたたむ",
+      "toggle": "{{action}}、{{count}}",
+      "panel": "サブエージェントセッション",
+      "open": "サブエージェント {{title}} を開く",
+      "marker": "サブエージェント",
+      "returnToParent": "親の会話に戻る",
+      "busy": "実行中",
+      "settled": "完了",
+      "aggregateStatus": "サブエージェント: {{status}}",
+      "rowStatus": "{{title}}: {{status}}"
+    },
     "failed": "失敗",
     "cancelled": "キャンセル済み",
     "loadFailed": "セッションの読み込みに失敗しました",
     "promptFailed": "プロンプトの送信に失敗しました",
+    "tokenDanceRecovery": {
+      "top_up_balance": "TokenDance の残高が不足しています。チャージしてからこのリクエストを再試行してください。",
+      "reauthorize_api_key": "TokenDance キーは無効です。モデル設定を開き、TokenDance を再認証してください。",
+      "api_key_quota": "TokenDance キーが期間上限に達しました。上限のリセットを待つか、TokenDance を再認証してください。"
+    },
     "unsupportedContent": "未対応のコンテンツ",
     "dismiss": "閉じる",
     "image": "画像",
@@ -83,6 +119,14 @@
     "copied": "コピーしました",
     "turnDuration": "所要時間 {{duration}}",
     "turnElapsed": "経過時間 {{duration}}",
+    "compaction": {
+      "inProgress": "コンテキストを圧縮中",
+      "completed": "履歴を圧縮しました",
+      "continuing": "コンテキストを圧縮して続行中",
+      "failed": "コンテキストの圧縮に失敗しました",
+      "cancelled": "コンテキストの圧縮をキャンセルしました",
+      "reason": "理由: {{reason}}"
+    },
     "attachment": {
       "loading": "添付ファイルを読み込み中",
       "unavailable": "添付ファイルを利用できません",
@@ -325,7 +369,32 @@
     "skillPreviewTooltip": "SKILL.md をプレビュー",
     "skillPreviewNotFound": "この Skill が見つかりません。Skill ピッカーを開いて一覧を更新してください。",
     "defaultModel": "デフォルト",
-    "noAgentPlaceholder": "会話を始める前にエージェントを作成してください"
+    "noAgentPlaceholder": "会話を始める前にエージェントを作成してください",
+    "subagentsWorking": "サブエージェントが作業中",
+    "contextUsage": "コンテキスト使用量 {{percentage}}: {{used}} / {{total}} トークン",
+    "voiceInput": "音声入力",
+    "voiceStop": "録音を停止",
+    "voiceNotConfigured": "音声入力が未設定です。「モデル」ページで設定してください。",
+    "microphonePermission": {
+      "title": "マイクへのアクセスが必要です",
+      "denied": "マイクへのアクセスが拒否されています。音声入力を使うには、システムのプライバシー設定でアクセスを許可してください。",
+      "restricted": "管理者またはデバイスポリシーによりマイクへのアクセスが制限されています。管理者にお問い合わせください。プライバシー設定の変更だけでは解除できない場合があります。",
+      "openSettings": "システム設定を開く",
+      "close": "閉じる",
+      "openFailed": "システム設定を開けませんでした。マイクのプライバシー設定を手動で開いてください。"
+    },
+    "voiceError": {
+      "MIC_UNAVAILABLE": "マイクを利用できません。システムの権限を確認してください。",
+      "TOO_SHORT": "音声を検出できませんでした。",
+      "NOT_CONFIGURED": "音声文字起こしが設定されていません。",
+      "AUTH": "API キーが無効か、権限が不足しています。",
+      "RATE_LIMITED": "リクエストが多すぎます。しばらくしてから再試行してください。",
+      "SERVER": "音声サービスが一時的に利用できません。",
+      "REQUEST": "音声リクエストに失敗しました。",
+      "NETWORK": "音声サービスに接続できません。ネットワークまたは Base URL を確認してください。",
+      "EMPTY_RESULT": "音声を認識できませんでした。",
+      "INVALID_INPUT": "録音データが無効です。"
+    }
   },
   "sessionList": {
     "title": "セッション一覧",
@@ -334,6 +403,7 @@
     "loadMore": "もっと読み込む",
     "aiReplying": "AI が返信中",
     "unreadReply": "未読の返信",
+    "subagent": "サブエージェント",
     "loadMoreForWorkspace": "{{workspace}} でさらに {{count}} 件のセッションを読み込む",
     "workspaceToggle": "ワークスペース {{workspace}} を切り替え",
     "renameWorkspace": "ワークスペース {{workspace}} の名前を変更",
@@ -344,6 +414,7 @@
     "deleteWorkspaceConfirmAction": "ワークスペースとセッションを削除",
     "deleteWorkspacePartialFailure": "{{count}} 件のセッションを削除できなかったため、ワークスペースに残しました。",
     "deleteWorkspaceCleanupFailed": "セッションは削除されましたが、保存済みワークスペースの記録を消去できませんでした。",
+    "deleteSessionCleanupWarning": "会話は削除されましたが、一部のワークフローや履歴を消去できませんでした。残りのデータは保持されています。",
     "workspaceName": "ワークスペース名",
     "saveWorkspaceRename": "ワークスペース名を保存",
     "cancelWorkspaceRename": "ワークスペース名の変更をキャンセル"
@@ -420,5 +491,6 @@
       "noSession": "このステップにはサブセッションがありません"
     },
     "synthesizeStep": "統合"
-  }
+  },
+  "newSession": "新しい会話"
 }

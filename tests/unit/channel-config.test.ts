@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { testHome, testUserData, mockLoggerWarn, mockLoggerInfo, mockLoggerError } = vi.hoisted(() => {
+const { testHome, testUserData, mockLoggerWarn, mockLoggerInfo, mockLoggerError, proxyAwareFetchMock } = vi.hoisted(() => {
   const suffix = Math.random().toString(36).slice(2);
   return {
     testHome: `/tmp/clawx-channel-config-${suffix}`,
@@ -11,8 +11,13 @@ const { testHome, testUserData, mockLoggerWarn, mockLoggerInfo, mockLoggerError 
     mockLoggerWarn: vi.fn(),
     mockLoggerInfo: vi.fn(),
     mockLoggerError: vi.fn(),
+    proxyAwareFetchMock: vi.fn(),
   };
 });
+
+vi.mock('@electron/utils/proxy-fetch', () => ({
+  proxyAwareFetch: (...args: unknown[]) => proxyAwareFetchMock(...args),
+}));
 
 vi.mock('os', async () => {
   const actual = await vi.importActual<typeof import('os')>('os');
@@ -70,6 +75,20 @@ describe('channel credential normalization and duplicate checks', () => {
     vi.resetModules();
     await rm(testHome, { recursive: true, force: true });
     await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('restores durable credentials before a direct config write', async () => {
+    const { writeOpenClawConfig } = await import('@electron/utils/channel-config');
+    await writeOpenClawJson({ channels: { feishu: { appSecret: 'real-secret' } } });
+    await writeOpenClawConfig({ channels: { feishu: { appSecret: '__OPENCLAW_REDACTED__' } } });
+    expect((await readOpenClawJson()).channels).toEqual({ feishu: { appSecret: 'real-secret' } });
+  });
+
+  it('rejects direct writes when a redacted credential has no durable value', async () => {
+    const { writeOpenClawConfig } = await import('@electron/utils/channel-config');
+    await writeOpenClawJson({});
+    await expect(writeOpenClawConfig({ token: '__OPENCLAW_REDACTED__' })).rejects.toThrow('re-enter the credential');
+    expect(await readOpenClawJson()).toEqual({});
   });
 
   it('assertNoDuplicateCredential detects duplicates with different whitespace', async () => {
@@ -192,6 +211,62 @@ describe('WeCom plugin configuration', () => {
     vi.resetModules();
     await rm(testHome, { recursive: true, force: true });
     await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('sets plugins.entries.dingtalk.enabled and sanitizes soimy card fields', async () => {
+    const { saveChannelConfig } = await import('@electron/utils/channel-config');
+
+    await writeOpenClawJson({
+      channels: {
+        'dingtalk-connector': {
+          enabled: true,
+          clientId: 'should-not-win',
+        },
+      },
+      plugins: {
+        allow: ['dingtalk-connector'],
+        entries: {
+          'dingtalk-connector': { enabled: true },
+        },
+      },
+    });
+
+    await saveChannelConfig('dingtalk', {
+      clientId: 'dt-client-id',
+      clientSecret: 'dt-secret',
+      messageType: 'card',
+      cardStreamingMode: 'realtime',
+    }, 'default');
+
+    const config = await readOpenClawJson();
+    const channels = config.channels as Record<string, Record<string, unknown>>;
+    const plugins = config.plugins as { allow: string[]; entries: Record<string, { enabled?: boolean }> };
+    const dingtalk = channels.dingtalk;
+
+    expect(dingtalk.clientId).toBe('dt-client-id');
+    expect(dingtalk.clientSecret).toBe('dt-secret');
+    expect(dingtalk.defaultAccount).toBe('default');
+    expect(dingtalk.groupReplyMode).toBe('aicard');
+    expect(dingtalk.messageType).toBeUndefined();
+    expect(channels['dingtalk-connector']).toBeUndefined();
+    expect(plugins.allow).toContain('dingtalk');
+    expect(plugins.allow).not.toContain('dingtalk-connector');
+    expect(plugins.entries.dingtalk.enabled).toBe(true);
+    expect(plugins.entries['dingtalk-connector']).toBeUndefined();
+  });
+
+  it('reads unredacted DingTalk credentials from the durable account config for workspace OAuth', async () => {
+    const { getDurableChannelConfig, saveChannelConfig } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig('dingtalk', {
+      clientId: 'ding-client-id',
+      clientSecret: 'ding-client-secret',
+    }, 'ding-main');
+
+    await expect(getDurableChannelConfig('dingtalk', 'ding-main')).resolves.toMatchObject({
+      clientId: 'ding-client-id',
+      clientSecret: 'ding-client-secret',
+    });
   });
 
   it('sets plugins.entries.wecom.enabled when saving wecom config', async () => {
@@ -576,6 +651,187 @@ describe('configured channel account extraction', () => {
     expect(result.feishu).toEqual({
       defaultAccountId: '2',
       accountIds: ['2'],
+    });
+  });
+});
+
+describe('Feishu credential validation', () => {
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    vi.resetModules();
+    await rm(testHome, { recursive: true, force: true });
+  });
+
+  function jsonResponse(body: unknown, status = 200): Response {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+    } as unknown as Response;
+  }
+
+  it('rejects an App Secret that is just the App ID pasted twice without calling Feishu', async () => {
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: 'cli_a8cf7d97fbb8d00d',
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errorCodes).toEqual([{ code: 'feishuAppSecretEqualsAppId', params: undefined }]);
+    expect(result.errors[0]).toMatch(/identical to App ID/);
+    expect(proxyAwareFetchMock).not.toHaveBeenCalled();
+  });
+
+  it('requires both App ID and App Secret', async () => {
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    await expect(validateChannelCredentials('feishu', { appSecret: 'secret' })).resolves.toMatchObject({
+      valid: false,
+      errorCodes: [{ code: 'feishuAppIdRequired' }],
+    });
+    await expect(validateChannelCredentials('feishu', { appId: 'cli_x' })).resolves.toMatchObject({
+      valid: false,
+      errorCodes: [{ code: 'feishuAppSecretRequired' }],
+    });
+    expect(proxyAwareFetchMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the Feishu API rejection when the tenant token request fails', async () => {
+    proxyAwareFetchMock.mockResolvedValue(jsonResponse({ code: 10003, msg: 'app_id or app_secret is invalid' }, 400));
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: 'wrong-secret',
+    });
+
+    expect(proxyAwareFetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ app_id: 'cli_a8cf7d97fbb8d00d', app_secret: 'wrong-secret' }),
+      }),
+    );
+    expect(proxyAwareFetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal',
+      expect.anything(),
+    );
+    expect(result).toMatchObject({
+      valid: false,
+      errorCodes: [{ code: 'feishuRejected', params: { error: 'app_id or app_secret is invalid' } }],
+    });
+    expect(result.errors[0]).toContain('app_id or app_secret is invalid');
+  });
+
+  it('accepts Lark credentials when Feishu rejects and the Larksuite token request succeeds', async () => {
+    proxyAwareFetchMock
+      .mockResolvedValueOnce(jsonResponse({ code: 10003, msg: 'app_id or app_secret is invalid' }, 400))
+      .mockResolvedValueOnce(jsonResponse({ code: 0, msg: 'ok', tenant_access_token: 't-lark', expire: 7200 }));
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: 'lark-secret',
+    });
+
+    expect(proxyAwareFetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
+      expect.anything(),
+    );
+    expect(proxyAwareFetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal',
+      expect.anything(),
+    );
+    expect(result).toEqual({
+      valid: true,
+      errors: [],
+      warnings: [],
+      details: { domain: 'lark' },
+    });
+  });
+
+  it('accepts credentials once Feishu issues a tenant access token and honours the lark domain', async () => {
+    proxyAwareFetchMock.mockResolvedValue(jsonResponse({ code: 0, msg: 'ok', tenant_access_token: 't-abc', expire: 7200 }));
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: 'real-secret',
+      domain: 'lark',
+    });
+
+    expect(proxyAwareFetchMock).toHaveBeenCalledWith(
+      'https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal',
+      expect.anything(),
+    );
+    expect(result).toEqual({
+      valid: true,
+      errors: [],
+      warnings: [],
+      details: { domain: 'lark' },
+    });
+  });
+
+  it('validates a redacted App Secret against the durable file instead of sending the placeholder', async () => {
+    await writeOpenClawJson({
+      channels: {
+        feishu: {
+          enabled: true,
+          accounts: {
+            default: { appId: 'cli_a8cf7d97fbb8d00d', appSecret: 'real-secret' },
+          },
+        },
+      },
+    });
+    proxyAwareFetchMock.mockResolvedValue(jsonResponse({ code: 0, msg: 'ok', tenant_access_token: 't-abc', expire: 7200 }));
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: '__OPENCLAW_REDACTED__',
+    }, { accountId: 'default' });
+
+    expect(proxyAwareFetchMock).toHaveBeenCalledWith(
+      'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ app_id: 'cli_a8cf7d97fbb8d00d', app_secret: 'real-secret' }),
+      }),
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it('asks the user to re-enter the App Secret when the redacted placeholder cannot be resolved', async () => {
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: '__OPENCLAW_REDACTED__',
+    });
+
+    expect(proxyAwareFetchMock).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      valid: false,
+      errorCodes: [{ code: 'feishuAppSecretReenter' }],
+    });
+  });
+
+  it('reports a connection error instead of throwing when Feishu is unreachable', async () => {
+    proxyAwareFetchMock.mockRejectedValue(new Error('ECONNRESET'));
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    await expect(validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: 'real-secret',
+    })).resolves.toMatchObject({
+      valid: false,
+      errorCodes: [{ code: 'feishuConnectionError', params: { error: 'ECONNRESET' } }],
     });
   });
 });

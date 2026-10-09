@@ -137,6 +137,7 @@ export function createChatApi({
         return { success: false, error: String(error) };
       }
     },
+    getAcpSessionFamily: (payload) => acpChat.getSessionFamily(payload),
     loadAcpSession: (payload) => acpChat.loadSession(payload),
     sendAcpPrompt: (payload) => acpChat.sendPrompt(payload),
     cancelAcpSession: (payload) => acpChat.cancelSession(payload),

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -12,6 +12,7 @@ type AfterPackTestHooks = {
   cleanupNodeModulesRuntimeJunk: (nodeModulesDir: string, platform: string, arch: string) => number;
   verifyPackagedNpmPluginMirrors: (pluginsDestRoot: string) => void;
   BUNDLED_NPM_PLUGINS: Array<{ npmName: string; pluginId: string }>;
+  assertCuaPackagedRuntime: (resourcesDir: string, platform: string, arch: string) => void;
 };
 
 const afterPack = require('../../scripts/after-pack.cjs') as { __test?: AfterPackTestHooks };
@@ -31,6 +32,12 @@ describe('after-pack cleanup helpers', () => {
     const nodeModules = join(root, 'node_modules');
     mkdirSync(nodeModules, { recursive: true });
     return nodeModules;
+  }
+
+  function makeTempResources(): string {
+    const root = mkdtempSync(join(tmpdir(), 'clawx-after-pack-resources-'));
+    tempRoots.push(root);
+    return root;
   }
 
   function makePackage(dir: string): void {
@@ -63,6 +70,34 @@ describe('after-pack cleanup helpers', () => {
     expect(existsSync(join(prebuilds, 'darwin-arm64'))).toBe(true);
     expect(existsSync(join(prebuilds, 'darwin-x64'))).toBe(true);
     expect(existsSync(join(prebuilds, 'linux-x64'))).toBe(false);
+  });
+
+  it('requires the CUA executable and matching unpacked native SDK in supported packages', () => {
+    const resourcesDir = makeTempResources();
+    const nativeDir = join(
+      resourcesDir,
+      'app.asar.unpacked',
+      'node_modules',
+      '@trycua',
+      'cua-driver-darwin-arm64',
+    );
+    mkdirSync(join(resourcesDir, 'bin'), { recursive: true });
+    mkdirSync(nativeDir, { recursive: true });
+    writeFileSync(join(resourcesDir, 'bin', 'cua-driver'), 'driver');
+    chmodSync(join(resourcesDir, 'bin', 'cua-driver'), 0o755);
+    writeFileSync(join(nativeDir, 'cua_driver_node_runtime.node'), 'native');
+    writeFileSync(join(nativeDir, 'libcua_driver_sdk.dylib'), 'native');
+
+    expect(() => afterPack.__test!.assertCuaPackagedRuntime(resourcesDir, 'darwin', 'arm64')).not.toThrow();
+    rmSync(join(nativeDir, 'libcua_driver_sdk.dylib'));
+    expect(() => afterPack.__test!.assertCuaPackagedRuntime(resourcesDir, 'darwin', 'arm64')).toThrow(
+      /native SDK/i,
+    );
+  });
+
+  it('unpacks the complete CUA module tree so its loader resolves native libraries outside ASAR', () => {
+    const builderConfig = readFileSync(new URL('../../electron-builder.yml', import.meta.url), 'utf8');
+    expect(builderConfig).toContain('  - "**/node_modules/@trycua/**"');
   });
 });
 

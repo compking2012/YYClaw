@@ -1,6 +1,5 @@
-import { access, readFile, readdir } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -10,6 +9,7 @@ import {
   loadSpec,
   parseFrontmatter,
   pathMatchesAny,
+  validateSpecReferences,
 } from '../../harness/src/specs.mjs';
 import {
   scanBackendCommunicationBoundary,
@@ -29,7 +29,95 @@ async function readMarkdownTree(directory: string): Promise<Array<{ file: string
   return nested.flat();
 }
 
+describe('harness spec references', () => {
+  it('rejects missing primary or supplemental scenarios and required rules', () => {
+    const failures = validateSpecReferences(
+      {
+        path: 'harness/specs/tasks/example.md',
+        data: {
+          scenario: 'gateway-backend-communication',
+          scenarios: ['removed-scenario'],
+          requiredRules: ['renderer-main-boundary', 'removed-rule'],
+        },
+      },
+      [{ data: { id: 'gateway-backend-communication' } }],
+      [{ data: { id: 'renderer-main-boundary' } }],
+    );
+
+    expect(failures).toEqual([
+      'harness/specs/tasks/example.md: references unknown scenario "removed-scenario"',
+      'harness/specs/tasks/example.md: references unknown rule "removed-rule"',
+    ]);
+  });
+});
+
 describe('harness specs', () => {
+  it('defines the three-minute Gateway liveness recovery contract', async () => {
+    const [task, heartbeatRule, communicationScenario, diagnosticsScenario, fourMissTask, observabilityTask] = await Promise.all([
+      loadSpec('harness/specs/tasks/three-minute-gateway-liveness-recovery.md'),
+      loadSpec('harness/specs/rules/gateway-heartbeat-safety.md'),
+      loadSpec('harness/specs/scenarios/gateway-backend-communication.md'),
+      loadSpec('harness/specs/scenarios/gateway-startup-diagnostics.md'),
+      loadSpec('harness/specs/tasks/restore-gateway-heartbeat-recovery-after-four-misses.md'),
+      loadSpec('harness/specs/tasks/make-gateway-heartbeat-observability-only.md'),
+    ]);
+
+    expect(task.data).toMatchObject({
+      id: 'three-minute-gateway-liveness-recovery',
+      scenario: 'gateway-backend-communication',
+      taskType: 'runtime-bridge',
+      requiredProfiles: ['fast', 'comms', 'e2e'],
+      docs: { required: true },
+    });
+    expect(task.data.requiredRules).toEqual([
+      'gateway-heartbeat-safety',
+      'gateway-readiness-policy',
+      'backend-communication-boundary',
+      'comms-regression',
+      'e2e-parallel-isolation',
+      'docs-sync',
+    ]);
+    expect(task.data.requiredTests).toEqual(expect.arrayContaining([
+      'electron/gateway/recovery-controller.test.ts',
+      'tests/e2e/gateway-lifecycle.spec.ts',
+      'tests/e2e/channels-health-diagnostics.spec.ts',
+      'tests/unit/harness-specs.test.ts',
+      'tests/unit/harness-runner.test.ts',
+    ]));
+
+    for (const criterion of [
+      '180 seconds',
+      '5000ms',
+      'exactly one system-presence probe per silence generation',
+      'successful deadline system-presence probe',
+      'owned Gateway',
+      'external Gateway',
+      'Code 1012',
+      'No chat, tool, cron, or workload tracking',
+    ]) {
+      expect(task.data.acceptance.join('\n')).toContain(criterion);
+    }
+
+    for (const spec of [heartbeatRule, communicationScenario, diagnosticsScenario]) {
+      expect(spec.body).toContain('180 seconds');
+      expect(spec.body).toContain('system-presence');
+      expect(spec.body).toContain('externally managed');
+      expect(spec.body).not.toContain('four consecutive');
+    }
+    expect(communicationScenario.body).toContain('Renderer code must not own transport selection');
+    expect(diagnosticsScenario.body).toContain('lastDeadlineProbeResult');
+    for (const archivedTask of [fourMissTask, observabilityTask]) {
+      expect(archivedTask.data).toMatchObject({
+        title: expect.stringMatching(/^Historical:/),
+        intent: expect.stringContaining('must not guide current Gateway lifecycle behavior'),
+        expectedUserBehavior: ['This historical task does not define current user behavior.'],
+        acceptance: ['Do not implement this historical task; use three-minute-gateway-liveness-recovery for the current liveness policy.'],
+        docs: { required: false },
+      });
+      expect(archivedTask.body).toContain('Historical task superseded by `three-minute-gateway-liveness-recovery`');
+    }
+  });
+
   it('defines the sidebar session attention harness contract', async () => {
     const expectedRules = [
       'renderer-main-boundary',
@@ -60,6 +148,161 @@ describe('harness specs', () => {
       const scenario = scenarios.find((candidate) => candidate.data.id === scenarioId);
       expect(scenario?.data.requiredRules).toContain('sidebar-session-attention-authority');
     }
+  });
+
+  it('defines the embedded ACP subagent session contract', async () => {
+    const [
+      task,
+      oldTask,
+      liveTask,
+      gatewayScenario,
+      workspaceScenario,
+      acpRule,
+      attentionRule,
+      acpReference,
+      workspaceReference,
+      englishReadme,
+      chineseReadme,
+      japaneseReadme,
+    ] = await Promise.all([
+      loadSpec('harness/specs/tasks/embed-subagent-sessions-in-parent-chat.md'),
+      loadSpec('harness/specs/tasks/surface-subagent-sessions-and-announcements.md'),
+      loadSpec('harness/specs/tasks/stream-loaded-subagent-session-live.md'),
+      loadSpec('harness/specs/scenarios/gateway-backend-communication.md'),
+      loadSpec('harness/specs/scenarios/chat-workspace-and-navigation.md'),
+      loadSpec('harness/specs/rules/acp-chat-state-and-history.md'),
+      loadSpec('harness/specs/rules/sidebar-session-attention-authority.md'),
+      readFile('harness/reference/acp-chat.md', 'utf8'),
+      readFile('harness/reference/chat-workspace-and-navigation.md', 'utf8'),
+      readFile('README.md', 'utf8'),
+      readFile('README.zh-CN.md', 'utf8'),
+      readFile('README.ja-JP.md', 'utf8'),
+    ]);
+
+    expect(task.data).toMatchObject({
+      id: 'embed-subagent-sessions-in-parent-chat',
+      scenario: 'gateway-backend-communication',
+      taskType: 'runtime-bridge',
+      requiredProfiles: ['fast', 'comms', 'e2e'],
+      docs: { required: true },
+    });
+    expect(task.data.touchedAreas).toEqual(expect.arrayContaining([
+      'shared/acp-chat/types.ts',
+      'src/lib/acp/subagent-lineage.ts',
+      'tests/unit/acp-subagent-lineage.test.ts',
+    ]));
+    expect(task.data.requiredTests).toEqual(expect.arrayContaining([
+      'pnpm harness validate --spec harness/specs/tasks/embed-subagent-sessions-in-parent-chat.md',
+      expect.stringContaining('tests/unit/acp-subagent-lineage.test.ts'),
+    ]));
+
+    const taskAcceptance = (task.data.acceptance as string[]).join('\n');
+    expect(taskAcceptance).toContain('sole lineage membership and title authority');
+    expect(taskAcceptance).toContain('prefers `parentSessionId`');
+    expect(taskAcceptance).toContain('falls back to `spawnedBy`');
+    expect(taskAcceptance).toContain('direct native children');
+    expect(taskAcceptance).toContain('Latest exact-key Gateway catalog presence gates current child visibility and actionability');
+    expect(taskAcceptance).toContain('return-target availability');
+    expect(taskAcceptance).toContain('Presence does not create lineage membership or titles');
+    expect(taskAcceptance).toContain('`status` and `hasActiveRun`');
+    expect(taskAcceptance).toContain('sole run-state authority');
+    expect(taskAcceptance).toContain('completed structured accepted ACP `sessions_spawn`');
+    expect(taskAcceptance).toContain('non-empty `runId` and `childSessionKey`');
+    expect(taskAcceptance).toContain('invalidation signal');
+    expect(task.body).toContain('128 pages');
+    expect(task.body).toContain('Archived, deleted, cleaned, or otherwise unlisted historical children are excluded');
+    expect(task.body).toContain('does not scan transcripts, announcements, assistant prose, Gateway lineage, or child UUIDs');
+    expect(taskAcceptance).not.toContain('only for the run status that ACP does not expose');
+
+    const taskBehavior = (task.data.expectedUserBehavior as string[]).join('\n');
+    expect(taskBehavior).toContain('localized composer control');
+    expect(taskBehavior).toContain('only when at least one ACP-listed direct native child is also present under its exact key in the latest Gateway catalog');
+    expect(taskBehavior).toContain('Each expanded row appears only for an ACP-listed direct child that is also present under its exact key in the latest Gateway catalog');
+    expect(taskBehavior).toContain('return action appears only while its ACP-listed direct parent is also present under its exact key in the latest Gateway catalog');
+    expect(taskBehavior).toContain('ACP remains the sole lineage membership and title authority');
+    expect(taskBehavior).toContain('Gateway absence only gates current actionability');
+
+    const oldTaskBehavior = (oldTask.data.expectedUserBehavior as string[]).join('\n');
+    expect(oldTaskBehavior).toContain('no longer appears in the sidebar');
+    expect(oldTaskBehavior).toContain('remains in the shared session catalog');
+
+    expect(liveTask.data).toMatchObject({
+      id: 'stream-loaded-subagent-session-live',
+      scenario: 'gateway-backend-communication',
+      taskType: 'runtime-bridge',
+      requiredProfiles: ['fast', 'comms', 'e2e'],
+      docs: { required: true },
+    });
+    const liveTaskAcceptance = (liveTask.data.acceptance as string[]).join('\n');
+    expect(liveTaskAcceptance).toContain('canonical `agent:<agentId>:subagent:<childId>` shape');
+    expect(liveTaskAcceptance).toContain('ordinary no-pending parent runs remain ignored');
+    expect(liveTaskAcceptance).toContain('Gateway catalog run state remains the authority');
+    expect(liveTaskAcceptance).toContain('tool lifecycle update paths');
+    expect(liveTaskAcceptance).toContain('preserves those baselines across tool boundaries');
+    expect(liveTaskAcceptance).toContain('subscribes before fetching the replay snapshot');
+    expect(liveTaskAcceptance).toContain('previous owner and subscription remain available until load commits');
+    expect(liveTaskAcceptance).toContain('terminal catalog state overrides transient attention');
+
+    expect(gatewayScenario.body).toContain('ACP `session/list` is the sole lineage membership and title authority');
+    expect(gatewayScenario.body).toContain('Latest exact-key Gateway catalog presence gates current child visibility and actionability');
+    expect(gatewayScenario.body).toContain('Presence never creates lineage membership or titles');
+    expect(gatewayScenario.body).toContain('`status` and `hasActiveRun` remain the sole run-state authority');
+
+    expect(workspaceScenario.body).toContain('return-target availability');
+    expect(workspaceScenario.body).toContain('exact non-cascading deletion');
+
+    expect(acpRule.body).toContain('ACP `session/list` is the sole lineage membership and title authority');
+    expect(acpRule.body).toContain('accepted status, non-empty `runId`, and non-empty `childSessionKey`');
+    expect(acpRule.body).toContain('only an invalidation signal');
+    expect(acpRule.body).toContain('buffer matching Chat and Agent events');
+    expect(acpRule.body).toContain('commentary as thought chunks');
+    expect(acpRule.body).toContain('128 pages');
+    expect(acpRule.body).toContain('archived, deleted, cleaned, or otherwise unlisted children');
+    expect(acpRule.body).toContain('transcript, announcement, assistant prose, Gateway parent fields, or child UUIDs');
+    expect(acpRule.body).toContain('recorded tool lifecycle updates');
+    expect(acpRule.body).toContain('tool boundaries in the same assistant turn must preserve them');
+
+    expect(attentionRule.body).toContain('Latest exact-key Gateway catalog presence');
+    expect(attentionRule.body).toContain('gates current child visibility and actionability');
+    expect(attentionRule.body).toContain('return-target availability');
+    expect(attentionRule.body).toContain('Presence MUST NOT create lineage membership or titles');
+    expect(attentionRule.body).toContain('excluded from every implicit fallback candidate set');
+    expect(attentionRule.body).toContain('exact and non-cascading');
+
+    expect(acpReference).toContain('ACP `session/list` is the sole lineage membership and title authority');
+    expect(acpReference).toContain('at most 128 pages');
+    expect(acpReference).toContain('status: accepted');
+    expect(acpReference).toContain('non-empty `runId` and `childSessionKey`');
+    expect(acpReference).toContain('only an invalidation signal');
+    expect(acpReference).toContain('no transcript, announcement, assistant-prose, Gateway-lineage, or UUID fallback');
+    expect(acpReference).toContain('Latest exact-key Gateway catalog presence gates current child visibility and actionability');
+    expect(acpReference).toContain('Presence does not create lineage membership or titles');
+    expect(acpReference).toContain('recorded tool start, update, and result events');
+    expect(acpReference).toContain('tool boundaries preserve those baselines');
+
+    expect(workspaceReference).toContain('Latest exact-key Gateway catalog presence');
+    expect(workspaceReference).toContain('return-target availability');
+    expect(workspaceReference).toContain('Gateway `status` and `hasActiveRun` remain the sole run-state authority');
+    expect(workspaceReference).toContain('Presence does not invent lineage membership or titles');
+    expect(workspaceReference).toContain('direct ACP parent');
+    expect(workspaceReference).toContain('browser history');
+    expect(workspaceReference).toContain('excluded from every implicit fallback candidate set');
+    expect(workspaceReference).toContain('Deletion is exact and non-cascading');
+    expect(workspaceReference).not.toContain('uses the exact Gateway catalog row only for `status` and `hasActiveRun`');
+
+    const staleSidebarContract = 'remains selectable in the normal workspace session list';
+    expect(taskBehavior).not.toContain(staleSidebarContract);
+    expect(oldTaskBehavior).not.toContain(staleSidebarContract);
+    expect(gatewayScenario.body).not.toContain(staleSidebarContract);
+    expect(workspaceScenario.body).not.toContain(staleSidebarContract);
+    expect(acpRule.body).not.toContain(staleSidebarContract);
+    expect(attentionRule.body).not.toContain(staleSidebarContract);
+    expect(acpReference).not.toContain(staleSidebarContract);
+    expect(workspaceReference).not.toContain(staleSidebarContract);
+
+    expect(englishReadme).toContain('embedded subagent status with live read-only child drill-down and direct-parent return');
+    expect(chineseReadme).toContain('内嵌子 Agent 状态、实时只读下钻及直接返回父会话');
+    expect(japaneseReadme).toContain('埋め込みサブエージェントの状態表示・ライブ更新される読み取り専用の子会話・直接の親会話への復帰');
   });
 
   it('defines the local HTML preview harness contract', async () => {
@@ -275,10 +518,19 @@ describe('harness specs', () => {
     }
 
     for (const { file, content } of harnessMarkdown) {
-      expect(content, `${file} must not depend on deleted design or plan documents`)
-        .not.toMatch(/docs\/(?:specs|plans)\//);
+      const designOrPlanPaths = [...content.matchAll(/docs\/(?:specs|plans)\/[^\s)]+/g)].map((match) => match[0]);
+      expect(designOrPlanPaths, `${file} must not depend on deleted design or plan documents`).toEqual([]);
     }
-    await expect(access('docs/specs')).rejects.toThrow();
+    const exists = async (p: string) => {
+      try {
+        await stat(p);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    expect(await exists('docs/plans')).toBe(false);
+    expect(await exists('docs/specs')).toBe(false);
   });
 
   it('defines the ACP media attachment harness contract', async () => {
@@ -324,7 +576,7 @@ describe('harness specs', () => {
     });
     expect(example.data.requiredTests).toEqual([
       'tests/unit/session-catalog.test.ts',
-      'tests/unit/chat-session-management.test.ts',
+      'tests/unit/chat-store-delete-session-workflow.test.ts',
     ]);
     expect(example.body).toContain('session catalog alongside ACP Chat');
     expect(example.body).not.toMatch(/chat\.history|sendMessage|activeRunId|pendingFinal/);

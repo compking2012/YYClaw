@@ -17,9 +17,32 @@ explicitly owns that field.
 New model IDs may receive deterministic capability defaults, but metadata from a
 different model ID must never be copied onto them.
 
-Custom-provider model rows (`models.providers.custom-*`) must carry an explicit
-`contextWindow`: new rows receive a deterministic model-family default, and
-existing rows missing both `contextWindow` and `contextTokens` may be
-backfilled with that default. Rows that already declare either field are
-user-owned and must never be modified, and non-`custom-` provider entries are
-never backfilled.
+Provider synchronization fills missing `input` modalities on custom-provider
+and agent `models.json` rows using the shared conservative inference. Explicit
+input declarations, especially text-only deployments of otherwise visual model
+families, remain authoritative. Do not infer context limits as a side effect.
+
+Custom-provider model rows (`models.providers.custom-*`) must not receive an
+inferred `contextWindow` or `contextTokens` from their model names. Existing
+rows missing both fields remain unset. Rows that already declare either field
+are user-owned and must never be modified. Compaction applies transport ceilings
+to explicit values and otherwise uses the 50000-token reserve fallback.
+
+Provider-level request settings are also preserved on rewrite. ClawX must not
+inject a default `timeoutSeconds` into provider entries; absent values remain
+absent and explicit values remain user-owned.
+
+One narrow compatibility default is ClawX-owned: an Astra model under a
+`custom-*` provider using `openai-completions` receives
+`agents.defaults.models["provider/model"].params.extra_body.reasoning_effort =
+"low"` when no reasoning effort is already configured. OpenClaw reads request
+parameters from this per-model runtime map, not provider-catalog rows in
+`models.providers.*.models` or per-Agent `models.json`. The exact legacy
+ClawX-generated value at that path, `"none"`, must migrate to `"low"` because
+Astra upstream no longer accepts it. Never overwrite any other explicit
+reasoning-effort value, and do not apply the default or migration to other
+models, protocols, or providers. Provider deletion must remove matching entries
+from both default and per-Agent model catalogs so generated runtime parameters
+do not leave stale models behind. When deletion empties an `agents.*.models`
+map, keep an explicit empty object in the `config.set` payload: OpenClaw treats
+this as a protected map and preserves its old entries when the field is omitted.

@@ -35,6 +35,23 @@ describe('hostApi facade', () => {
     await expect(hostApi.settings.getAll()).rejects.toThrow('disk failed');
   });
 
+  it('reads the applied compaction reserve through the typed OpenClaw route', async () => {
+    hostInvoke.mockResolvedValueOnce({
+      id: 'req',
+      ok: true,
+      data: { reserveTokensFloor: 68_000 },
+    });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await expect(hostApi.openclaw.getCompactionReserve()).resolves.toEqual({
+      reserveTokensFloor: 68_000,
+    });
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'openclaw',
+      action: 'getCompactionReserve',
+    }));
+  });
+
   it('calls settings.setMany and reset through hostInvoke', async () => {
     hostInvoke
       .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { success: true } })
@@ -211,10 +228,11 @@ describe('hostApi facade', () => {
     }));
   });
 
-  it('routes ACP diagnostics trace calls through hostInvoke', async () => {
+  it('routes ACP trace and issue-report diagnostics through hostInvoke', async () => {
     hostInvoke
       .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { capturedAt: 123, maxSize: 500, size: 0, entries: [] } })
-      .mockResolvedValueOnce({ id: 'req-2', ok: true, data: { success: true } });
+      .mockResolvedValueOnce({ id: 'req-2', ok: true, data: { success: true } })
+      .mockResolvedValueOnce({ id: 'req-3', ok: true, data: { success: true, path: '/tmp/report.zip' } });
     const { hostApi } = await import('@/lib/host-api');
     const payload = {
       event: 'image-generation:projection-rejected',
@@ -230,6 +248,9 @@ describe('hostApi facade', () => {
       entries: [],
     });
     await expect(hostApi.diagnostics.recordAcpTrace(payload)).resolves.toEqual({ success: true });
+    await expect(hostApi.diagnostics.exportIssueReport({
+      sessionKeys: ['agent:main:session-1', 'agent:research:session-2'],
+    })).resolves.toEqual({ success: true, path: '/tmp/report.zip' });
 
     expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
       module: 'diagnostics',
@@ -239,6 +260,11 @@ describe('hostApi facade', () => {
       module: 'diagnostics',
       action: 'recordAcpTrace',
       payload,
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      module: 'diagnostics',
+      action: 'exportIssueReport',
+      payload: { sessionKeys: ['agent:main:session-1', 'agent:research:session-2'] },
     }));
   });
 
@@ -431,12 +457,24 @@ describe('hostApi facade', () => {
 
   it('routes ACP chat methods through hostInvoke', async () => {
     hostInvoke
-      .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { success: true, generation: 1 } })
-      .mockResolvedValueOnce({ id: 'req-2', ok: true, data: { success: true, generation: 2 } })
-      .mockResolvedValueOnce({ id: 'req-3', ok: true, data: { success: true } })
-      .mockResolvedValueOnce({ id: 'req-4', ok: true, data: { success: true } });
+      .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { success: true, current: null, children: [] } })
+      .mockResolvedValueOnce({ id: 'req-2', ok: true, data: { success: true, generation: 1 } })
+      .mockResolvedValueOnce({ id: 'req-3', ok: true, data: { success: true, generation: 2 } })
+      .mockResolvedValueOnce({ id: 'req-4', ok: true, data: { success: true } })
+      .mockResolvedValueOnce({ id: 'req-5', ok: true, data: { success: true } });
     const { hostApi } = await import('@/lib/host-api');
 
+    expect(Object.keys(hostApi.chat)).toEqual(expect.arrayContaining([
+      'getAcpSessionFamily',
+      'loadAcpSession',
+      'sendAcpPrompt',
+      'cancelAcpSession',
+      'respondAcpPermission',
+    ]));
+
+    await expect(hostApi.chat.getAcpSessionFamily({
+      sessionKey: 'agent:main:parent',
+    })).resolves.toEqual({ success: true, current: null, children: [] });
     await hostApi.chat.loadAcpSession({
       sessionKey: 'main',
       workspaceRoot: '/workspace',
@@ -456,23 +494,39 @@ describe('hostApi facade', () => {
 
     expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
       module: 'chat',
+      action: 'getAcpSessionFamily',
+      payload: { sessionKey: 'agent:main:parent' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      module: 'chat',
       action: 'loadAcpSession',
       payload: { sessionKey: 'main', workspaceRoot: '/workspace', cwd: '/workspace/project' },
     }));
-    expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
+    expect(hostInvoke).toHaveBeenNthCalledWith(3, expect.objectContaining({
       module: 'chat',
       action: 'sendAcpPrompt',
       payload: { sessionKey: 'main', cwd: '/workspace/project', message: 'hello' },
     }));
-    expect(hostInvoke).toHaveBeenNthCalledWith(3, expect.objectContaining({
+    expect(hostInvoke).toHaveBeenNthCalledWith(4, expect.objectContaining({
       module: 'chat',
       action: 'cancelAcpSession',
       payload: { sessionKey: 'main' },
     }));
-    expect(hostInvoke).toHaveBeenNthCalledWith(4, expect.objectContaining({
+    expect(hostInvoke).toHaveBeenNthCalledWith(5, expect.objectContaining({
       module: 'chat',
       action: 'respondAcpPermission',
       payload: { sessionKey: 'main', requestId: 'perm-1', outcome: { outcome: 'cancelled' } },
+    }));
+  });
+
+  it('keeps generic gateway RPC requests on the gateway facade', async () => {
+    hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: { ok: true } });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await expect(hostApi.gateway.rpc('sessions.list', { limit: 10 }, 500)).resolves.toEqual({ ok: true });
+
+    expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      module: 'gateway', action: 'rpc', payload: { method: 'sessions.list', params: { limit: 10 }, timeoutMs: 500 },
     }));
   });
 

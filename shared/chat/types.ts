@@ -155,7 +155,10 @@ export interface TurnPromptOptimizationStats {
 export interface DeleteSessionsResult {
   deletedKeys: string[];
   failedKeys: string[];
+  warnings?: string[];
 }
+
+export type DeleteSessionResult = { success: true; warnings?: string[] } | { success: false; error: string };
 
 export interface ChatState {
   // Messages
@@ -269,8 +272,10 @@ export interface ChatState {
   setSessionWorkspaceOverride: (sessionKey: string, workspacePath: string) => void;
   setSessionModelOverride: (sessionKey: string, modelRef: string | null) => void;
   acknowledgeAcpSessionCreated: (key: string, workspacePath?: string, initialPrompt?: string) => void;
-  deleteSession: (key: string) => Promise<void>;
+  deleteSession: (key: string) => Promise<DeleteSessionResult>;
   deleteSessions: (keys: string[]) => Promise<DeleteSessionsResult>;
+  removeAgentSessions: (agentId: string) => void;
+  reconcileAgentSessionTombstones: (agentIds: string[]) => void;
   renameSession: (key: string, label: string) => Promise<void>;
   cleanupEmptySession: () => void;
   loadHistory: (quiet?: boolean) => Promise<void>;

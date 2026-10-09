@@ -19,3 +19,5 @@ run('pnpm', ['install']);
 run('pnpm', ['run', 'uv:download']);
 run('pnpm', ['run', 'agent-browser:download']);
 run('pnpm', ['run', 'bundle:lark-cli']);
+
+run('pnpm', ['run', 'cua-driver:download']);

@@ -1,6 +1,6 @@
 import type { ChatSession, GatewaySessionsChangedPayload } from './types';
 import { parseCronSessionKey } from './cron-session-utils';
-import { shouldIncludeSessionInSidebarList } from './session-key-utils';
+import { shouldRetainSessionInCatalog } from './session-key-utils';
 import { isSidebarHiddenSessionKey } from '../../../shared/internal-session';
 
 export type { GatewaySessionsChangedPayload } from './types';
@@ -180,9 +180,7 @@ export function applyGatewaySessionsChanged(
       return { sessions, applied: false, requiresReload: true };
     }
     const inserted = normalizeGatewaySessionRow({ ...nested, key });
-    // Honor workflow / legacy-office hiding at the incremental catalog boundary
-    // (sessions.list already filters via isSidebarHiddenSessionKey).
-    if (isSidebarHiddenSessionKey(inserted.key) || !shouldIncludeSessionInSidebarList(inserted)) {
+    if (isSidebarHiddenSessionKey(inserted.key) || !shouldRetainSessionInCatalog(inserted)) {
       return { sessions, applied: false, requiresReload: false };
     }
     if (eventTs !== undefined) latestEventTsByKey.set(key, eventTs);
@@ -201,8 +199,8 @@ export function applyGatewaySessionsChanged(
 
   if (eventTs !== undefined) latestEventTsByKey.set(key, eventTs);
   const nextSessions = [...sessions];
-  const canSurface = !isSidebarHiddenSessionKey(merged.key) && shouldIncludeSessionInSidebarList(merged);
-  if (merged.createdLocally || canSurface) {
+  const canRetain = !isSidebarHiddenSessionKey(merged.key) && shouldRetainSessionInCatalog(merged);
+  if (merged.createdLocally || canRetain) {
     nextSessions[index] = merged;
   } else {
     nextSessions.splice(index, 1);

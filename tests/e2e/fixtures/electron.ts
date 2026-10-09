@@ -683,6 +683,13 @@ export async function installIpcMocks(
             }
           }
 
+          // Never consult host OS microphone state or launch privacy settings in E2E.
+          if (request?.module === 'asr' && request.action === 'getMicrophoneAccess') {
+            return respond(request.id, { platform: 'darwin', status: 'granted', canOpenSettings: true });
+          }
+          if (request?.module === 'asr' && request.action === 'openMicrophoneSettings') {
+            return respond(request.id, { opened: true });
+          }
           if (request?.module === 'files') {
             const payload = request.payload ?? {};
             const path = typeof payload.path === 'string' ? payload.path : '';
@@ -966,7 +973,14 @@ export async function installAttachmentHostFixture(
         const sessionKey = String(request.payload?.sessionKey ?? '');
         const prompt = String(request.payload?.message ?? '');
         if (sessionKey === state.activeSessionKey) {
-          emitUpdates(sessionKey, state.generation, false, state.promptUpdates[prompt] ?? []);
+          const updates = state.promptUpdates[prompt] ?? [];
+          const messageId = String(request.payload?.messageId ?? `fixture-user-${state.generation}`);
+          state.replays[sessionKey] = [
+            ...(state.replays[sessionKey] ?? []),
+            { sessionUpdate: 'user_message', messageId, content: [{ type: 'text', text: prompt }] },
+            ...updates,
+          ];
+          emitUpdates(sessionKey, state.generation, false, updates);
         }
         return respond(request.id, { success: true, generation: state.generation });
       }

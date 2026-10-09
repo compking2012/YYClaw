@@ -4,6 +4,8 @@ import type {
   AcpChatOperationResult,
   AcpChatPromptPayload,
   AcpChatRespondPermissionPayload,
+  AcpSessionFamilyPayload,
+  AcpSessionFamilyResult,
 } from '../acp-chat/types';
 import type { RawMessage } from '../chat/types';
 import type { AgentsSnapshot } from '../types/agent';
@@ -11,7 +13,6 @@ import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '../types/c
 import type { GatewayHealth, GatewayStatus } from '../types/gateway';
 import type { MarketplaceSkill, QuickAccessSkill, Skill } from '../types/skill';
 import type { WebBrowserNavigatePayload } from '../web-browser';
-
 export type JsonRecord = Record<string, unknown>;
 export type HostSuccess = { success: boolean; error?: string };
 export type OptionalHostSuccess = { success?: boolean; error?: string };
@@ -151,6 +152,10 @@ export type WorkflowStartDynamicResult = HostSuccess & {
   resume?: boolean;
 };
 
+export type OpenClawCompactionReserveResult = {
+  reserveTokensFloor?: number;
+};
+
 export type ShellPathPayload = { path: string };
 export type ShellOpenExternalPayload = { url: string };
 export type ShellOpenAuthWindowPayload = {
@@ -232,6 +237,7 @@ export type SettingsSnapshot = Partial<{
   promptOptimizationEnabled: boolean;
   autoWorkflowEnabled: boolean;
   gatewayAutoStart: boolean;
+  computerUseEnabled: boolean;
   gatewayPort: number;
   proxyEnabled: boolean;
   proxyServer: string;
@@ -259,6 +265,13 @@ export type SettingsGetPayload = { key: SettingsKey };
 export type SettingsSetPayload = { key: SettingsKey; value: SettingsValue };
 export type SettingsSetManyPayload = { patch: Partial<SettingsSnapshot> };
 export type SettingsResetResult = HostSuccess & { settings: SettingsSnapshot };
+
+export interface ComputerUseStatus {
+  enabled: boolean;
+  supported: boolean;
+  running: boolean;
+  permissions: { accessibility: boolean; screenRecording: string } | null;
+}
 
 export type GatewayControlUiResult = HostSuccess & {
   url?: string;
@@ -296,6 +309,24 @@ export type GatewayHealthSummary = {
   lastRpcFailureMethod?: string;
   lastChannelsStatusOkAt?: number;
   lastChannelsStatusFailureAt?: number;
+  recovery?: GatewayRecoverySnapshot;
+};
+
+export type GatewayRecoveryState =
+  | 'healthy'
+  | 'verifying'
+  | 'restart-pending'
+  | 'restart-executing'
+  | 'external-unavailable';
+export type GatewayRecoverySnapshot = {
+  state: GatewayRecoveryState;
+  lastAliveAt?: number;
+  deadlineAt?: number;
+  lastDeadlineProbeAt?: number;
+  lastDeadlineProbeResult?: 'succeeded' | 'failed';
+  lastDeadlineProbeError?: string;
+  escalationReason?: string;
+  externallyManaged: boolean;
 };
 
 export type ChannelRuntimeStatus = 'connected' | 'connecting' | 'degraded' | 'disconnected' | 'error';
@@ -314,6 +345,8 @@ export type ChannelGroupItem = {
   defaultAccountId: string;
   status: ChannelRuntimeStatus;
   statusReason?: string;
+  /** i18n key under channels.health.reasons, shown even when connected. */
+  statusNote?: string;
   accounts: ChannelAccountItem[];
 };
 export type ChannelTargetOption = {
@@ -351,15 +384,24 @@ export type ChannelFormValuesResult = HostSuccess & {
 };
 export type ChannelCredentialValidationPayload = ChannelTypePayload & {
   config: Record<string, unknown>;
+  accountId?: string;
+};
+export type ChannelCredentialValidationErrorCode = {
+  code: string;
+  params?: Record<string, string>;
 };
 export type ChannelCredentialValidationResult = HostSuccess & {
   valid: boolean;
   errors?: string[];
   warnings?: string[];
+  /** Stable codes for renderer-side localization; `errors` is the English fallback. */
+  errorCodes?: ChannelCredentialValidationErrorCode[];
   details?: {
     botUsername?: string;
     guildName?: string;
     channelName?: string;
+    /** Discovered Feishu vs Lark origin when the form does not collect `domain`. */
+    domain?: string;
   };
 };
 export type ChannelSaveConfigPayload = ChannelTypePayload & {
@@ -371,6 +413,22 @@ export type ChannelSaveConfigResult = HostSuccess & {
   /** Configuration is committed; a guarded Gateway restart is continuing asynchronously. */
   activationPending?: boolean;
   warning?: string;
+};
+export type DingTalkWorkspaceAuthStatus =
+  | 'authorized'
+  | 'needs_auth'
+  | 'unavailable'
+  | 'starting'
+  | 'pending'
+  | 'error';
+export type DingTalkWorkspaceAuthResult = HostSuccess & {
+  status: DingTalkWorkspaceAuthStatus;
+  verificationUri?: string;
+  verificationUriComplete?: string;
+  userCode?: string;
+  expiresAt?: number;
+  /** Stable Main-owned error code; Renderer localizes it. */
+  errorCode?: string;
 };
 export type ChannelConfiguredResult = HostSuccess & { channels?: Array<string | JsonRecord> };
 export type FeishuCandidateIcon = { name: string; mimeType: string; base64: string };
@@ -405,6 +463,10 @@ export type AgentUpdateAutoSelectPayload = {
   autoSelectModel?: Partial<Record<AgentModelSlot, boolean>>;
   optimizationProfile?: 'quality' | 'balanced' | 'cost' | 'latency';
   sensitiveMode?: boolean;
+};
+export type AgentDeleteResult = AgentSnapshotResult & {
+  /** Resolved path, present only when Main successfully removed a ClawX-managed workspace directory. */
+  removedWorkspacePath?: string;
 };
 export type AgentIdPayload = { id: string };
 export type AgentChannelPayload = { id: string; channelType: string };
@@ -443,13 +505,31 @@ export type AcpTraceSnapshot = {
   size: number;
   entries: AcpTraceEntry[];
 };
-export type DiagnosticsGatewaySnapshotResult = JsonRecord;
+export type DiagnosticsGatewaySnapshotGateway = Omit<GatewayStatus, 'state'>
+  & GatewayHealthSummary
+  & { capabilities?: unknown };
+export type DiagnosticsGatewaySnapshotResult = {
+  capturedAt: number;
+  platform: string;
+  gateway: DiagnosticsGatewaySnapshotGateway;
+  channels: ChannelGroupItem[];
+  clawxLogTail: string;
+  gatewayLogTail: string;
+  gatewayErrLogTail: string;
+};
+export type IssueReportExportPayload = { sessionKeys: string[] };
+export type IssueReportExportResult = HostSuccess & {
+  path?: string;
+  includedFiles?: string[];
+  skippedSessionKeys?: string[];
+};
 
 export type ProviderType =
   | 'anthropic'
   | 'openai'
   | 'google'
   | 'openrouter'
+  | 'tokendance'
   | 'ark'
   | 'moonshot'
   | 'moonshot-global'
@@ -580,7 +660,12 @@ export type ProviderValidationPayload = {
   apiKey: string;
   options?: ProviderValidationOptions;
 };
-export type ProviderValidationResult = { valid: boolean; error?: string };
+export type ProviderRecoveryAction = 'top_up_balance' | 'reauthorize_api_key' | 'api_key_quota';
+export type ProviderValidationResult = {
+  valid: boolean;
+  error?: string;
+  recoveryAction?: ProviderRecoveryAction;
+};
 export type ProviderIdPayload = { providerId: string };
 export type ProviderApiKeyPayload = ProviderIdPayload & { apiKey: string };
 export type ProviderSavePayload = { config: ProviderConfig; apiKey?: string };
@@ -610,6 +695,7 @@ export type StagedFileResult = {
   mimeType: string;
   fileSize: number;
   stagedPath: string;
+  sourceKind: 'path' | 'buffer';
   preview: string | null;
   filePath?: string;
 };
@@ -899,6 +985,7 @@ export type SessionSummariesResult = HostSuccess & {
   summaries?: SessionLabelSummary[];
 };
 export type SessionDeletePayload = { id: string; workflowRunIds?: string[] };
+export type SessionDeleteResult = HostSuccess & { warnings?: string[] };
 export type SessionRenamePayload = { id: string; title: string };
 
 /** Which OpenClaw control-UI view to open. */
@@ -1067,6 +1154,24 @@ export type SkillCancelReviewResult = HostSuccess & { result?: JsonRecord };
 export type FileSaveAsPayload = { filePath: string; defaultFileName?: string };
 export type FileSaveAsResult = HostSuccess & { savedPath?: string; cancelled?: boolean };
 export type SaveAttachmentAsPayload = { ref: AttachmentSourceRef; defaultFileName?: string };
+export type AsrPreset = 'openai' | 'groq' | 'siliconflow' | 'bailian' | 'custom';
+export type AsrProtocol = 'transcriptions' | 'chat';
+export type AsrConfig = {
+  preset: AsrPreset;
+  protocol?: AsrProtocol;
+  baseUrl: string;
+  model: string;
+  language?: string;
+};
+export type AsrConfigPayload = { config: AsrConfig; apiKey?: string };
+export type AsrMicrophoneAccessResult = {
+  platform: 'darwin' | 'win32' | 'other';
+  status: 'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown';
+  canOpenSettings: boolean;
+};
+export type AsrConfigResult = { configured: boolean; config: AsrConfig | null; hasApiKey: boolean };
+export type AsrTranscribePayload = { wav: Uint8Array };
+export type AsrTranscribeResult = { text: string };
 
 export type HostApiContract = {
   app: {
@@ -1079,8 +1184,10 @@ export type HostApiContract = {
   };
   openclaw: {
     status: () => OpenClawStatusResult;
+    getConfigPath: () => string;
     getSkillsDir: () => string;
     getCliCommand: () => OpenClawCliCommandResult;
+    getCompactionReserve: () => OpenClawCompactionReserveResult;
   };
   shell: {
     openExternal: (payload: ShellOpenExternalPayload) => void;
@@ -1126,6 +1233,11 @@ export type HostApiContract = {
     setMany: (payload: SettingsSetManyPayload) => HostSuccess;
     reset: () => SettingsResetResult;
   };
+  computerUse: {
+    status: () => ComputerUseStatus;
+    setEnabled: (payload: { enabled: boolean }) => ComputerUseStatus;
+    requestPermissions: () => ComputerUseStatus;
+  };
   gateway: {
     status: () => GatewayStatus;
     start: () => HostSuccess;
@@ -1165,6 +1277,10 @@ export type HostApiContract = {
     feishuUpdateApp: (payload: FeishuUpdateAppPayload) => FeishuUpdateAppResult;
     feishuDeleteApp: (payload: FeishuDeleteAppPayload) => FeishuDeleteAppResult;
     feishuRetryLarkCli: (payload: FeishuAppInfoPayload) => HostSuccess;
+    dingtalkWorkspaceAuthStart: (payload: ChannelAccountPayload) => DingTalkWorkspaceAuthResult;
+    dingtalkWorkspaceAuthStatus: (payload: ChannelAccountPayload) => DingTalkWorkspaceAuthResult;
+    dingtalkWorkspaceAuthCancel: (payload: ChannelAccountPayload) => DingTalkWorkspaceAuthResult;
+    dingtalkWorkspaceAuthReset: (payload: ChannelAccountPayload) => DingTalkWorkspaceAuthResult;
   };
   agents: {
     list: (payload?: { reconcile?: boolean }) => AgentSnapshotResult;
@@ -1175,7 +1291,7 @@ export type HostApiContract = {
     updateDefaultModels: (payload: AgentUpdateDefaultModelsPayload) => AgentSnapshotResult;
     updateAutoSelect: (payload: AgentUpdateAutoSelectPayload) => AgentSnapshotResult;
     setDefault: (payload: AgentIdPayload) => AgentSnapshotResult;
-    delete: (payload: AgentIdPayload) => AgentSnapshotResult;
+    delete: (payload: AgentIdPayload) => AgentDeleteResult;
     assignChannel: (payload: AgentChannelPayload) => AgentSnapshotResult;
     removeChannel: (payload: AgentChannelPayload) => AgentSnapshotResult;
     updateGlobalSkills: (payload: AgentUpdateGlobalSkillsPayload) => AgentSnapshotResult;
@@ -1185,6 +1301,7 @@ export type HostApiContract = {
     gatewaySnapshot: () => DiagnosticsGatewaySnapshotResult;
     acpTrace: () => AcpTraceSnapshot;
     recordAcpTrace: (payload: AcpTraceRecordPayload) => HostSuccess;
+    exportIssueReport: (payload: IssueReportExportPayload) => IssueReportExportResult;
   };
   providers: {
     list: () => ProviderWithKeyInfo[];
@@ -1256,7 +1373,7 @@ export type HostApiContract = {
     testImageGeneration: (payload: ImageGenerationTestPayload) => ImageGenerationTestResult;
   };
   sessions: {
-    delete: (payload: SessionDeletePayload) => HostSuccess;
+    delete: (payload: SessionDeletePayload) => SessionDeleteResult;
     rename: (payload: SessionRenamePayload) => HostSuccess;
     summaries: (payload?: SessionSummariesPayload) => SessionSummariesResult;
     history: (payload: SessionHistoryPayload) => SessionHistoryResult;
@@ -1264,6 +1381,7 @@ export type HostApiContract = {
   };
   chat: {
     sendWithMedia: (payload: ChatSendWithMediaPayload) => ChatSendWithMediaResult;
+    getAcpSessionFamily: (payload: AcpSessionFamilyPayload) => AcpSessionFamilyResult;
     loadAcpSession: (payload: AcpChatLoadPayload) => AcpChatOperationResult;
     sendAcpPrompt: (payload: AcpChatPromptPayload) => AcpChatOperationResult;
     cancelAcpSession: (payload: AcpChatCancelPayload) => AcpChatOperationResult;
@@ -1353,6 +1471,13 @@ export type HostApiContract = {
   };
   legacy: {
     fetch: (payload: LegacyFetchPayload) => LegacyFetchResult;
+  };
+  asr: {
+    getMicrophoneAccess: () => AsrMicrophoneAccessResult;
+    openMicrophoneSettings: () => { opened: boolean };
+    getConfig: () => AsrConfigResult;
+    saveConfig: (payload: AsrConfigPayload) => AsrConfigResult;
+    transcribe: (payload: AsrTranscribePayload) => AsrTranscribeResult;
   };
 };
 

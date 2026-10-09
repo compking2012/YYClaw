@@ -58,6 +58,17 @@
   "acp": {
     "thought": "Thought",
     "tool": "Tool",
+    "toolName": {
+      "updatePlan": "Update plan",
+      "webFetch": "Read web page",
+      "browser": "Control browser",
+      "computer": "Control computer",
+      "execCommand": "Run command",
+      "read": "Read",
+      "write": "Write",
+      "spawnSubagent": "Spawn subagent",
+      "memorySearch": "Search memory"
+    },
     "expandTool": "Expand tool result",
     "collapseTool": "Collapse tool result",
     "expandToolGroup": "Expand tool calls",
@@ -68,10 +79,35 @@
     "running": "Running",
     "pending": "Pending",
     "completed": "Completed",
+    "sessionPlan": {
+      "progress": "Todo items: {{completed}} / {{total}}",
+      "expand": "Expand plan",
+      "collapse": "Collapse plan",
+      "tasks": "Plan tasks"
+    },
+    "subagentSessions": {
+      "count": "Dispatched {{count}} subagents",
+      "expand": "Expand subagent sessions",
+      "collapse": "Collapse subagent sessions",
+      "toggle": "{{action}}, {{count}}",
+      "panel": "Subagent sessions",
+      "open": "Open subagent {{title}}",
+      "marker": "Subagent",
+      "returnToParent": "Return to parent conversation",
+      "busy": "Running",
+      "settled": "Settled",
+      "aggregateStatus": "Subagents: {{status}}",
+      "rowStatus": "{{title}}: {{status}}"
+    },
     "failed": "Failed",
     "cancelled": "Cancelled",
     "loadFailed": "Failed to load session",
     "promptFailed": "Failed to send prompt",
+    "tokenDanceRecovery": {
+      "top_up_balance": "Your TokenDance balance is insufficient. Top up your account, then retry this request.",
+      "reauthorize_api_key": "Your TokenDance key is no longer valid. Open Models settings and authorize TokenDance again.",
+      "api_key_quota": "This TokenDance key reached its periodic quota. Wait for the quota to reset, or authorize TokenDance again."
+    },
     "unsupportedContent": "Unsupported content",
     "dismiss": "Dismiss",
     "image": "Image",
@@ -83,6 +119,14 @@
     "copied": "Copied",
     "turnDuration": "Took {{duration}}",
     "turnElapsed": "{{duration}} elapsed",
+    "compaction": {
+      "inProgress": "Compacting context",
+      "completed": "Compacted history",
+      "continuing": "Context compacted and continuing",
+      "failed": "Context compaction failed",
+      "cancelled": "Context compaction cancelled",
+      "reason": "Reason: {{reason}}"
+    },
     "attachment": {
       "loading": "Loading attachment",
       "unavailable": "Attachment unavailable",
@@ -325,7 +369,32 @@
     "skillPreviewTooltip": "Preview SKILL.md",
     "skillPreviewNotFound": "Could not find this skill. Open the skill picker to refresh the list.",
     "defaultModel": "Default",
-    "noAgentPlaceholder": "Create an agent before starting a conversation"
+    "noAgentPlaceholder": "Create an agent before starting a conversation",
+    "subagentsWorking": "Subagents working…",
+    "contextUsage": "{{percentage}} context used: {{used}} / {{total}} tokens",
+    "voiceInput": "Voice input",
+    "voiceStop": "Stop recording",
+    "voiceNotConfigured": "Voice transcription is not configured. Open Models to set it up.",
+    "microphonePermission": {
+      "title": "Microphone access needed",
+      "denied": "Microphone access was denied. Allow access in system privacy settings to use voice input.",
+      "restricted": "Microphone access is restricted by administrator or device policy. Contact your administrator; changing privacy settings alone may not enable access.",
+      "openSettings": "Open system settings",
+      "close": "Close",
+      "openFailed": "Could not open system settings. Please open microphone privacy settings manually."
+    },
+    "voiceError": {
+      "MIC_UNAVAILABLE": "Microphone unavailable. Check system permissions.",
+      "TOO_SHORT": "No speech captured.",
+      "NOT_CONFIGURED": "Voice transcription is not configured.",
+      "AUTH": "Invalid API key or insufficient permission.",
+      "RATE_LIMITED": "Too many requests. Try again shortly.",
+      "SERVER": "Speech service is temporarily unavailable.",
+      "REQUEST": "Voice request failed.",
+      "NETWORK": "Cannot reach the speech service. Check network or Base URL.",
+      "EMPTY_RESULT": "No speech recognized.",
+      "INVALID_INPUT": "Invalid audio recording."
+    }
   },
   "sessionList": {
     "title": "Sessions",
@@ -334,6 +403,7 @@
     "loadMore": "Load more",
     "aiReplying": "AI is replying",
     "unreadReply": "Unread reply",
+    "subagent": "Subagent",
     "loadMoreForWorkspace": "Load {{count}} more sessions in {{workspace}}",
     "workspaceToggle": "Toggle workspace {{workspace}}",
     "renameWorkspace": "Rename workspace {{workspace}}",
@@ -344,6 +414,7 @@
     "deleteWorkspaceConfirmAction": "Delete workspace and sessions",
     "deleteWorkspacePartialFailure": "{{count}} sessions could not be deleted and remain in the workspace.",
     "deleteWorkspaceCleanupFailed": "Sessions were deleted, but the saved workspace entry could not be cleaned up.",
+    "deleteSessionCleanupWarning": "Conversation deleted, but some workflow or transcript data could not be cleaned up. Remaining data has been kept.",
     "workspaceName": "Workspace name",
     "saveWorkspaceRename": "Save workspace name",
     "cancelWorkspaceRename": "Cancel workspace rename"
@@ -420,5 +491,6 @@
       "noSession": "This step has no sub-session"
     },
     "synthesizeStep": "Synthesize"
-  }
+  },
+  "newSession": "New conversation"
 }

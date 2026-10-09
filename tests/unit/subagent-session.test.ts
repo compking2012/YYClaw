@@ -17,9 +17,9 @@ describe('isSubagentSessionKey', () => {
 });
 
 describe('isSidebarHiddenSessionKey', () => {
-  it('hides subagent sub-sessions from the sidebar', () => {
-    expect(isSidebarHiddenSessionKey('subagent:abcd')).toBe(true);
-    expect(isSidebarHiddenSessionKey('agent:main:subagent:abcd')).toBe(true);
+  it('does not classify native subagents as excluded workflow catalog entries', () => {
+    expect(isSidebarHiddenSessionKey('subagent:abcd')).toBe(false);
+    expect(isSidebarHiddenSessionKey('agent:main:subagent:abcd')).toBe(false);
   });
 
   it('still keeps real agent sessions visible', () => {

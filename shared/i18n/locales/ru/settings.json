@@ -127,7 +127,17 @@
       "step1": "Скопируйте код авторизации ниже.",
       "step2": "Откройте страницу входа в браузере.",
       "step3": "Вставьте код для подтверждения доступа.",
-      "requestingCode": "Запрос кода безопасного входа..."
+      "requestingCode": "Запрос кода безопасного входа...",
+      "completeBrowserLogin": "Завершите вход в браузере",
+      "manualCallbackHelp": "Откройте страницу авторизации, завершите вход и вставьте URL обратного вызова или код.",
+      "openAuthorizationPage": "Открыть страницу авторизации",
+      "callbackPlaceholder": "Вставьте URL обратного вызова или код",
+      "submitCode": "Отправить код",
+      "tokenDanceCancelled": "Авторизация TokenDance отменена.",
+      "tokenDanceCallbackUnavailable": "Не удалось запустить безопасный локальный обратный вызов TokenDance.",
+      "tokenDanceTimedOut": "Время авторизации TokenDance истекло. Повторите попытку.",
+      "tokenDanceExchangeFailed": "TokenDance не смог обменять код авторизации (HTTP {{status}}).",
+      "tokenDanceMissingKey": "Авторизация TokenDance завершена, но API-ключ не получен. Повторите авторизацию."
     },
     "modelKind": {
       "text": "Текст",
@@ -150,6 +160,11 @@
       "pitch": "Тон",
       "sampleRate": "Частота дискретизации",
       "language": "Язык"
+    },
+    "recovery": {
+      "topUpBalance": "Недостаточно средств на балансе TokenDance. Пополните счёт и повторите попытку.",
+      "reauthorizeApiKey": "Ключ TokenDance больше недействителен. Удалите этого провайдера и повторно авторизуйте TokenDance.",
+      "apiKeyQuota": "Ключ TokenDance достиг периодической квоты. Дождитесь её сброса или повторно авторизуйте TokenDance."
     }
   },
   "gateway": {
@@ -307,7 +322,10 @@
     "controlUiEnabled": "Консоль OpenClaw включена",
     "controlUiDisabled": "Консоль OpenClaw отключена",
     "controlUiSaveFailed": "Не удалось сохранить переключатель консоли OpenClaw",
-    "controlUiOpenFailed": "Не удалось открыть консоль OpenClaw"
+    "controlUiOpenFailed": "Не удалось открыть консоль OpenClaw",
+    "compactionReserve": "Нижняя граница резерва сжатия",
+    "compactionReserveDesc": "Используется 25% явно заданного окна контекста или 50 000 токенов, если оно не задано.",
+    "compactionReserveUnavailable": "Применённый резерв недоступен"
   },
   "about": {
     "title": "О приложении",
@@ -354,5 +372,88 @@
     "inputModeDesc": "Транскрипция преобразует вашу речь в текст в поле ввода.",
     "modeDictation": "Транскрипция",
     "modeConversation": "Диалог"
+  },
+  "support": {
+    "title": "Поддержка"
+  },
+  "issueReport": {
+    "actionTitle": "Экспорт отчёта о проблеме",
+    "actionDescription": "Создать диагностический ZIP на рабочем столе для устранения неполадок и поддержки.",
+    "open": "Проверить и экспортировать",
+    "dialogTitle": "Экспорт отчёта о проблеме",
+    "dialogDescription": "Проверьте состав архива и при необходимости выберите разговоры. ZIP будет сохранён на рабочем столе.",
+    "contentsTitle": "Содержимое ZIP",
+    "contents": {
+      "transcripts": {
+        "title": "История разговоров",
+        "description": "Полный JSONL-файл каждого выбранного разговора, если они выбраны."
+      },
+      "config": {
+        "title": "Конфигурация OpenClaw",
+        "description": "Копия openclaw.json с удалёнными учётными данными."
+      },
+      "logs": {
+        "title": "Диагностические журналы",
+        "description": "Доступные журналы ClawX и OpenClaw."
+      },
+      "manifest": {
+        "title": "Манифест",
+        "description": "Список включённых и недоступных файлов."
+      }
+    },
+    "sessionsTitle": "Разговоры (необязательно)",
+    "selectAll": "Выбрать все ({{count}})",
+    "selectedCount": "Выбрано разговоров: {{count}}",
+    "noSessions": "Нет доступных разговоров. Конфигурацию и журналы всё равно можно экспортировать.",
+    "export": "Создать ZIP ({{count}})",
+    "exportWithoutConversations": "Создать ZIP без разговоров",
+    "exporting": "Создание ZIP...",
+    "exportSucceeded": "Отчёт о проблеме экспортирован",
+    "skippedSessions": "Недоступные разговоры пропущены: {{count}}. Доступные диагностические данные всё равно экспортированы.",
+    "exportFailed": "Не удалось экспортировать отчёт о проблеме",
+    "completeTitle": "Отчёт о проблеме готов",
+    "completeDescription": "ZIP сохранён по указанному ниже пути.",
+    "showInFolder": "Показать в папке",
+    "revealFailed": "Не удалось показать отчёт о проблеме в папке"
+  },
+  "asr": {
+    "title": "Распознавание речи",
+    "description": "Настройте провайдера распознавания речи для голосового ввода в редакторе сообщений. Поддерживаются конечные точки, совместимые с протоколами OpenAI Audio Transcriptions или Chat Completions.",
+    "protocol": {
+      "label": "Тип API",
+      "transcriptions": "OpenAI Audio Transcriptions",
+      "chat": "OpenAI Chat Completions"
+    },
+    "presets": {
+      "label": "Провайдер",
+      "openai": "OpenAI",
+      "groq": "Groq",
+      "siliconflow": "SiliconFlow",
+      "bailian": "Alibaba Cloud Model Studio",
+      "custom": "Свой вариант"
+    },
+    "baseUrl": "Базовый URL API",
+    "hints": {
+      "bailianDialectPrefix": "API Alibaba Cloud Model Studio требует передачи input_audio в виде Data URI, а не чистого Base64 (см. ",
+      "bailianDialectLinkText": "документацию",
+      "bailianDialectSuffix": "); ClawX адаптирует это автоматически.",
+      "bailianWorkspace": "Замените <WorkspaceId> на идентификатор рабочего пространства Model Studio и при необходимости измените домен региона."
+    },
+    "model": "Модель",
+    "language": "Язык",
+    "languageAuto": "Автоопределение (рекомендуется)",
+    "apiKey": "API-ключ",
+    "apiKeyConfiguredPlaceholder": "Ключ API для этого провайдера уже настроен. Оставьте поле пустым, чтобы сохранить его.",
+    "apiKeyLink": "Получить ключ API",
+    "apiKeyLinkTitle": "Открыть консоль провайдера, чтобы получить ключ API",
+    "save": "Сохранить",
+    "toast": {
+      "saved": "Настройки распознавания речи сохранены."
+    },
+    "errors": {
+      "invalidBaseUrl": "Базовый URL должен начинаться с http:// или https://.",
+      "modelRequired": "Укажите название модели.",
+      "request": "Не удалось сохранить. Попробуйте ещё раз."
+    }
   }
 }

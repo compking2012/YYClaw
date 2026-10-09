@@ -88,7 +88,7 @@ requiredRules:
 requiredTests:
   - pnpm run typecheck
   - pnpm exec vitest run tests/unit/acp-host-contract.test.ts tests/unit/acp-chat-service.test.ts tests/unit/acp-reducer.test.ts tests/unit/acp-chat-store.test.ts tests/unit/acp-chat-components.test.tsx tests/unit/chat-acp-page.test.tsx tests/unit/chat-toolbar.test.tsx
-  - pnpm exec vitest run tests/unit/acp-image-generation-compat.test.ts tests/unit/session-catalog.test.ts tests/unit/chat-load-sessions-startup.test.ts tests/unit/chat-session-management.test.ts tests/unit/chat-session-selection.test.ts tests/unit/chat-store-session-label-fetch.test.ts tests/unit/sidebar-session-buckets.test.ts
+  - pnpm exec vitest run tests/unit/acp-image-generation-compat.test.ts tests/unit/session-catalog.test.ts tests/unit/chat-load-sessions-startup.test.ts tests/unit/chat-store-delete-session-workflow.test.ts tests/unit/chat-session-selection.test.ts tests/unit/chat-store-session-label-fetch.test.ts tests/unit/sidebar-session-buckets.test.ts
   - pnpm exec vitest run tests/unit/host-api-facade.test.ts tests/unit/host-events.test.ts tests/unit/host-services.test.ts tests/unit/gateway-event-dispatch.test.ts
   - pnpm exec vitest run tests/unit/gateway-manager-diagnostics.test.ts tests/unit/gateway-ws-trace.test.ts tests/unit/stores.test.ts
   - pnpm exec vitest run tests/unit/generated-files.test.ts tests/unit/file-preview-body.test.tsx tests/unit/artifact-panel.test.tsx tests/unit/openclaw-file-activities.test.ts tests/unit/i18n-locale-parity.test.ts

@@ -163,7 +163,22 @@
       "step1": "复制下方的授权码。",
       "step2": "在浏览器中打开登录页面。",
       "step3": "粘贴授权码以批准访问。",
-      "requestingCode": "正在获取安全登录码..."
+      "requestingCode": "正在获取安全登录码...",
+      "completeBrowserLogin": "完成浏览器登录",
+      "manualCallbackHelp": "打开授权页面并完成登录，然后粘贴回调 URL 或授权码。",
+      "openAuthorizationPage": "打开授权页面",
+      "callbackPlaceholder": "粘贴回调 URL 或授权码",
+      "submitCode": "提交授权码",
+      "tokenDanceCancelled": "TokenDance 授权已取消。",
+      "tokenDanceCallbackUnavailable": "无法启动 TokenDance 的安全本地回调。",
+      "tokenDanceTimedOut": "TokenDance 授权已超时，请重试。",
+      "tokenDanceExchangeFailed": "TokenDance 无法交换授权码（HTTP {{status}}）。",
+      "tokenDanceMissingKey": "TokenDance 已完成授权，但未返回 API 密钥。请重新授权。"
+    },
+    "recovery": {
+      "topUpBalance": "TokenDance 账户余额不足。请充值后重试。",
+      "reauthorizeApiKey": "TokenDance 密钥已失效。请删除此提供商后重新授权 TokenDance。",
+      "apiKeyQuota": "TokenDance 密钥已达到周期额度。请等待额度刷新，或重新授权 TokenDance。"
     }
   },
   "gateway": {
@@ -334,7 +349,10 @@
     "installCmdDesc": "安装 ~/.local/bin/openclaw（无需管理员权限）",
     "installTitle": "安装 OpenClaw 命令",
     "installMessage": "安装 \"openclaw\" 命令？",
-    "installDetail": "这将创建 ~/.local/bin/openclaw。确保 ~/.local/bin 在您的 PATH 中。"
+    "installDetail": "这将创建 ~/.local/bin/openclaw。确保 ~/.local/bin 在您的 PATH 中。",
+    "compactionReserve": "上下文压缩预留下限",
+    "compactionReserveDesc": "显式配置上下文窗口时按其 25% 应用，否则使用 50,000 token。",
+    "compactionReserveUnavailable": "无法获取已应用的预留值"
   },
   "about": {
     "title": "关于",
@@ -354,5 +372,88 @@
     "inputModeDesc": "转写会把语音转换为文字填入输入框。",
     "modeDictation": "转写",
     "modeConversation": "连续对话"
+  },
+  "support": {
+    "title": "支持"
+  },
+  "issueReport": {
+    "actionTitle": "导出问题现场",
+    "actionDescription": "在桌面创建用于问题排查和支持的诊断 ZIP。",
+    "open": "查看并导出",
+    "dialogTitle": "导出问题现场",
+    "dialogDescription": "查看将要导出的内容，并按需选择会话。ZIP 将保存到桌面。",
+    "contentsTitle": "ZIP 将包含",
+    "contents": {
+      "transcripts": {
+        "title": "会话记录",
+        "description": "所选会话（如有）的完整 JSONL 文件。"
+      },
+      "config": {
+        "title": "OpenClaw 配置",
+        "description": "已移除凭证值的 openclaw.json 副本。"
+      },
+      "logs": {
+        "title": "诊断日志",
+        "description": "可用的 ClawX 和 OpenClaw 日志。"
+      },
+      "manifest": {
+        "title": "清单",
+        "description": "记录已包含和缺失的文件。"
+      }
+    },
+    "sessionsTitle": "会话（可选）",
+    "selectAll": "全选（{{count}}）",
+    "selectedCount": "已选择 {{count}} 个会话",
+    "noSessions": "暂无可用会话，仍可导出配置和日志。",
+    "export": "创建 ZIP（{{count}}）",
+    "exportWithoutConversations": "创建不含会话的 ZIP",
+    "exporting": "正在创建 ZIP...",
+    "exportSucceeded": "问题现场已导出",
+    "skippedSessions": "有 {{count}} 个会话的本地记录不可用，已跳过并继续导出可用诊断信息。",
+    "exportFailed": "问题现场导出失败",
+    "completeTitle": "问题现场已就绪",
+    "completeDescription": "ZIP 已保存到以下路径。",
+    "showInFolder": "在文件夹中显示",
+    "revealFailed": "无法在文件夹中显示问题现场 ZIP"
+  },
+  "asr": {
+    "title": "语音转写",
+    "description": "配置用于输入框语音听写的语音转写服务，支持兼容 OpenAI Audio Transcriptions 或 Chat Completions 协议的端点。",
+    "protocol": {
+      "label": "API 类型",
+      "transcriptions": "OpenAI Audio Transcriptions",
+      "chat": "OpenAI Chat Completions"
+    },
+    "presets": {
+      "label": "服务商",
+      "openai": "OpenAI",
+      "groq": "Groq",
+      "siliconflow": "硅基流动",
+      "bailian": "阿里云百炼",
+      "custom": "自定义"
+    },
+    "baseUrl": "API 地址",
+    "hints": {
+      "bailianDialectPrefix": "阿里云百炼 API 输入语音需 Data URI 而非纯 Base64 编码（见 ",
+      "bailianDialectLinkText": "文档",
+      "bailianDialectSuffix": "），ClawX 已适配。",
+      "bailianWorkspace": "请将 <WorkspaceId> 替换为你的百炼业务空间 ID，并按需调整地域名。"
+    },
+    "model": "模型",
+    "language": "语言",
+    "languageAuto": "自动识别（推荐）",
+    "apiKey": "API 密钥",
+    "apiKeyConfiguredPlaceholder": "此 Provider 已配置 API 密钥，留空保持不变",
+    "apiKeyLink": "获取 API 密钥",
+    "apiKeyLinkTitle": "前往服务商控制台获取 API 密钥",
+    "save": "保存",
+    "toast": {
+      "saved": "语音转写设置已保存。"
+    },
+    "errors": {
+      "invalidBaseUrl": "API 地址必须以 http:// 或 https:// 开头。",
+      "modelRequired": "请填写模型名称。",
+      "request": "保存失败，请重试。"
+    }
   }
 }

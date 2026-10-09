@@ -4,6 +4,10 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Chat } from '@/pages/Chat';
 import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
 
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+}));
+
 vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
@@ -130,10 +134,6 @@ vi.mock('@/hooks/use-stick-to-bottom-instant', () => ({
     contentRef: { current: null },
     scrollRef: { current: null },
   }),
-}));
-
-vi.mock('@/hooks/use-min-loading', () => ({
-  useMinLoading: () => false,
 }));
 
 vi.mock('@/pages/Chat/ChatInput', () => ({

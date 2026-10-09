@@ -5,7 +5,7 @@ import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { stripAcpWorkingDirectoryPrefix } from '@shared/chat/session-title';
 import { isOpenClawHeartbeatPollText } from '@shared/chat/openclaw-internal';
 import type { RawMessage } from '@shared/chat/types';
-import type { SessionTurnTimingCandidate } from '@shared/host-api/contract';
+import type { SessionDeleteResult, SessionTurnTimingCandidate } from '@shared/host-api/contract';
 import { resolveOpenClawStateDir } from '../utils/paths';
 import { logger } from '../utils/logger';
 import {
@@ -149,11 +149,16 @@ function normalizeTurnUserText(message: TranscriptMessage): string {
     .trim();
 }
 
-function isInternalInterSessionUser(message: TranscriptMessage): boolean {
+function isInternalTranscriptUser(message: TranscriptMessage): boolean {
   const provenance = (message as TranscriptMessage & { provenance?: unknown }).provenance;
   if (provenance && typeof provenance === 'object' && !Array.isArray(provenance)) {
     const kind = (provenance as Record<string, unknown>).kind;
-    if (typeof kind === 'string' && kind.toLowerCase() === 'inter_session') return true;
+    if (
+      typeof kind === 'string'
+      && (kind.toLowerCase() === 'inter_session' || kind.toLowerCase() === 'internal_system')
+    ) {
+      return true;
+    }
   }
   return /^\[Inter-session message\]\s/.test(extractMessageText(message.content));
 }
@@ -169,7 +174,10 @@ function extractTranscriptTurnTimings(records: TranscriptMessageRecord[]): Sessi
   for (const record of records) {
     const role = typeof record.message.role === 'string' ? record.message.role.toLowerCase() : '';
     if (role === 'user') {
-      if (isInternalInterSessionUser(record.message)) continue;
+      // OpenClaw persists restart-recovery control instructions as role=user with
+      // internal_system provenance. They continue the interrupted visible turn and
+      // must not truncate its timing at the last pre-restart tool result.
+      if (isInternalTranscriptUser(record.message)) continue;
       current = {
         normalizedUserText: normalizeTurnUserText(record.message),
         startedAt: transcriptRecordTimestamp(record),
@@ -523,9 +531,12 @@ export async function loadSessionTranscriptByKey(sessionKey: string, limit: numb
 async function findSessionsJsonForKey(
   sessionKey: string,
   preferredAgentId: string,
+  workflowRunIds: string[] = [],
 ): Promise<{ sessionsDir: string; sessionsJsonPath: string; sessionsJson: Record<string, unknown> } | null> {
   const fsP = await import('node:fs/promises');
   const agentsRoot = join(resolveOpenClawStateDir(), 'agents');
+  const readErrors: string[] = [];
+  let workflowStore: { sessionsDir: string; sessionsJsonPath: string; sessionsJson: Record<string, unknown> } | null = null;
 
   const tryDir = async (
     agentId: string,
@@ -536,10 +547,18 @@ async function findSessionsJsonForKey(
     try {
       const raw = await fsP.readFile(sessionsJsonPath, 'utf8');
       const sessionsJson = JSON.parse(raw) as Record<string, unknown>;
-      if (collectSessionKeys(sessionsJson).includes(sessionKey)) {
+      const keys = collectSessionKeys(sessionsJson);
+      if (keys.includes(sessionKey)) {
         return { sessionsDir, sessionsJsonPath, sessionsJson };
       }
-    } catch { /* missing/unreadable store — skip */ }
+      if (!workflowStore && keys.some((key) => workflowRunIds.some((runId) => key.includes(`wf:${runId}:`)))) {
+        workflowStore = { sessionsDir, sessionsJsonPath, sessionsJson };
+      }
+    } catch (error) {
+      if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT')) {
+        readErrors.push(`Could not read sessions.json at ${sessionsJsonPath}: ${String(error)}`);
+      }
+    }
     return null;
   };
 
@@ -549,15 +568,18 @@ async function findSessionsJsonForKey(
   let agentDirs: string[];
   try {
     agentDirs = await fsP.readdir(agentsRoot);
-  } catch {
-    return null;
+  } catch (error) {
+    if (readErrors.length) throw new Error(readErrors.join('; '), { cause: error });
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') return null;
+    throw new Error(`Could not list agent session directories: ${String(error)}`, { cause: error });
   }
   for (const agentId of agentDirs) {
     if (agentId === preferredAgentId) continue;
     const found = await tryDir(agentId);
     if (found) return found;
   }
-  return null;
+  if (readErrors.length) throw new Error(readErrors.join('; '));
+  return workflowStore;
 }
 
 async function loadSessionTurnTimingsByKey(
@@ -586,7 +608,7 @@ async function deleteSession(
   ctx: SessionsApiContext,
   sessionKey: string,
   workflowRunIds: string[] = [],
-): Promise<{ success: boolean; error?: string }> {
+): Promise<SessionDeleteResult> {
   if (!sessionKey || !sessionKey.startsWith('agent:')) {
     return { success: false, error: `Invalid sessionKey: ${sessionKey}` };
   }
@@ -599,23 +621,16 @@ async function deleteSession(
     return { success: false, error: `Invalid agentId: ${agentId}` };
   }
 
-  // Workflow cascade (best-effort, never blocks the delete): stop the engine
-  // run + snapshot so it can't rehydrate, cancel still-active gateway Task Flow
-  // work, and remove the run's `wf:<runId>:<step>` sub-sessions (online path).
   if (workflowRunIds.length > 0) {
     const engine = getWorkflowEngine(ctx.gatewayManager);
     for (const runId of workflowRunIds) {
       try {
-        engine.discardRun(runId);
+        engine.abort(runId);
       } catch (error) {
-        logger.warn(`[session:delete] discardRun failed for ${runId}: ${String(error)}`);
+        logger.warn(`[session:delete] abort failed for ${runId}: ${String(error)}`);
+        return { success: false, error: `Could not stop workflow ${runId}: ${String(error)}` };
       }
-      try {
-        await cancelSessionBackgroundTasks(ctx.gatewayManager, sessionKey, runId);
-      } catch { /* best-effort */ }
-      try {
-        await deleteWorkflowChildSessions(ctx.gatewayManager, runId);
-      } catch { /* best-effort */ }
+      await cancelSessionBackgroundTasks(ctx.gatewayManager, sessionKey, runId);
     }
   }
 
@@ -638,71 +653,80 @@ async function deleteSession(
   // Gateway never rewrites them.
   const gw = await tryGatewaySessionDelete(ctx.gatewayManager, sessionKey);
 
-  const located = await findSessionsJsonForKey(sessionKey, agentId);
-  if (!located) {
-    // Nothing left on disk: either the RPC already removed it, or the key was
-    // never persisted anywhere.
-    if (gw.ok) {
-      return { success: true };
-    }
-    logger.warn(`[session:delete] Cannot resolve file for "${sessionKey}". No sessions.json under any agent dir holds this key (gateway: ${gw.error ?? 'unknown'}).`);
-    return { success: false, error: `Cannot resolve file for session: ${sessionKey}` };
+  const warnings: string[] = [];
+  let located: Awaited<ReturnType<typeof findSessionsJsonForKey>> = null;
+  try {
+    located = await findSessionsJsonForKey(sessionKey, agentId, workflowRunIds);
+  } catch (error) {
+    if (!gw.ok) return { success: false, error: String(error) };
+    warnings.push(`Session deleted, but could not verify session index cleanup: ${String(error)}`);
   }
-
-  const { sessionsDir, sessionsJsonPath, sessionsJson } = located;
-  logger.info(`[session:delete] key=${sessionKey} store=${sessionsJsonPath} (gateway rpc: ${gw.ok ? 'ok' : gw.error ?? 'unavailable'})`);
-
   const fsP = await import('node:fs/promises');
 
-  // Sweep the transcript + sidecars when we can resolve them. When resolution
-  // fails (missing file info or an out-of-scope path) we still fall through to
-  // remove the metadata entry below — dropping that entry is what actually
-  // stops the session from being re-listed on the next restart.
-  const resolution = resolveSessionTranscriptPath(sessionsJson, sessionsDir, sessionKey);
-  if (resolution.ok) {
-    const { resolvedSrcPath, sessionsDirAbs, baseId } = resolution;
-    logger.info(`[session:delete] file: ${resolvedSrcPath}`);
-    const sweep = await sweepSessionArtefacts(sessionsDirAbs, baseId);
-    for (const removedPath of sweep.removed) {
-      logger.info(`[session:delete] Unlinked ${removedPath}`);
-    }
-    for (const { path: failedPath, error } of sweep.errors) {
-      logger.warn(`[session:delete] Failed to unlink ${failedPath}: ${String(error)}`);
-    }
-    logger.info(`[session:delete] Hard-deleted ${sweep.removed.length} file(s) for ${baseId}`);
-  } else if (resolution.failure.kind === 'path-outside-scope') {
-    logger.warn(`[session:delete] Skipping transcript sweep for out-of-scope path "${sessionKey}": ${resolution.failure.resolvedPath}`);
-  } else {
-    logger.warn(`[session:delete] No resolvable transcript for "${sessionKey}"; removing metadata entry only.`);
-  }
-
-  try {
-    const raw2 = await fsP.readFile(sessionsJsonPath, 'utf8');
-    const json2 = JSON.parse(raw2) as Record<string, unknown>;
-    removeSessionEntry(json2, sessionKey);
-
-    // Offline workflow cascade: with the Gateway down, deleteWorkflowChildSessions
-    // is a no-op, so the run's `wf:<runId>:<step>` child sessions live on in the
-    // same sessions.json — sweep their transcripts + entries here too.
-    for (const runId of workflowRunIds) {
-      const marker = `wf:${runId}:`;
-      for (const childKey of collectSessionKeys(json2).filter((k) => k.includes(marker))) {
-        const childResolved = resolveSessionTranscriptPath(json2, sessionsDir, childKey);
-        if (childResolved.ok) {
-          await sweepSessionArtefacts(childResolved.sessionsDirAbs, childResolved.baseId);
-        }
-        removeSessionEntry(json2, childKey);
+  if (located) {
+    try {
+      const raw = await fsP.readFile(located.sessionsJsonPath, 'utf8');
+      const sessionsJson = JSON.parse(raw) as Record<string, unknown>;
+      removeSessionEntry(sessionsJson, sessionKey);
+      await fsP.writeFile(located.sessionsJsonPath, JSON.stringify(sessionsJson, null, 2), 'utf8');
+    } catch (error) {
+      const indexAlreadyRemoved = typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+      if (!indexAlreadyRemoved) {
+        if (!gw.ok) return { success: false, error: `Could not update sessions.json: ${String(error)}` };
+        warnings.push(`Session deleted, but could not clean its remaining index: ${String(error)}`);
       }
     }
 
-    await fsP.writeFile(sessionsJsonPath, JSON.stringify(json2, null, 2), 'utf8');
-    logger.info(`[session:delete] Removed "${sessionKey}" from sessions.json`);
-  } catch (error) {
-    logger.warn(`[session:delete] Could not update sessions.json: ${String(error)}`);
-    return { success: false, error: `Could not update sessions.json: ${String(error)}` };
+    const resolution = resolveSessionTranscriptPath(located.sessionsJson, located.sessionsDir, sessionKey);
+    if (resolution.ok) {
+      try {
+        const sweep = await sweepSessionArtefacts(resolution.sessionsDirAbs, resolution.baseId);
+        for (const failure of sweep.errors) {
+          warnings.push(`Session deleted, but could not remove ${failure.path}: ${String(failure.error)}`);
+        }
+      } catch (error) {
+        warnings.push(`Session deleted, but could not clean its transcript: ${String(error)}`);
+      }
+    }
   }
 
-  return { success: true };
+  for (const runId of workflowRunIds) {
+    try {
+      warnings.push(...await deleteWorkflowChildSessions(ctx.gatewayManager, runId));
+    } catch (error) {
+      warnings.push(`Session deleted, but could not clean workflow children for ${runId}: ${String(error)}`);
+    }
+    if (located) {
+      try {
+        const raw = await fsP.readFile(located.sessionsJsonPath, 'utf8');
+        const sessionsJson = JSON.parse(raw) as Record<string, unknown>;
+        const marker = `wf:${runId}:`;
+        for (const childKey of collectSessionKeys(sessionsJson).filter((key) => key.includes(marker))) {
+          const child = resolveSessionTranscriptPath(sessionsJson, located.sessionsDir, childKey);
+          if (child.ok) {
+            const sweep = await sweepSessionArtefacts(child.sessionsDirAbs, child.baseId);
+            if (sweep.errors.length > 0) {
+              for (const failure of sweep.errors) warnings.push(`Could not clean workflow child ${childKey}: ${String(failure.error)}`);
+              continue;
+            }
+          }
+          removeSessionEntry(sessionsJson, childKey);
+        }
+        await fsP.writeFile(located.sessionsJsonPath, JSON.stringify(sessionsJson, null, 2), 'utf8');
+      } catch (error) {
+        const indexAlreadyRemoved = typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+        if (!indexAlreadyRemoved) warnings.push(`Session deleted, but could not clean workflow index for ${runId}: ${String(error)}`);
+      }
+    }
+    try {
+      getWorkflowEngine(ctx.gatewayManager).discardRun(runId);
+    } catch (error) {
+      warnings.push(`Session deleted, but could not remove workflow snapshot ${runId}: ${String(error)}`);
+    }
+  }
+
+  for (const warning of warnings) logger.warn(`[session:delete] ${warning}`);
+  return { success: true, ...(warnings.length ? { warnings } : {}) };
 }
 
 async function renameSession(sessionKey: string, label: string): Promise<{ success: boolean; error?: string }> {

@@ -35,6 +35,10 @@ import {
   resolveCanonicalSkillId,
   type SkillWithAgentAssignments,
 } from './skill-agent-mapping';
+import {
+  applyModelAwareCompactionReserveTokensFloor,
+  resolveModelContextWindow,
+} from './openclaw-compaction';
 
 const MAIN_AGENT_ID = 'main';
 const MAIN_AGENT_NAME = 'Main Agent';
@@ -155,6 +159,7 @@ export interface AgentSummary {
   optimizationProfile: OptimizationProfile;
   /** Compliance/sensitive mode: force origin-tier routing for this agent. */
   sensitiveMode: boolean;
+  contextWindow?: number;
   inheritedModel: boolean;
   workspace: string;
   agentDir: string;
@@ -760,24 +765,28 @@ function getManagedWorkspaceDirectory(agent: AgentListEntry): string | null {
   return normalizedConfigured === normalizedManaged ? configuredWorkspace : null;
 }
 
-export async function removeAgentWorkspaceDirectory(agent: { id: string; workspace?: string }): Promise<void> {
+export async function removeAgentWorkspaceDirectory(
+  agent: { id: string; workspace?: string },
+): Promise<string | null> {
   const workspaceDir = getManagedWorkspaceDirectory(agent as AgentListEntry);
   if (!workspaceDir) {
     logger.warn('Skipping agent workspace deletion for unmanaged path', {
       agentId: agent.id,
       workspace: agent.workspace,
     });
-    return;
+    return null;
   }
 
   try {
     await rm(workspaceDir, { recursive: true, force: true });
+    return workspaceDir;
   } catch (error) {
     logger.warn('Failed to remove agent workspace directory', {
       agentId: agent.id,
       workspaceDir,
       error: String(error),
     });
+    return null;
   }
 }
 
@@ -1003,6 +1012,7 @@ async function buildSnapshotFromConfig(
     const explicitVideoGenerationModelRef = resolveModelRef(entry.videoGenerationModel);
     const explicitMusicGenerationModelRef = resolveModelRef(entry.musicGenerationModel);
     
+    const effectiveModelRef = explicitModelRef || defaultModelRef || null;
     const modelLabel = formatModelLabel(entry.model) || defaultModelLabel || 'Not configured';
     const inheritedModel = !explicitModelRef && Boolean(defaultModelLabel);
     const entryIdNorm = normalizeAgentIdForBinding(entry.id);
@@ -1013,7 +1023,7 @@ async function buildSnapshotFromConfig(
       isDefault: entry.id === defaultAgentId,
       skills: normalizeSkillAllowlist(entry.skills),
       modelDisplay: modelLabel,
-      modelRef: explicitModelRef || defaultModelRef || null,
+      modelRef: effectiveModelRef,
       overrideModelRef: explicitModelRef,
       overrideImageModelRef: explicitImageModelRef,
       overrideImageGenerationModelRef: explicitImageGenerationModelRef,
@@ -1022,6 +1032,7 @@ async function buildSnapshotFromConfig(
       autoSelectModel: autoSelectByAgent[entry.id]?.autoSelectModel ?? {},
       optimizationProfile: autoSelectByAgent[entry.id]?.optimizationProfile ?? 'balanced',
       sensitiveMode: autoSelectByAgent[entry.id]?.sensitiveMode ?? false,
+      contextWindow: resolveModelContextWindow(config, effectiveModelRef),
       inheritedModel,
       workspace: entry.workspace || (entry.id === MAIN_AGENT_ID ? getDefaultWorkspacePath(config) : `~/.openclaw/workspace-${entry.id}`),
       agentDir: entry.agentDir || getDefaultAgentDirPath(entry.id),
@@ -2187,6 +2198,10 @@ export async function updateDefaultModels(models: Record<string, string | null>)
     }
 
     config.agents = agentsConfig;
+
+    if (models.model !== undefined) {
+      applyModelAwareCompactionReserveTokensFloor(config, resolveModelRef(agentsConfig.defaults.model));
+    }
 
     await writeOpenClawConfig(config);
     logger.info('Updated default models', { models });

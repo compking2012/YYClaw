@@ -21,6 +21,8 @@ const GENERATED_IMAGE_IDENTITY = 'e2e-transcript-generated-image';
 const DEFAULT_WORKSPACE_SEGMENT = '~%2F.openclaw%2Fworkspace';
 
 type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
+type AcpSessionCatalog = Array<{ key: string; displayName: string; workspacePath: string }>;
+type AcpSessionReplayResponses = Record<string, AcpSessionUpdate[][]>;
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -65,6 +67,11 @@ function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true,
 async function installAcpChatMocks(
   app: ElectronApplication,
   loadResult: Record<string, unknown> = { success: true, generation: 1 },
+  sessionCatalog: AcpSessionCatalog = [{
+    key: MAIN_SESSION_KEY,
+    displayName: 'main',
+    workspacePath: MAIN_WORKSPACE,
+  }],
 ) {
   await installIpcMocks(app, {
     gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
@@ -72,7 +79,7 @@ async function installAcpChatMocks(
       [stableStringify(['sessions.list', {}])]: {
         success: true,
         result: {
-          sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE }],
+          sessions: sessionCatalog,
         },
       },
     },
@@ -126,6 +133,63 @@ async function installAcpLoadReplayMock(
       return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
     });
   }, { sessionKey: MAIN_SESSION_KEY, updates, timings });
+}
+
+async function installAcpLoadReplayBySessionMock(
+  app: ElectronApplication,
+  updatesBySessionKey: AcpSessionReplayResponses,
+) {
+  await app.evaluate(async ({ app: _app }, payload) => {
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+      args?: unknown[];
+    };
+    type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    const globals = globalThis as unknown as {
+      __acpLoadSessionKeys?: string[];
+      __acpLoadReplayResponseIndexes?: Record<string, number>;
+    };
+    globals.__acpLoadSessionKeys = [];
+    globals.__acpLoadReplayResponseIndexes = {};
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
+      if (request?.module === 'chat' && request.action === 'loadAcpSession') {
+        const requestPayload = request.payload ?? (Array.isArray(request.args) ? request.args[0] : undefined);
+        const sessionKey = requestPayload && typeof requestPayload === 'object'
+          ? String((requestPayload as Record<string, unknown>).sessionKey ?? '')
+          : '';
+        globals.__acpLoadSessionKeys?.push(sessionKey);
+        const responseIndex = globals.__acpLoadReplayResponseIndexes?.[sessionKey] ?? 0;
+        if (globals.__acpLoadReplayResponseIndexes) {
+          globals.__acpLoadReplayResponseIndexes[sessionKey] = responseIndex + 1;
+        }
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            success: true,
+            generation: 1,
+            sessionUpdates: (payload.updatesBySessionKey[sessionKey]?.[responseIndex] ?? []).map((update) => ({
+              sessionKey,
+              generation: 1,
+              historical: true,
+              notification: {
+                sessionId: sessionKey,
+                update,
+              },
+            })),
+          },
+        };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
+    });
+  }, { updatesBySessionKey });
 }
 
 async function installAcpLoadRecorderMock(app: ElectronApplication) {
@@ -218,7 +282,7 @@ async function installAcpPromptSuccessMock(app: ElectronApplication) {
     const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
     const originalHostInvoke = handlers?.get('host:invoke');
     ipcMain.removeHandler('host:invoke');
-    ipcMain.handle('host:invoke', async (event: unknown, request: { id?: string; module?: string; action?: string }) => {
+    ipcMain.handle('host:invoke', async (event: unknown, request: IpcInvokeRequest) => {
       if (request?.module === 'chat' && request.action === 'sendAcpPrompt') {
         return { id: request.id, ok: true, data: { success: true, generation: 1 } };
       }
@@ -267,10 +331,20 @@ async function installAcpPromptTimingMock(
   }, timing);
 }
 
-async function installAcpPromptFailureMock(app: ElectronApplication, error: string) {
-  await app.evaluate(async ({ app: _app }, promptError) => {
-    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
-    type IpcInvokeHandler = (event: unknown, request: { id?: string; module?: string; action?: string }) => Promise<unknown>;
+async function installAcpPromptFailureMock(
+  app: ElectronApplication,
+  error: string,
+  partialReply?: string,
+) {
+  await app.evaluate(async ({ app: _app }, input) => {
+    const { BrowserWindow, ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type IpcInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: { sessionKey?: string };
+    };
+    type IpcInvokeHandler = (event: unknown, request: IpcInvokeRequest) => Promise<unknown>;
     const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
     const originalHostInvoke = handlers?.get('host:invoke');
     ipcMain.removeHandler('host:invoke');
@@ -282,11 +356,102 @@ async function installAcpPromptFailureMock(app: ElectronApplication, error: stri
         return { id: request.id, ok: true, data: { success: true, generation: 1 } };
       }
       if (request?.module === 'chat' && request.action === 'sendAcpPrompt') {
-        return { id: request.id, ok: true, data: { success: false, error: promptError } };
+        if (input.partialReply && request.payload?.sessionKey) {
+          for (const window of BrowserWindow.getAllWindows()) {
+            window.webContents.send('chat:acp-session-update', {
+              sessionKey: request.payload.sessionKey,
+              generation: 1,
+              notification: {
+                sessionId: request.payload.sessionKey,
+                update: {
+                  sessionUpdate: 'agent_message_chunk',
+                  messageId: 'interrupted-assistant',
+                  content: { type: 'text', text: input.partialReply },
+                },
+              },
+            });
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        return { id: request.id, ok: true, data: { success: false, error: input.error } };
       }
       return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
     });
-  }, error);
+  }, { error, partialReply });
+}
+
+async function installSettledAcpHydrationMock(
+  app: ElectronApplication,
+  input: { prompt: string; streamedText: string; replayedText: string },
+) {
+  await app.evaluate(async ({ app: _app }, payload) => {
+    const { BrowserWindow, ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+    };
+    type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    let loadCount = 0;
+    const envelope = (generation: number, update: Record<string, unknown>) => ({
+      sessionKey: payload.sessionKey,
+      generation,
+      historical: true,
+      notification: { sessionId: payload.sessionKey, update },
+    });
+
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
+      if (request.module === 'chat' && request.action === 'loadAcpSession') {
+        loadCount += 1;
+        if (loadCount === 1) {
+          return { id: request.id, ok: true, data: { success: true, generation: 1 } };
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            success: true,
+            generation: 2,
+            sessionUpdates: [
+              envelope(2, {
+                sessionUpdate: 'user_message_chunk',
+                messageId: 'hydrated-user',
+                content: { type: 'text', text: payload.prompt },
+              }),
+              envelope(2, {
+                sessionUpdate: 'agent_message_chunk',
+                messageId: 'hydrated-assistant',
+                content: { type: 'text', text: payload.replayedText },
+              }),
+            ],
+          },
+        };
+      }
+      if (request.module === 'chat' && request.action === 'sendAcpPrompt') {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('chat:acp-session-update', {
+            sessionKey: payload.sessionKey,
+            generation: 1,
+            notification: {
+              sessionId: payload.sessionKey,
+              update: {
+                sessionUpdate: 'agent_message_chunk',
+                messageId: 'live-assistant',
+                content: { type: 'text', text: payload.streamedText },
+              },
+            },
+          });
+        }
+        return { id: request.id, ok: true, data: { success: true, generation: 1 } };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request.id, ok: true, data: {} };
+    });
+  }, { sessionKey: MAIN_SESSION_KEY, ...input });
 }
 
 async function installTargetAgentRequestRecorder(app: ElectronApplication) {
@@ -360,6 +525,62 @@ async function resolveDeferredAcpPrompt(app: ElectronApplication) {
   });
 }
 
+async function installAcpReactivationWithPartialTimingMock(
+  app: ElectronApplication,
+  prompt: string,
+) {
+  await app.evaluate(async ({ app: _app }, payload) => {
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+    };
+    type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    let mainSessionLoadCount = 0;
+
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
+      if (
+        request.module === 'chat'
+        && request.action === 'loadAcpSession'
+        && request.payload?.sessionKey === payload.sessionKey
+      ) {
+        mainSessionLoadCount += 1;
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            success: true,
+            generation: 1,
+            ...(mainSessionLoadCount > 1 ? { resumedActivePrompt: true } : {}),
+          },
+        };
+      }
+      if (request.module === 'sessions' && request.action === 'turnTimings') {
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            success: true,
+            timings: mainSessionLoadCount > 1
+              ? [{
+                normalizedUserText: payload.prompt,
+                userOccurrenceFromTail: 1,
+                durationMs: 5_000,
+              }]
+              : [],
+          },
+        };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request.id, ok: true, data: {} };
+    });
+  }, { sessionKey: MAIN_SESSION_KEY, prompt });
+}
+
 async function emitAcpSessionUpdates(
   app: ElectronApplication,
   updates: AcpSessionUpdate[],
@@ -396,11 +617,79 @@ async function openChat(app: ElectronApplication) {
   }
   await expect(page.getByTestId('main-layout')).toBeVisible();
   await expect(page.getByTestId('chat-page')).toBeVisible();
+  const mainSessionRow = page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`);
+  if (await mainSessionRow.count() > 0) await mainSessionRow.click();
   return page;
 }
 
 test.describe('ClawX ACP inline timeline', () => {
-  test('does not use legacy history on startup or current-session clicks', async ({ launchElectronApp }) => {
+  test('keeps ACP presentation while preserving local current-session history refresh', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      const historyCallsBefore = (await getRecordedHostInvocations(app)).filter((call) => (
+        call.module === 'gateway' && call.action === 'rpc' && call.payload?.method === 'chat.history'
+      )).length;
+
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await page.waitForTimeout(100);
+
+      expect((await getRecordedHostInvocations(app)).filter((call) => (
+        call.module === 'gateway'
+        && call.action === 'rpc'
+        && call.payload?.method === 'chat.history'
+      )).length).toBe(historyCallsBefore + 1);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      expect((await getRecordedHostInvocations(app)).some((call) => (
+        call.module === 'chat' && call.action === 'loadAcpSession'
+      ))).toBe(true);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('shows active ACP context usage from usage updates', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('chat-composer-context-usage')).toHaveCount(0);
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect.poll(async () => (await getRecordedHostInvocations(app)).some((request) => (
+        request.module === 'chat' && request.action === 'loadAcpSession' && request.payload?.sessionKey === MAIN_SESSION_KEY
+      ))).toBe(true);
+
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'usage_update',
+        used: 25_000,
+        size: 100_000,
+      }]);
+
+      const indicator = page.getByRole('progressbar', { name: '25% context used: 25,000 / 100,000 tokens' });
+      await expect(indicator).toBeVisible({ timeout: 30_000 });
+      await expect(indicator).toHaveAttribute('data-testid', 'chat-composer-context-usage');
+      await expect(indicator).toHaveAttribute('aria-valuenow', '25');
+      await expect(indicator).toContainText('25%');
+      await expect(page.getByTestId('chat-composer-footer').getByTestId('chat-composer-context-usage')).toBeVisible();
+      await expect(page.getByTestId('chat-composer-box').getByTestId('chat-composer-context-usage')).toHaveCount(0);
+      const indicatorBox = await indicator.boundingBox();
+      const gatewayBox = await page.getByTestId('chat-composer-gateway-status').boundingBox();
+      expect(indicatorBox).toBeTruthy();
+      expect(gatewayBox).toBeTruthy();
+      expect(indicatorBox!.x).toBeLessThan(gatewayBox!.x);
+      await indicator.focus();
+      await expect(page.getByRole('tooltip')).toHaveText('25% context used: 25,000 / 100,000 tokens');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('plan indicator renders a live running session plan', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -408,14 +697,219 @@ test.describe('ClawX ACP inline timeline', () => {
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
-      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
-      await page.waitForTimeout(100);
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'tool_call',
+        toolCallId: 'live-session-plan',
+        title: 'update_plan: plan current work',
+        status: 'in_progress',
+        rawInput: {
+          plan: [
+            { step: 'Inspect the current implementation', status: 'completed' },
+            { step: 'Exercise the live plan indicator', status: 'in_progress' },
+            { step: 'Verify the replay path', status: 'pending' },
+          ],
+        },
+        content: [],
+        locations: [],
+      }]);
 
-      expect((await getRecordedHostInvocations(app)).some((call) => (
-        call.module === 'gateway'
-        && call.action === 'rpc'
-        && call.payload?.method === 'chat.history'
-      ))).toBe(false);
+      const toggle = page.getByTestId('acp-session-plan-toggle');
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+       await expect(toggle).toHaveText('Todo items: 1 / 3');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByTestId('acp-session-plan-panel')).toHaveCount(0);
+      await expect(toggle.locator('..').getByRole('button')).toHaveCount(1);
+      const composerBox = await page.getByTestId('chat-composer-box').boundingBox();
+      const toggleBox = await toggle.boundingBox();
+      expect(composerBox).toBeTruthy();
+      expect(toggleBox).toBeTruthy();
+      expect(toggleBox!.x + toggleBox!.width).toBeGreaterThan(composerBox!.x + composerBox!.width - 100);
+      expect(toggleBox!.y).toBeLessThan(composerBox!.y);
+
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      const panel = page.getByTestId('acp-session-plan-panel');
+      const steps = panel.getByTestId('acp-session-plan-step');
+      await expect(steps).toHaveCount(3);
+      await expect(steps.nth(0)).toHaveText('Inspect the current implementation');
+      await expect(steps.nth(1)).toHaveText('Exercise the live plan indicator');
+      await expect(steps.nth(2)).toHaveText('Verify the replay path');
+      await expect(steps.nth(1).locator('.lucide-circle-ellipsis')).toBeVisible();
+      await expect(steps.nth(1).locator('.lucide-circle-ellipsis')).not.toHaveClass(/animate-spin/);
+      await expect(steps.nth(1)).not.toHaveText(/Running|Pending|Completed/);
+      await expect(toggle.locator('..').getByRole('button')).toHaveCount(1);
+      await expect(panel.locator('button, a, input, select, textarea, [contenteditable="true"]')).toHaveCount(0);
+      await expect(page.getByTestId('acp-tool-input-pre')).toContainText('Exercise the live plan indicator');
+       const panelBox = await panel.boundingBox();
+       const expandedComposerBox = await page.getByTestId('chat-composer-box').boundingBox();
+       expect(panelBox).toBeTruthy();
+       expect(expandedComposerBox).toBeTruthy();
+       expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(toggleBox!.y);
+       expect(panelBox!.y + panelBox!.height).toBeLessThan(expandedComposerBox!.y);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('session plan replay isolates session A through an A-to-B-to-A switch', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const sessionBKey = 'agent:main:session-plan-b';
+
+    try {
+      await installAcpChatMocks(app, undefined, [
+        { key: MAIN_SESSION_KEY, displayName: 'session A', workspacePath: MAIN_WORKSPACE },
+        { key: sessionBKey, displayName: 'session B', workspacePath: MAIN_WORKSPACE },
+      ]);
+      await installAcpLoadReplayBySessionMock(app, {
+        [MAIN_SESSION_KEY]: [
+          [{
+            sessionUpdate: 'tool_call',
+            toolCallId: 'session-a-plan',
+            title: 'update_plan: session A',
+            status: 'in_progress',
+            rawInput: {
+              plan: [
+                { step: 'Keep session A isolated', status: 'completed' },
+                { step: 'Restore session A from replay', status: 'in_progress' },
+              ],
+            },
+            content: [],
+            locations: [],
+          }],
+          [{
+            sessionUpdate: 'tool_call',
+            toolCallId: 'session-a-plan-return',
+            title: 'update_plan: fresh session A',
+            status: 'in_progress',
+            rawInput: {
+              plan: [
+                { step: 'Load fresh session A replay', status: 'completed' },
+                { step: 'Render structured session A response', status: 'in_progress' },
+              ],
+            },
+            content: [],
+            locations: [],
+          }],
+        ],
+        [sessionBKey]: [[{
+          sessionUpdate: 'tool_call',
+          toolCallId: 'session-b-plan',
+          title: 'update_plan: session B',
+          status: 'in_progress',
+          rawInput: {
+            plan: [{ step: 'Keep session B separate', status: 'in_progress' }],
+          },
+          content: [],
+          locations: [],
+        }]],
+      });
+
+      const page = await openChat(app);
+      const toggle = page.getByTestId('acp-session-plan-toggle');
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+       await expect(toggle).toHaveText('Todo items: 1 / 2');
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY]);
+
+      await page.evaluate(() => {
+        const flashes: string[] = [];
+        const observer = new MutationObserver((records) => {
+          for (const record of records) {
+            for (const node of record.addedNodes) {
+              if (!(node instanceof Element)) continue;
+              const selector = '[data-testid="acp-chat-empty-state"]';
+              if (node.matches(selector) || node.querySelector(selector)) flashes.push('greeting');
+            }
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        Object.assign(window, { stopSessionFlashObserver: () => { observer.disconnect(); return flashes; } });
+      });
+      await page.getByTestId(`sidebar-session-${sessionBKey}`).click();
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+       await expect(toggle).toHaveText('Todo items: 0 / 1');
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY, sessionBKey]);
+      await toggle.click();
+      await expect(page.getByTestId('acp-session-plan-panel')).toContainText('Keep session B separate');
+
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+       await expect(toggle).toHaveText('Todo items: 1 / 2');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByTestId('acp-session-plan-panel')).toHaveCount(0);
+      await toggle.click();
+      const returnedPanel = page.getByTestId('acp-session-plan-panel');
+      const returnedSteps = returnedPanel.getByTestId('acp-session-plan-step');
+      await expect(returnedSteps).toHaveCount(2);
+      await expect(returnedSteps.nth(0)).toHaveText('Load fresh session A replay');
+      await expect(returnedSteps.nth(1)).toHaveText('Render structured session A response');
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY, sessionBKey, MAIN_SESSION_KEY]);
+      expect(await page.evaluate(() => (
+        window as unknown as { stopSessionFlashObserver: () => string[] }
+      ).stopSessionFlashObserver())).toEqual([]);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('session plan replay restores a collapsed plan after renderer reload', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      await installAcpLoadReplayBySessionMock(app, {
+        [MAIN_SESSION_KEY]: [
+          [{
+            sessionUpdate: 'tool_call',
+            toolCallId: 'reload-session-plan',
+            title: 'update_plan: reload session plan',
+            status: 'in_progress',
+            rawInput: {
+              plan: [
+                { step: 'Load plan history again', status: 'completed' },
+                { step: 'Restore collapsed state', status: 'in_progress' },
+              ],
+            },
+            content: [],
+            locations: [],
+          }],
+          [{
+            sessionUpdate: 'tool_call',
+            toolCallId: 'reload-session-plan-fresh',
+            title: 'update_plan: fresh renderer reload',
+            status: 'in_progress',
+            rawInput: {
+              plan: [
+                { step: 'Load a fresh plan after renderer reload', status: 'pending' },
+                { step: 'Consume new structured replay data', status: 'pending' },
+              ],
+            },
+            content: [],
+            locations: [],
+          }],
+        ],
+      });
+
+      const page = await openChat(app);
+      const toggle = page.getByTestId('acp-session-plan-toggle');
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY]);
+      await toggle.click();
+      await expect(page.getByTestId('acp-session-plan-panel')).toBeVisible();
+
+      await page.reload();
+      await expect(page.getByTestId('main-layout')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+       await expect(toggle).toHaveText('Todo items: 0 / 2');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByTestId('acp-session-plan-panel')).toHaveCount(0);
+      await toggle.click();
+      const reloadedPanel = page.getByTestId('acp-session-plan-panel');
+      const reloadedSteps = reloadedPanel.getByTestId('acp-session-plan-step');
+      await expect(reloadedSteps).toHaveCount(2);
+      await expect(reloadedSteps.nth(0)).toHaveText('Load a fresh plan after renderer reload');
+      await expect(reloadedSteps.nth(1)).toHaveText('Consume new structured replay data');
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY, MAIN_SESSION_KEY]);
     } finally {
       await closeElectronApp(app);
     }
@@ -446,6 +940,36 @@ test.describe('ClawX ACP inline timeline', () => {
       const page = await openChat(app);
       await expect(page.getByText('Historical turn measured')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-turn-duration')).toHaveText('Took 6 sec');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('renders the full restart-recovered historical duration', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      await installAcpLoadReplayMock(app, [
+        {
+          sessionUpdate: 'user_message_chunk',
+          messageId: 'restart-timed-user',
+          content: { type: 'text', text: 'Continue this turn across a Gateway restart' },
+        },
+        {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'restart-timed-assistant',
+          content: { type: 'text', text: 'Recovered turn completed' },
+        },
+      ], [{
+        normalizedUserText: 'Continue this turn across a Gateway restart',
+        userOccurrenceFromTail: 1,
+        durationMs: 280_564,
+      }]);
+
+      const page = await openChat(app);
+      await expect(page.getByText('Recovered turn completed')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('acp-turn-duration')).toHaveText('Took 280 sec');
     } finally {
       await closeElectronApp(app);
     }
@@ -563,17 +1087,27 @@ test.describe('ClawX ACP inline timeline', () => {
         {
           sessionUpdate: 'tool_call',
           toolCallId: 'read-package',
-          title: 'Read package.json',
+          title: 'read: path: package.json',
           status: 'completed',
+          rawInput: {
+            path: '/workspace/package.json',
+            offset: 0,
+            limit: 2_000,
+          },
           content: [{ type: 'content', content: { type: 'text', text: 'Loaded package metadata' } }],
           locations: [],
         },
       ]);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('acp-tool-call-card')).toBeVisible();
-      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Read package.json');
-      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Loaded package metadata');
+      const card = page.getByTestId('acp-tool-call-card');
+      await expect(card).toBeVisible();
+      await expect(card).toContainText('Read: path: package.json');
+      await expect(card).toContainText('Loaded package metadata');
+      await expect(card.getByTestId('acp-tool-input-pre')).toContainText('/workspace/package.json');
+      const toolLabel = card.getByText('Tool', { exact: true });
+      expect(await toolLabel.evaluate((element) => element.previousElementSibling?.classList.contains('lucide-wrench'))).toBe(true);
+      expect(await toolLabel.evaluate((element) => element.nextElementSibling?.getAttribute('data-testid'))).toBe('acp-tool-icon-scan-text');
     } finally {
       await closeElectronApp(app);
     }
@@ -635,7 +1169,7 @@ test.describe('ClawX ACP inline timeline', () => {
       const beforeNavigationSeconds = Number.parseFloat((await duration.textContent()) ?? '0');
 
       await page.getByTestId('sidebar-nav-settings').click();
-      await expect(page.getByTestId('settings-page')).toBeVisible();
+      await expect(page.getByTestId('settings-tab')).toBeVisible();
       await page.waitForTimeout(1_100);
       await emitAcpSessionUpdates(app, [{
         sessionUpdate: 'agent_message_chunk',
@@ -643,6 +1177,8 @@ test.describe('ClawX ACP inline timeline', () => {
         content: { type: 'text', text: 'While away. ' },
       }]);
 
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('settings-tab')).toHaveCount(0);
       await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
       await expect(page.getByTestId('chat-page')).toBeVisible();
       await expect(page.getByTestId('acp-assistant-message')).toContainText('Before navigation. While away.');
@@ -664,6 +1200,75 @@ test.describe('ClawX ACP inline timeline', () => {
       await page.waitForTimeout(1_100);
       await expect(duration).toHaveText(completedDuration ?? '');
     } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('keeps elapsed duration running after switching conversations and returning', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const prompt = 'Keep timing across conversations';
+    const otherSessionKey = 'agent:main:session-duration-other';
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [
+                { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE },
+                { key: otherSessionKey, displayName: 'other', workspacePath: MAIN_WORKSPACE },
+              ],
+            },
+          },
+        },
+        hostApi: {
+          ...baseHostApiMocks(),
+          [stableStringify(['chat', 'loadAcpSession', {
+            sessionKey: otherSessionKey,
+            workspaceRoot: MAIN_WORKSPACE,
+            cwd: MAIN_WORKSPACE,
+          }])]: { success: true, generation: 2 },
+        },
+        recordHostInvocations: true,
+      });
+      await installAcpPromptDeferredMock(app);
+      await installAcpReactivationWithPartialTimingMock(app, prompt);
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId('chat-composer-input').fill(prompt);
+      await page.getByTestId('chat-composer-send').click();
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'conversation-switch-stream',
+        content: { type: 'text', text: 'Before switch. ' },
+      }]);
+      const duration = page.getByTestId('acp-turn-duration');
+      await expect(duration).toContainText('elapsed');
+      const beforeSwitchSeconds = Number.parseFloat((await duration.textContent()) ?? '0');
+
+      await page.getByTestId(`sidebar-session-${otherSessionKey}`).click();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      await page.waitForTimeout(1_100);
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'conversation-switch-stream',
+        content: { type: 'text', text: 'While away.' },
+      }]);
+
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(page.getByTestId('acp-assistant-message')).toContainText('Before switch. While away.');
+      await expect(duration).toContainText('elapsed');
+      const afterReturnSeconds = Number.parseFloat((await duration.textContent()) ?? '0');
+      expect(afterReturnSeconds).toBeGreaterThan(beforeSwitchSeconds);
+
+      await page.waitForTimeout(1_100);
+      await expect(duration).toContainText('elapsed');
+      expect(Number.parseFloat((await duration.textContent()) ?? '0')).toBeGreaterThan(afterReturnSeconds);
+    } finally {
+      await resolveDeferredAcpPrompt(app);
       await closeElectronApp(app);
     }
   });
@@ -750,7 +1355,7 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
-  test('groups assistant text and tool calls into one assistant turn', async ({ launchElectronApp }) => {
+  test('keeps a shorter trailing assistant chunk after a tool call', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -762,7 +1367,10 @@ test.describe('ClawX ACP inline timeline', () => {
         {
           sessionUpdate: 'agent_message_chunk',
           messageId: 'assistant-turn',
-          content: { type: 'text', text: 'I will inspect the file.' },
+          content: {
+            type: 'text',
+            text: 'I will inspect the generated report before answering.',
+          },
         },
         {
           sessionUpdate: 'tool_call',
@@ -775,7 +1383,18 @@ test.describe('ClawX ACP inline timeline', () => {
         {
           sessionUpdate: 'agent_message_chunk',
           messageId: 'assistant-turn',
-          content: { type: 'text', text: ' The file is safe.' },
+          content: {
+            type: 'text',
+            text: 'Inspection complete. The generated report passed all validation checks.\n\n- Source: `report.txt`\n- Result: val',
+          },
+        },
+        {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'assistant-turn',
+          content: {
+            type: 'text',
+            text: 'id\n- Package: `report.zip`',
+          },
         },
       ]);
 
@@ -784,8 +1403,36 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-assistant-copy')).toHaveCount(1);
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('Read grouped file');
       await expect.poll(async () => await page.getByTestId('acp-tool-call-card').evaluate((element) => Boolean(element.closest('[data-testid="acp-assistant-turn"]')))).toBe(true);
-      await expect(page.getByTestId('acp-assistant-turn')).toContainText('I will inspect the file.');
-      await expect(page.getByTestId('acp-assistant-turn')).toContainText('The file is safe.');
+      await expect(page.getByTestId('acp-assistant-turn')).toContainText('I will inspect the generated report');
+      await expect(page.getByTestId('acp-assistant-turn')).toContainText('Inspection complete');
+      await expect(page.getByTestId('acp-assistant-turn')).toContainText('Source: report.txt');
+      await expect(page.getByTestId('acp-assistant-turn')).toContainText('Result: valid');
+      await expect(page.getByTestId('acp-assistant-turn')).toContainText('Package: report.zip');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('hydrates a settled assistant reply atomically from ACP replay', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const prompt = 'How is the data service priced?';
+    const streamedText = 'It is sold as an enterprise subscription and quoted';
+    const replayedText = 'It is sold as an enterprise subscription and quoted per commodity, region, and seat.';
+
+    try {
+      await installAcpChatMocks(app);
+      await installSettledAcpHydrationMock(app, { prompt, streamedText, replayedText });
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId('chat-composer-input').fill(prompt);
+      await page.getByTestId('chat-composer-send').click();
+
+      await expect(page.getByTestId('acp-assistant-turn')).toContainText(streamedText, { timeout: 30_000 });
+      await expect(page.getByTestId('acp-chat-empty-state')).toHaveCount(0);
+      await expect(page.getByTestId('acp-assistant-turn')).toContainText(replayedText, { timeout: 30_000 });
+      await expect(page.getByTestId('acp-assistant-turn')).not.toContainText(`${streamedText}${replayedText}`);
+      await expect(page.getByTestId('acp-chat-empty-state')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
@@ -866,6 +1513,9 @@ test.describe('ClawX ACP inline timeline', () => {
           toolCallId: 'history-tool',
           title: 'Historical tool',
           status: 'completed',
+          rawInput: {
+            command: 'command -v tvly && tvly search "US data center protests opposition residents recent approvals moratorium 2026"',
+          },
           content: [{ type: 'content', content: { type: 'text', text: 'historical output' } }],
           locations: [],
         },
@@ -884,6 +1534,9 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(card).toHaveAttribute('data-expanded', 'false');
       await page.getByTestId('acp-tool-toggle').click();
       await expect(card).toHaveAttribute('data-expanded', 'true');
+      await expect(card.getByTestId('acp-tool-input-pre')).toContainText(
+        'US data center protests opposition residents recent approvals moratorium 2026',
+      );
       await expect(card).toContainText('historical output');
       const turn = page.getByTestId('acp-assistant-turn');
       await expect(turn).toContainText('Before the historical tool');
@@ -912,15 +1565,15 @@ test.describe('ClawX ACP inline timeline', () => {
         {
           sessionUpdate: 'tool_call',
           toolCallId: 'history-tool-1',
-          title: 'web_search',
+          title: 'update_plan: plan: [{"step":"Check weather"}]',
           status: 'completed',
-          content: [{ type: 'content', content: { type: 'text', text: 'search results' } }],
+          content: [{ type: 'content', content: { type: 'text', text: 'plan updated' } }],
           locations: [],
         },
         {
           sessionUpdate: 'tool_call',
           toolCallId: 'history-tool-2',
-          title: 'web_fetch',
+          title: 'web_fetch: url: https://example.com/weather',
           status: 'completed',
           content: [{ type: 'content', content: { type: 'text', text: 'fetch results' } }],
           locations: [],
@@ -928,9 +1581,57 @@ test.describe('ClawX ACP inline timeline', () => {
         {
           sessionUpdate: 'tool_call',
           toolCallId: 'history-tool-3',
-          title: 'browser',
+          title: 'browser: action: navigate',
           status: 'failed',
           content: [{ type: 'content', content: { type: 'text', text: 'browser failed' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-4',
+          title: 'exec: command: pwd',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: '/workspace' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-5',
+          title: 'read: path: weather.txt',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'file contents' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-6',
+          title: 'write: path: weather.md',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'weather report saved' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-7',
+          title: 'sessions_spawn: task: Check weather',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'subagent started' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-8',
+          title: 'memory_search: query: weather history',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'memory results' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-9',
+          title: 'computer: action: screenshot',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'screenshot captured' } }],
           locations: [],
         },
         {
@@ -950,10 +1651,29 @@ test.describe('ClawX ACP inline timeline', () => {
       const group = page.getByTestId('acp-tool-calls-group');
       await expect(group).toBeVisible();
       await expect(group).toHaveAttribute('data-collapsed', 'true');
+      await expect(group.locator('svg').first()).not.toHaveClass(/group-hover:translate-x-0\.5/);
       await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(0);
 
       await expandAcpToolCallsGroup(page);
-      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(3);
+      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(9);
+      await expect(page.getByText('Update plan: plan: [{"step":"Check weather"}]', { exact: true })).toBeVisible();
+      await expect(page.getByText('Read web page: url: https://example.com/weather', { exact: true })).toBeVisible();
+      await expect(page.getByText('Control browser: action: navigate', { exact: true })).toBeVisible();
+      await expect(page.getByText('Run command: command: pwd', { exact: true })).toBeVisible();
+      await expect(page.getByText('Read: path: weather.txt', { exact: true })).toBeVisible();
+      await expect(page.getByText('Write: path: weather.md', { exact: true })).toBeVisible();
+      await expect(page.getByText('Spawn subagent: task: Check weather', { exact: true })).toBeVisible();
+      await expect(page.getByText('Search memory: query: weather history', { exact: true })).toBeVisible();
+      await expect(page.getByText('Control computer: action: screenshot', { exact: true })).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-list-checks')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-globe')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-square-mouse-pointer')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-monitor-play')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-scan-text')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-save')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-bot')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-database')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-mouse-pointer-click')).toBeVisible();
       await expect(page.getByTestId('acp-assistant-turn')).toContainText('Hangzhou is cloudy today.');
     } finally {
       await closeElectronApp(app);
@@ -1296,14 +2016,21 @@ test.describe('ClawX ACP inline timeline', () => {
         return requests.some((request) => request.action === 'sendAcpPrompt');
       }).toBe(true);
 
+      await expect.poll(async () => {
+        const requests = await getTargetAgentRequests(app);
+        return requests.filter((request) => request.action === 'loadAcpSession').length;
+      }).toBe(2);
       const requests = await getTargetAgentRequests(app);
       const loads = requests.filter((request) => request.action === 'loadAcpSession');
-      expect(loads).toHaveLength(1);
+      expect(loads).toHaveLength(2);
       const targetKey = String(loads[0]!.payload.sessionKey);
       // A brand-new reviewer session is minted — never the reviewer's existing
       // main session — so its old context cannot bleed into this turn.
       expect(targetKey).toMatch(/^agent:reviewer:session-/);
       expect(targetKey).not.toBe(REVIEWER_SESSION_KEY);
+      const reviewerSessionRow = page.getByTestId(`sidebar-session-${targetKey}`);
+      await expect(reviewerSessionRow).toContainText('Hello reviewer');
+      await expect(reviewerSessionRow).not.toContainText('ACP');
       expect(loads[0]).toEqual({
         action: 'loadAcpSession',
         payload: {
@@ -1313,6 +2040,8 @@ test.describe('ClawX ACP inline timeline', () => {
           createIfMissing: true,
         },
       });
+      expect(loads[1].payload.sessionKey).toBe(targetKey);
+      expect(loads[1].payload.cwd).toBe(REVIEWER_WORKSPACE);
       expect(requests.some((request) => (
         request.action === 'sendAcpPrompt'
         && request.payload.sessionKey === targetKey
@@ -1326,9 +2055,10 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
-  test('keeps recoverable target-agent prompt failures visible after switching sessions', async ({ launchElectronApp }) => {
+  test('keeps partial output and places a provider prompt failure after the interrupted turn', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
-    const error = "Error invoking remote method 'host:invoke': reply was never sent";
+    const error = 'Provider finish_reason: content_filter';
+    const partialReply = 'The provider returned this partial result before filtering.';
 
     try {
       await installIpcMocks(app, {
@@ -1387,7 +2117,7 @@ test.describe('ClawX ACP inline timeline', () => {
           },
         },
       });
-      await installAcpPromptFailureMock(app, error);
+      await installAcpPromptFailureMock(app, error, partialReply);
 
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
@@ -1398,8 +2128,13 @@ test.describe('ClawX ACP inline timeline', () => {
       await page.getByTestId('chat-composer-input').fill('Trigger target send failure');
       await page.getByTestId('chat-composer-send').click();
 
-      await expect(page.getByTestId('acp-error-banner')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('acp-error-banner')).toContainText(error);
+      const partialOutput = page.getByText(partialReply);
+      const errorBanner = page.getByTestId('acp-error-banner');
+      await expect(partialOutput).toBeVisible({ timeout: 30_000 });
+      await expect(errorBanner).toBeVisible({ timeout: 30_000 });
+      await expect(errorBanner).toContainText('Failed to send prompt');
+      await expect(errorBanner).toContainText(error);
+      await expect(page.locator('[data-testid="acp-chat-timeline"] + [data-testid="acp-error-banner"]')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
@@ -1476,6 +2211,7 @@ test.describe('ClawX ACP inline timeline', () => {
 
       const page = await openChat(app);
 
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
       await expect(page.getByTestId('workflow-turn-block')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-chat-empty-state')).toHaveCount(0);
       await expect(page.getByTestId('workflow-inline-card')).toBeVisible();

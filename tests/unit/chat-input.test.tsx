@@ -2,10 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
+import type { AcpSubagentSession } from '@/pages/Chat/AcpSubagentSessions';
 const hostApiFetchMock = vi.hoisted(() => vi.fn());
 const hostApiDialogOpenMock = vi.hoisted(() => vi.fn());
 const toastErrorMock = vi.hoisted(() => vi.fn());
-const { agentsState, chatState, gatewayState, providersState, artifactPanelMocks } = vi.hoisted(() => ({
+const microphoneMocks = vi.hoisted(() => ({ getConfig: vi.fn(), getMicrophoneAccess: vi.fn(), openMicrophoneSettings: vi.fn() }));
+const { agentsState, chatState, gatewayState, settingsState, providersState, artifactPanelMocks } = vi.hoisted(() => ({
   agentsState: {
     agents: [] as Array<Record<string, unknown>>,
     defaultModelRef: null as string | null,
@@ -14,9 +17,18 @@ const { agentsState, chatState, gatewayState, providersState, artifactPanelMocks
   },
   chatState: {
     currentAgentId: 'main',
+    currentSessionKey: 'agent:main:session-1',
+    sessions: [{ key: 'agent:main:session-1' }],
   },
   gatewayState: {
     status: { state: 'running', port: 18789 },
+  },
+  settingsState: {
+    devModeUnlocked: true,
+    voiceInputMode: 'dictation',
+    language: 'en',
+    voiceCaps: { transcription: false, realtime: false },
+    refreshVoiceCapabilities: vi.fn().mockResolvedValue(undefined),
   },
   providersState: {
     accounts: [] as Array<Record<string, unknown>>,
@@ -43,6 +55,10 @@ vi.mock('@/stores/gateway', () => ({
   useGatewayStore: (selector: (state: typeof gatewayState) => unknown) => selector(gatewayState),
 }));
 
+vi.mock('@/stores/settings', () => ({
+  useSettingsStore: (selector: (state: typeof settingsState) => unknown) => selector(settingsState),
+}));
+
 vi.mock('@/stores/providers', () => ({
   useProviderStore: (selector: (state: typeof providersState) => unknown) => selector(providersState),
 }));
@@ -54,6 +70,7 @@ vi.mock('@/stores/artifact-panel', () => ({
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: hostApiFetchMock,
   hostApi: {
+    asr: microphoneMocks,
     files: {
       stagePaths: (input: unknown) => hostApiFetchMock('/api/files/stage-paths', {
         method: 'POST',
@@ -80,6 +97,10 @@ vi.mock('sonner', () => ({
   toast: {
     error: toastErrorMock,
   },
+}));
+
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
 }));
 
 function translate(key: string, vars?: Record<string, unknown>): string {
@@ -124,6 +145,8 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Stop';
     case 'composer.thinking':
       return 'Thinking…';
+    case 'composer.subagentsWorking':
+      return 'Subagents working…';
     case 'imageGeneration.generating':
       return 'Generating image, please wait…';
     case 'composer.gatewayConnected':
@@ -150,6 +173,28 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Preview SKILL.md';
     case 'composer.skillPreviewNotFound':
       return 'Skill not found';
+    case 'composer.contextUsage':
+      return `${String(vars?.percentage ?? '')} context used: ${String(vars?.used ?? '')} / ${String(vars?.total ?? '')} tokens`;
+    case 'acp.subagentSessions.count':
+      return `Subagents: ${String(vars?.count ?? '')}`;
+    case 'acp.subagentSessions.expand':
+      return 'Expand subagent sessions';
+    case 'acp.subagentSessions.collapse':
+      return 'Collapse subagent sessions';
+    case 'acp.subagentSessions.toggle':
+      return `${String(vars?.action ?? '')}, ${String(vars?.count ?? '')}`;
+    case 'acp.subagentSessions.panel':
+      return 'Subagent sessions';
+    case 'acp.subagentSessions.open':
+      return `Open subagent ${String(vars?.title ?? '')}`;
+    case 'acp.subagentSessions.busy':
+      return 'Running';
+    case 'acp.subagentSessions.settled':
+      return 'Settled';
+    case 'acp.subagentSessions.aggregateStatus':
+      return `Subagents: ${String(vars?.status ?? '')}`;
+    case 'acp.subagentSessions.rowStatus':
+      return `${String(vars?.title ?? '')}: ${String(vars?.status ?? '')}`;
     default:
       if (key.startsWith('common:status.')) return key.slice('common:status.'.length);
       return key;
@@ -157,16 +202,17 @@ function translate(key: string, vars?: Record<string, unknown>): string {
 }
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: translate,
+    i18n: { resolvedLanguage: 'en-US' },
   }),
-  initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 
-function renderChatInput(onSend = vi.fn()) {
+function renderChatInput(onSend = vi.fn(), contextUsage?: unknown) {
   return render(
-    <TooltipProvider>
-      <ChatInput onSend={onSend} />
+    <TooltipProvider delayDuration={0}>
+      <ChatInput onSend={onSend} contextUsage={contextUsage} />
     </TooltipProvider>,
   );
 }
@@ -178,7 +224,10 @@ function configureAgentAndModelPickers() {
       id: 'main',
       name: 'Main',
       isDefault: true,
-      modelDisplay: 'MiniMax',
+      modelDisplay: 'gpt-a',
+      modelRef: 'custom-aaaaaaaa/gpt-a',
+      overrideModelRef: null,
+      contextWindow: 400_000,
       inheritedModel: true,
       workspace: '~/.openclaw/workspace',
       agentDir: '~/.openclaw/agents/main/agent',
@@ -257,7 +306,13 @@ describe('ChatInput agent targeting', () => {
     agentsState.updateAgentAutoSelect.mockReset();
     agentsState.updateAgentAutoSelect.mockResolvedValue(undefined);
     chatState.currentAgentId = 'main';
+    chatState.currentSessionKey = 'agent:main:session-1';
+    chatState.sessions = [{ key: 'agent:main:session-1' }];
     gatewayState.status = { state: 'running', port: 18789 };
+    settingsState.devModeUnlocked = true;
+    settingsState.voiceCaps = { transcription: false, realtime: false };
+    microphoneMocks.getMicrophoneAccess.mockReset();
+    microphoneMocks.openMicrophoneSettings.mockReset();
     providersState.accounts = [];
     providersState.statuses = [];
     providersState.defaultAccountId = null;
@@ -268,6 +323,91 @@ describe('ChatInput agent targeting', () => {
     vi.mocked(hostApiDialogOpenMock).mockReset();
     toastErrorMock.mockReset();
     artifactPanelMocks.openPreview.mockReset();
+  });
+
+  it('shows active ACP context usage in an accessible tooltip', async () => {
+    renderChatInput(vi.fn(), { used: 25_000, size: 100_000 });
+
+    const indicator = screen.getByRole('progressbar', { name: '25% context used: 25,000 / 100,000 tokens' });
+    expect(indicator).toHaveAttribute('data-testid', 'chat-composer-context-usage');
+    expect(indicator).toHaveAttribute('aria-valuenow', '25');
+    expect(indicator).toHaveTextContent('25%');
+
+    fireEvent.focus(indicator);
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('25% context used: 25,000 / 100,000 tokens');
+  });
+
+  it('recomputes context usage for a conversation model without changing the agent default', async () => {
+    configureAgentAndModelPickers();
+    providersState.vendors = [{ id: 'custom', models: { 'gpt-b': { contextWindow: 272_000 } } }];
+    const onSelectModel = vi.fn();
+    const contextUsage = { used: 68_000, size: 400_000 };
+    const { rerender } = render(
+      <TooltipProvider delayDuration={0}>
+        <ChatInput onSend={vi.fn()} onSelectModel={onSelectModel} contextUsage={contextUsage} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole('progressbar', {
+      name: '17% context used: 68,000 / 400,000 tokens',
+    })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    fireEvent.click(screen.getByTestId('chat-model-picker-option-Beta'));
+    await waitFor(() => {
+      expect(onSelectModel).toHaveBeenCalledWith('custom-bbbbbbbb/gpt-b');
+    });
+    expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
+    rerender(
+      <TooltipProvider delayDuration={0}>
+        <ChatInput onSend={vi.fn()} sessionModelOverride="custom-bbbbbbbb/gpt-b" contextUsage={contextUsage} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole('progressbar', {
+      name: '25% context used: 68,000 / 272,000 tokens',
+    })).toBeInTheDocument();
+
+    rerender(
+      <TooltipProvider delayDuration={0}>
+        <ChatInput onSend={vi.fn()} sessionModelOverride="custom-bbbbbbbb/gpt-b" contextUsage={{ used: 68_000, size: 260_000 }} />
+      </TooltipProvider>,
+    );
+    expect(screen.getByRole('progressbar', {
+      name: '26% context used: 68,000 / 260,000 tokens',
+    })).toBeInTheDocument();
+  });
+
+  it('keeps runtime context size when the conversation model has no catalog metadata', () => {
+    configureAgentAndModelPickers();
+    agentsState.agents[0].contextWindow = 272_000;
+    const contextUsage = { used: 68_000, size: 400_000 };
+    const { rerender } = renderChatInput(vi.fn(), contextUsage);
+
+    rerender(
+      <TooltipProvider delayDuration={0}>
+        <ChatInput onSend={vi.fn()} sessionModelOverride="custom-bbbbbbbb/gpt-b" contextUsage={contextUsage} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole('progressbar', {
+      name: '17% context used: 68,000 / 400,000 tokens',
+    })).toBeInTheDocument();
+  });
+
+  it('hides malformed context usage and clamps valid overages to 100%', () => {
+    const { rerender } = renderChatInput(vi.fn(), { used: Number.NaN, size: 100_000 });
+
+    expect(screen.queryByTestId('chat-composer-context-usage')).not.toBeInTheDocument();
+
+    rerender(
+      <TooltipProvider delayDuration={0}>
+        <ChatInput onSend={vi.fn()} contextUsage={{ used: 150_000, size: 100_000 }} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByTestId('chat-composer-context-usage')).toHaveAttribute('data-percent', '100');
   });
 
   it('renders a dot pulse and visible thinking label while a message is sending', () => {
@@ -286,8 +426,140 @@ describe('ChatInput agent targeting', () => {
     expect(screen.queryByTestId('chat-composer-zoomies')).not.toBeInTheDocument();
   });
 
+  it('renders only the existing thinking status row for a read-only subagent session', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} sending statusOnly />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole('status', { name: 'Thinking…' })).toHaveAttribute(
+      'data-testid',
+      'chat-composer-working-indicator',
+    );
+    expect(screen.getByTestId('chat-composer-dot-pulse')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-composer-box')).not.toBeInTheDocument();
+  });
+
+  it('keeps the main thinking label while both the main agent and a subagent are working', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          sending
+          subagentSessions={[{
+            sessionKey: 'agent:main:subagent:research',
+            title: 'Research behavior',
+            busy: true,
+          }]}
+          onSelectSubagent={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByTestId('chat-composer-working-indicator')).toHaveAccessibleName('Thinking…');
+  });
+
+  it('places the current ACP plan on the right side of the thinking indicator', () => {
+    const currentPlan: AcpCurrentPlan = {
+      completedCount: 1,
+      totalCount: 2,
+      steps: [
+        { step: 'Inspect the timeline', status: 'completed' },
+        { step: 'Render the composer plan', status: 'in_progress' },
+      ],
+    };
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          draftKey="agent:main:plan"
+          currentPlan={currentPlan}
+          sending
+        />
+      </TooltipProvider>,
+    );
+
+    const plan = screen.getByTestId('acp-session-plan-toggle');
+    const working = screen.getByTestId('chat-composer-working-indicator');
+    const composer = screen.getByTestId('chat-composer-box');
+    expect(composer).not.toContainElement(plan);
+    expect(working).toContainElement(plan);
+    expect(screen.queryByTestId('chat-composer-session-controls')).not.toBeInTheDocument();
+  });
+
+  it('shows active subagent work in the thinking indicator and places its control at the right edge', () => {
+    const currentPlan: AcpCurrentPlan = {
+      completedCount: 1,
+      totalCount: 2,
+      steps: [
+        { step: 'Inspect the timeline', status: 'completed' },
+        { step: 'Render the composer controls', status: 'in_progress' },
+      ],
+    };
+    const subagentSessions: AcpSubagentSession[] = [{
+      sessionKey: 'agent:main:subagent:research',
+      title: 'Research behavior',
+      busy: true,
+    }];
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          draftKey="agent:main:parent"
+          currentPlan={currentPlan}
+          subagentSessions={subagentSessions}
+          onSelectSubagent={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    const indicator = screen.getByTestId('chat-composer-working-indicator');
+    const subagents = screen.getByTestId('acp-subagent-sessions-toggle');
+    const plan = screen.getByTestId('acp-session-plan-toggle');
+    expect(indicator).toHaveAccessibleName('Subagents working…');
+    expect(indicator).toHaveTextContent('Subagents working…');
+    expect(indicator).toHaveClass('justify-between');
+    expect(indicator).toContainElement(subagents);
+    expect(indicator).toContainElement(plan);
+    expect(subagents.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId('chat-composer-session-controls')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-composer-box')).not.toContainElement(subagents);
+
+    fireEvent.click(subagents);
+    expect(screen.getByTestId('acp-subagent-sessions-panel')).toBeInTheDocument();
+
+    fireEvent.click(plan);
+    expect(screen.queryByTestId('acp-subagent-sessions-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId('acp-session-plan-panel')).toBeInTheDocument();
+  });
+
+  it('does not render actionable subagent controls without a real selection callback', () => {
+    const subagentSessions: AcpSubagentSession[] = [{
+      sessionKey: 'agent:main:subagent:research',
+      title: 'Research behavior',
+      busy: false,
+    }];
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          draftKey="agent:main:parent"
+          subagentSessions={subagentSessions}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.queryByTestId('acp-subagent-sessions-toggle')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('acp-subagent-session-row')).not.toBeInTheDocument();
+  });
+
   it('shows an image-generation indicator without locking the composer for background work', () => {
     configureSingleAgent();
+    settingsState.voiceCaps.transcription = true;
 
     render(
       <TooltipProvider>
@@ -302,6 +574,31 @@ describe('ChatInput agent targeting', () => {
     expect(input).not.toBeDisabled();
     fireEvent.change(input, { target: { value: 'Queue this after the image' } });
     expect(screen.getByTestId('chat-composer-send')).toBeDisabled();
+    const voice = screen.getByTestId('chat-composer-mic');
+    const send = screen.getByTestId('chat-composer-send');
+    expect(voice.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows restricted guidance, reports settings failure, and leaves the draft editable after dismissal', async () => {
+    configureSingleAgent();
+    settingsState.voiceCaps.transcription = true;
+    microphoneMocks.getConfig.mockResolvedValue({ configured: true });
+    microphoneMocks.getMicrophoneAccess.mockResolvedValue({ platform: 'win32', status: 'restricted', canOpenSettings: true });
+    microphoneMocks.openMicrophoneSettings.mockRejectedValue(new Error('launch failed'));
+    render(<TooltipProvider><ChatInput onSend={vi.fn()} /></TooltipProvider>);
+    fireEvent.click(screen.getByTestId('chat-composer-mic'));
+    await screen.findByTestId('microphone-permission-dialog');
+    expect(screen.getByText('composer.microphonePermission.restricted')).toBeInTheDocument();
+    expect(screen.queryByText('composer.microphonePermission.win32')).not.toBeInTheDocument();
+    expect(microphoneMocks.openMicrophoneSettings).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('composer.microphonePermission.openSettings'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('composer.microphonePermission.openFailed');
+    fireEvent.click(screen.getByText('composer.microphonePermission.close'));
+    expect(screen.queryByTestId('microphone-permission-dialog')).not.toBeInTheDocument();
+    const input = screen.getByTestId('chat-composer-input');
+    expect(input).not.toBeDisabled();
+    fireEvent.change(input, { target: { value: 'still editable' } });
+    expect(input).toHaveValue('still editable');
   });
 
   it('keeps the existing thinking indicator while sending even when image generation has started', () => {
@@ -318,7 +615,7 @@ describe('ChatInput agent targeting', () => {
     expect(screen.queryByTestId('chat-composer-image-generation-indicator')).not.toBeInTheDocument();
   });
 
-  it('waits for the provider snapshot before clearing an unavailable model override', async () => {
+  it('keeps the agent model override when the provider snapshot does not contain it', async () => {
     let resolveSnapshot!: () => void;
     agentsState.updateAgentModel.mockResolvedValue(undefined);
     providersState.refreshProviderSnapshot.mockReturnValue(new Promise<void>((resolve) => {
@@ -344,10 +641,9 @@ describe('ChatInput agent targeting', () => {
     expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
 
     resolveSnapshot();
-
-    await waitFor(() => {
-      expect(agentsState.updateAgentModel).toHaveBeenCalledWith('main', null);
-    });
+    await Promise.resolve();
+    expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
+    expect(agentsState.agents[0].modelRef).toBe('custom-stale/model');
   });
 
   it('renders editable workspace selector in the composer footer', () => {
@@ -388,6 +684,19 @@ describe('ChatInput agent targeting', () => {
     const gatewayStatus = screen.getByText(/gateway connected \| port: 18789/i);
 
     expect(workspaceSelector.compareDocumentPosition(gatewayStatus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('places context usage before the gateway status in the composer footer', () => {
+    renderChatInput(vi.fn(), { used: 25_000, size: 100_000 });
+
+    const indicator = screen.getByTestId('chat-composer-context-usage');
+    const footer = screen.getByTestId('chat-composer-footer');
+    const gatewayStatus = screen.getByTestId('chat-composer-gateway-status');
+
+    expect(footer).toContainElement(indicator);
+    expect(footer).toContainElement(gatewayStatus);
+    expect(screen.getByTestId('chat-composer-box')).not.toContainElement(indicator);
+    expect(indicator.compareDocumentPosition(gatewayStatus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('renders read-only workspace selector for bound sessions', () => {
@@ -846,6 +1155,23 @@ describe('ChatInput agent targeting', () => {
       expect(agentsState.updateAgentAutoSelect).toHaveBeenCalledWith('main', { autoSelectModel: { model: false } });
     });
     expect(onSelectModel).toHaveBeenCalledWith('custom-bbbbbbbb/gpt-b');
+  });
+
+  it('shows local account names on the composer and model menu', () => {
+    configureAgentAndModelPickers();
+
+    renderChatInput();
+
+    const pickerButton = screen.getByTestId('chat-model-picker-button');
+    expect(pickerButton).toHaveTextContent('Alpha');
+    expect(pickerButton).not.toHaveTextContent('gpt-a');
+    expect(pickerButton).not.toHaveTextContent('(');
+
+    fireEvent.click(pickerButton);
+    const option = screen.getByTestId('chat-model-picker-option-Beta');
+    expect(option).not.toHaveTextContent('gpt-b');
+    expect(option).toHaveTextContent('Beta');
+    expect(option).not.toHaveTextContent('(');
   });
 
   it('closes an open model picker when opening the agent picker', () => {
@@ -1528,14 +1854,15 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('stages dropped folders via disk path instead of buffer upload', async () => {
-    vi.mocked(hostApiFetchMock).mockResolvedValueOnce([{
+    configureSingleAgent();
+    vi.mocked(hostApiFetchMock).mockImplementation(async (path) => path === '/api/files/stage-paths' ? [{
       id: 'folder-id',
       fileName: 'Archive',
       mimeType: 'application/x-directory',
       fileSize: 0,
       stagedPath: '/tmp/project-folder',
       preview: null,
-    }]);
+    }] : { success: true, skills: [] });
 
     const folderFile = new File([new Uint8Array(192)], 'Archive', { type: 'application/zip' });
     Object.defineProperty(folderFile, 'path', { value: '/tmp/project-folder' });

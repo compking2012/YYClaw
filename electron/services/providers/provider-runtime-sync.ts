@@ -31,7 +31,7 @@ import {
   removeDefaultModelSlotsForMissingProviders,
   getProviderApiKeyFromOpenClaw,
 } from '../../utils/openclaw-auth';
-import { piAiModelsJsonModelEntry } from '../../shared/pi-ai-model-cost';
+import { piAiModelsJsonModelEntry, type PiAiModelCostRates } from '../../shared/pi-ai-model-cost';
 import { logger } from '../../utils/logger';
 import { listAgentsSnapshot, listAgentsSnapshotReadOnly, updateAgentModel } from '../../utils/agent-config';
 import { normalizeModelTypes, isVoiceKind, type ModelKind } from '../../shared/providers/model-kind';
@@ -44,6 +44,7 @@ import {
   type VoiceProviderConfig,
 } from '../../utils/openclaw-voice';
 import { getVoiceRuntimeParams, isSupportedVoiceRuntime } from '../../utils/voice-runtime';
+import { inferKnownModelContextWindow } from '../../shared/providers/model-capabilities';
 
 const GOOGLE_OAUTH_RUNTIME_PROVIDER = 'google-gemini-cli';
 const GOOGLE_OAUTH_DEFAULT_MODEL_REF = `${GOOGLE_OAUTH_RUNTIME_PROVIDER}/gemini-3-pro-preview`;
@@ -95,6 +96,20 @@ function normalizeProviderBaseUrl(
   }
 
   return normalized;
+}
+
+function resolveProviderHeaders(
+  config: ProviderConfig,
+  meta: ReturnType<typeof getProviderConfig>,
+): Record<string, string> | undefined {
+  const headers = { ...(meta?.headers ?? {}), ...(config.headers ?? {}) };
+  if (config.type === 'tokendance') {
+    for (const name of Object.keys(headers)) {
+      if (name.toLowerCase() === 'x-app-url') delete headers[name];
+    }
+    headers['X-App-URL'] = 'https://clawx.com.cn';
+  }
+  return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
 function shouldUseExplicitDefaultOverride(config: ProviderConfig, runtimeProviderKey: string): boolean {
@@ -362,7 +377,7 @@ async function syncRuntimeProviderConfig(
     baseUrl: normalizeProviderBaseUrl(config, config.baseUrl || context.meta?.baseUrl, context.api),
     api: context.api,
     apiKeyEnv: context.meta?.apiKeyEnv,
-    headers: config.headers ?? context.meta?.headers,
+    headers: resolveProviderHeaders(config, context.meta),
   }, validKinds);
 }
 
@@ -756,8 +771,9 @@ async function buildAgentModelProviderEntry(
 ): Promise<{
   baseUrl?: string;
   api?: string;
-  models?: Array<{ id: string; name: string }>;
+  models?: Array<Record<string, unknown> & { id: string; name: string; cost: PiAiModelCostRates }>;
   apiKey?: string;
+  headers?: Record<string, string>;
   authHeader?: boolean;
   supportsVision?: boolean;
 } | null> {
@@ -783,11 +799,33 @@ async function buildAgentModelProviderEntry(
     }
   }
 
+  const registeredModel = meta?.models?.find((model) => model.id === modelId);
+  const model: Record<string, unknown> & {
+    id: string;
+    name: string;
+    cost: PiAiModelCostRates;
+  } = {
+    ...piAiModelsJsonModelEntry(modelId, registeredModel?.name ?? modelId),
+    ...(registeredModel ? { ...registeredModel } : {}),
+  };
+  if (!isUnregisteredProviderType(config.type)
+    && typeof registeredModel?.contextTokens !== 'number'
+    && typeof registeredModel?.contextWindow !== 'number') {
+    const contextWindow = inferKnownModelContextWindow(modelId, {
+      providerKey: getOpenClawProviderKey(config.type, config.id),
+      apiProtocol: api,
+    });
+    if (contextWindow !== undefined) {
+      model.contextWindow = contextWindow;
+    }
+  }
+
   return {
     baseUrl,
     api,
-    models: [piAiModelsJsonModelEntry(modelId)],
+    models: [model],
     apiKey,
+    headers: resolveProviderHeaders(config, meta),
     authHeader,
     supportsVision: config.supportsVision,
   };
@@ -924,7 +962,7 @@ export async function syncUpdatedProviderToRuntime(
             baseUrl: normalizeProviderBaseUrl(config, config.baseUrl || context.meta?.baseUrl, context.api),
             api: context.api,
             apiKeyEnv: context.meta?.apiKeyEnv,
-            headers: config.headers ?? context.meta?.headers,
+            headers: resolveProviderHeaders(config, context.meta),
           }, fallbackModels, targetSlot);
         } else {
           await setOpenClawDefaultModel(ock, modelOverride, fallbackModels, targetSlot);
@@ -1102,7 +1140,7 @@ export async function syncDefaultProviderToRuntime(
             ),
             api: provider.apiProtocol || getProviderConfig(provider.type)?.api,
             apiKeyEnv: getProviderConfig(provider.type)?.apiKeyEnv,
-            headers: provider.headers ?? getProviderConfig(provider.type)?.headers,
+            headers: resolveProviderHeaders(provider, getProviderConfig(provider.type)),
           }, fallbackModels, targetSlot);
         } else {
           await setOpenClawDefaultModel(ock, modelOverride, fallbackModels, targetSlot);

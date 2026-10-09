@@ -2060,6 +2060,11 @@
         "status": "active",
         "origin": "overseas"
       }
+    },
+    "providerConfig": {
+      "baseUrl": "https://api.anthropic.com/v1",
+      "api": "anthropic-messages",
+      "apiKeyEnv": "ANTHROPIC_API_KEY"
     }
   },
   {
@@ -2457,6 +2462,11 @@
         "status": "active",
         "origin": "overseas"
       }
+    },
+    "providerConfig": {
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+      "api": "google-generative-ai",
+      "apiKeyEnv": "GEMINI_API_KEY"
     }
   },
   {
@@ -2501,6 +2511,45 @@
       "HTTP-Referer": "https://claw-x.com",
       "X-Title": "ClawX"
     }
+  },
+  {
+    "id": "tokendance",
+    "name": "TokenDance",
+    "icon": "TD",
+    "placeholder": "your-tokendance-api-key",
+    "model": "Multi-Model",
+    "requiresApiKey": true,
+    "category": "compatible",
+    "envVar": "TOKENDANCE_API_KEY",
+    "defaultModelId": "qwen3.8-max",
+    "isOAuth": true,
+    "supportsApiKey": true,
+    "showModelId": true,
+    "modelIdPlaceholder": "qwen3.8-max",
+    "apiKeyUrl": "https://tokendance.space/keys",
+    "supportedAuthModes": [
+      "oauth_browser",
+      "api_key"
+    ],
+    "defaultAuthMode": "oauth_browser",
+    "supportsMultipleAccounts": true,
+    "providerConfig": {
+      "baseUrl": "https://tokendance.space/gateway/v1",
+      "api": "openai-completions",
+      "apiKeyEnv": "TOKENDANCE_API_KEY",
+      "headers": {
+        "X-App-URL": "https://clawx.com.cn"
+      }
+    },
+    "defaultBaseUrl": "https://tokendance.space/gateway/v1",
+    "docsUrl": "https://tokendance.space/docs/ai-integration",
+    "availableInLanguages": [
+      "zh"
+    ],
+    "modelType": [
+      "text"
+    ],
+    "iconBase64": "PHN2ZyB3aWR0aD0iNDgwIiBoZWlnaHQ9IjQ4MCIgdmlld0JveD0iMCAwIDQ4MCA0ODAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzExNl81NykiPgogICAgPHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSI0ODAiIGZpbGw9ImJsYWNrIi8+CiAgICA8cGF0aCBkPSJNMTU5IDE2Mkg1Mi43ODlDNTEuNDE5OCAxNjIgNTAuNDU1NSAxNjAuNjU1IDUwLjg5NDcgMTU5LjM1OEw2Ni44NTkxIDExMi4yMjVDNjkuMzM0NCAxMDQuOTE4IDc2LjE5MiAxMDAgODMuOTA3NyAxMDBIMzIxLjM4OEMzMjQuNDU5IDEwMCAzMjcuNTI0IDEwMC4yMSAzMzAuNTUxIDEwMC43MjZDMzM2LjU0NSAxMDEuNzQ3IDM0Ny4xNzkgMTAzLjc5MSAzNTQuNSAxMDYuNUMzOTUuMDQgMTIxLjUwNCA0MTguNSAxNjAgNDI2IDE5MUM0MzMuNSAyMjIgNDMyIDI3NC41IDM5MC41IDMyN0MzNDkgMzc5LjUgMjg0IDM4MC41IDI4MiAzODAuNUgxNzUuNzY3QzE3NC4zOTkgMzgwLjUgMTczLjQ1MSAzNzkuMTU5IDE3My44ODYgMzc3Ljg2M0wxOTIuNTY3IDMyMi4yNzVDMTkzLjEyMyAzMjAuNjIzIDE5NC42NzcgMzE5LjUyIDE5Ni40MiAzMTkuNTQ1QzIwNy43MjkgMzE5LjcwMyAyMzAuNTU4IDMxOS44NjUgMjUxIDMxOS41QzI3OSAzMTkgMjg2IDMxOC41IDMxMCAzMDUuNUMzMzQgMjkyLjUgMzYwLjUgMjUyLjUgMzUyIDIwOS41QzM0NS4yIDE3NS4xIDMxNS41IDE2My41IDMwMS41IDE2MkgyMjguOTkyQzIyMS4yMzYgMTYyIDIxNC4zNTEgMTY2Ljk2OSAyMTEuOTA4IDE3NC4zMzFMMTQ3LjU5MiAzNjguMTY5QzE0NS4xNDkgMzc1LjUzMSAxMzguMjY0IDM4MC41IDEzMC41MDggMzgwLjVINzMuNzUzMkM3Mi4zOTQzIDM4MC41IDcxLjQxNzkgMzc5LjIxNCA3MS44Mzc5IDM3Ny45MjJDODkuNjI1OSAzMjMuMTkgMTI0LjY2OSAyMTQuOTYxIDEyOSAyMDBDMTMzLjQgMTg0LjggMTUwLjgzMyAxNjguMzMzIDE1OSAxNjJaIiBmaWxsPSJ3aGl0ZSIvPgogICAgPHBhdGggZD0iTTIzMyAyNjRMMjQ4IDIxNiIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgICA8cGF0aCBkPSJNMjgwIDI2NEwyOTUgMjE2IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjI1IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8L2c+CiAgPGRlZnM+CiAgICA8Y2xpcFBhdGggaWQ9ImNsaXAwXzExNl81NyI+CiAgICAgIDxyZWN0IHdpZHRoPSI0ODAiIGhlaWdodD0iNDgwIiByeD0iODAiIGZpbGw9IndoaXRlIi8+CiAgICA8L2NsaXBQYXRoPgogIDwvZGVmcz4KPC9zdmc+Cg=="
   },
   {
     "id": "ark",

@@ -151,6 +151,69 @@ describe('provider-runtime-sync config delivery', () => {
     mocks.listAgentsSnapshotReadOnly.mockResolvedValue({ agents: [] });
   });
 
+  it.each(['anthropic', 'google'])('syncs %s local model slots using its actual bundled connection preset', async (type) => {
+    const registry = await vi.importActual<typeof import('@electron/utils/provider-registry')>('@electron/utils/provider-registry');
+    const catalog = await vi.importActual<typeof import('@electron/shared/providers/registry')>('@electron/shared/providers/registry');
+    const definition = catalog.getProviderDefinition(type)!;
+    const models = definition.defaultModelId as string[];
+    mocks.getProviderConfig.mockReturnValue(registry.getProviderConfig(type));
+    const provider = createProvider({ id: `${type}-local`, type, model: [...models], modelType: definition.modelType });
+
+    await syncSavedProviderToRuntime(provider, 'test-secret');
+
+    const pairs = models.map((model, index) => ({ model, kind: definition.modelType![index] }))
+      .filter(({ model, kind }) => model && !['tts', 'transcription', 'realtime'].includes(kind));
+    expect(mocks.syncProviderConfigToOpenClaw).toHaveBeenCalledWith(type, pairs.map(({ model }) => model),
+      expect.objectContaining(registry.getProviderConfig(type)!), pairs.map(({ kind }) => kind));
+    expect(provider.model).toEqual(models);
+    expect(mocks.updateSingleAgentModelProvider).not.toHaveBeenCalled();
+  });
+
+  it('delivers a Google account to the runtime from its backend preset', async () => {
+    mocks.getProviderConfig.mockReturnValue({
+      api: 'google-generative-ai',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      apiKeyEnv: 'GEMINI_API_KEY',
+    });
+
+    await syncSavedProviderToRuntime(
+      createProvider({
+        id: 'google-02b76419',
+        name: 'Google',
+        type: 'google',
+        model: 'gemini-3.8-flash',
+      }),
+      'AIza-test',
+    );
+
+    expect(mocks.saveProviderKeyToOpenClaw).toHaveBeenCalledWith('google', 'AIza-test');
+    expect(mocks.syncProviderConfigToOpenClaw).toHaveBeenCalledWith(
+      'google',
+      ['gemini-3.8-flash'],
+      expect.objectContaining({
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        api: 'google-generative-ai',
+        apiKeyEnv: 'GEMINI_API_KEY',
+      }),
+      ['text'],
+    );
+  });
+
+  it('drops every runtime write for a hosted provider that ships no backend preset', async () => {
+    // The failure mode `providers.test.ts` guards against: with no preset there
+    // is no api protocol, so the account never reaches OpenClaw at all -- not
+    // even its key.
+    mocks.getProviderConfig.mockReturnValue(undefined);
+
+    await syncSavedProviderToRuntime(
+      createProvider({ id: 'google-1', type: 'google', model: 'gemini-3.8-flash' }),
+      'AIza-test',
+    );
+
+    expect(mocks.saveProviderKeyToOpenClaw).not.toHaveBeenCalled();
+    expect(mocks.syncProviderConfigToOpenClaw).not.toHaveBeenCalled();
+  });
+
   it('does not schedule an independent reload or restart after saving provider config', async () => {
     const gateway = createGateway('running');
     await syncSavedProviderToRuntime(createProvider(), undefined, gateway as GatewayManager);
@@ -315,6 +378,50 @@ describe('provider-runtime-sync config delivery', () => {
     );
   });
 
+  it('forces ClawX attribution onto TokenDance global and agent provider configs', async () => {
+    const tokendance = createProvider({
+      id: 'tokendance-account',
+      type: 'tokendance',
+      baseUrl: 'https://tokendance.space/gateway/v1',
+      model: 'qwen3.8-max',
+      headers: { 'x-app-url': 'https://incorrect.example', 'X-Custom': 'kept' },
+    });
+    mocks.getProviderConfig.mockReturnValue({
+      api: 'openai-completions',
+      baseUrl: 'https://tokendance.space/gateway/v1',
+      apiKeyEnv: 'TOKENDANCE_API_KEY',
+      headers: { 'X-App-URL': 'https://clawx.com.cn' },
+    });
+    mocks.getAllProviders.mockResolvedValue([tokendance]);
+    mocks.listAgentsSnapshot.mockResolvedValue({
+      agents: [{ id: 'main', modelRef: 'tokendance/qwen3.8-max', overrideModelRef: 'tokendance/qwen3.8-max' }],
+    });
+
+    await syncSavedProviderToRuntime(tokendance, 'td-secret');
+
+    expect(mocks.syncProviderConfigToOpenClaw).toHaveBeenCalledWith(
+      'tokendance',
+      ['qwen3.8-max'],
+      expect.objectContaining({
+        headers: {
+          'X-App-URL': 'https://clawx.com.cn',
+          'X-Custom': 'kept',
+        },
+      }),
+      ['text'],
+    );
+    expect(mocks.updateSingleAgentModelProvider).toHaveBeenCalledWith(
+      'main',
+      'tokendance',
+      expect.objectContaining({
+        headers: {
+          'X-App-URL': 'https://clawx.com.cn',
+          'X-Custom': 'kept',
+        },
+      }),
+    );
+  });
+
   it('syncs a targeted agent model override to runtime provider registry', async () => {
     mocks.getAllProviders.mockResolvedValue([
       createProvider({
@@ -356,6 +463,44 @@ describe('provider-runtime-sync config delivery', () => {
         baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
         api: 'openai-completions',
         models: [expect.objectContaining({ id: 'ark-code-latest', name: 'ark-code-latest' })],
+      }),
+    );
+  });
+
+  it('writes registered context metadata to an agent model entry', async () => {
+    const moonshot = createProvider({ model: 'kimi-k3' });
+    mocks.getAllProviders.mockResolvedValue([moonshot]);
+    mocks.getProviderConfig.mockReturnValue({
+      api: 'openai-completions',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      apiKeyEnv: 'MOONSHOT_API_KEY',
+      models: [{
+        id: 'kimi-k3',
+        name: 'Kimi K3',
+        reasoning: true,
+        input: ['text', 'image'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 1_000_000,
+        maxTokens: 131_072,
+      }],
+    });
+    mocks.listAgentsSnapshot.mockResolvedValue({
+      agents: [{ id: 'main', modelRef: 'moonshot/kimi-k3', overrideModelRef: 'moonshot/kimi-k3' }],
+    });
+
+    await syncSavedProviderToRuntime(moonshot, 'sk-test');
+
+    expect(mocks.updateSingleAgentModelProvider).toHaveBeenCalledWith(
+      'main',
+      'moonshot',
+      expect.objectContaining({
+        models: [expect.objectContaining({
+          id: 'kimi-k3',
+          reasoning: true,
+          input: ['text', 'image'],
+          contextWindow: 1_000_000,
+          maxTokens: 131_072,
+        })],
       }),
     );
   });

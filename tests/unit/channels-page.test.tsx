@@ -32,13 +32,24 @@ vi.mock('@/lib/host-api', () => ({
       deleteConfig: (channelType: string, accountId?: string) => {
         return hostApiCallMock('channels.deleteConfig', { channelType, accountId });
       },
-      validateCredentials: (channelType: string, config: Record<string, unknown>) => (
-        hostApiCallMock('channels.validateCredentials', { channelType, config })
+      validateCredentials: (channelType: string, config: Record<string, unknown>, accountId?: string) => (
+        hostApiCallMock('channels.validateCredentials', {
+          channelType,
+          config,
+          ...(accountId ? { accountId } : {}),
+        })
       ),
       saveBinding: (input: unknown) => hostApiCallMock('channels.saveBinding', input),
       deleteBinding: (input: unknown) => hostApiCallMock('channels.deleteBinding', input),
       startLogin: (channelType: string, input?: unknown) => hostApiCallMock('channels.startLogin', { channelType, input }),
       cancelLogin: (channelType: string, input?: unknown) => hostApiCallMock('channels.cancelLogin', { channelType, input }),
+      dingtalkWorkspaceAuthStart: (accountId?: string) => hostApiCallMock('channels.dingtalkWorkspaceAuthStart', { accountId }),
+      dingtalkWorkspaceAuthStatus: (accountId?: string) => hostApiCallMock('channels.dingtalkWorkspaceAuthStatus', { accountId }),
+      dingtalkWorkspaceAuthCancel: (accountId?: string) => hostApiCallMock('channels.dingtalkWorkspaceAuthCancel', { accountId }),
+      dingtalkWorkspaceAuthReset: (accountId?: string) => hostApiCallMock('channels.dingtalkWorkspaceAuthReset', { accountId }),
+    },
+    shell: {
+      openExternal: (url: string) => hostApiCallMock('shell.openExternal', { url }),
     },
     diagnostics: {
       gatewaySnapshot: () => hostApiCallMock('diagnostics.gatewaySnapshot'),
@@ -86,10 +97,12 @@ vi.mock('@/lib/toast', () => ({
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((res) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
     resolve = res;
+    reject = rej;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 describe('Channels page status refresh', () => {
@@ -221,6 +234,332 @@ describe('Channels page status refresh', () => {
 
     const saveCalls = hostApiCallMock.mock.calls.filter(([path]) => path === 'channels.saveConfig');
     expect(saveCalls).toHaveLength(0);
+  });
+
+  it('uses a config-only refresh immediately after a channel save', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
+        return { success: true, channels: [] };
+      }
+      if (path === 'agents.list') return { success: true, agents: [] };
+      if (path === 'channels.validateCredentials') {
+        return { success: true, valid: true, warnings: [] };
+      }
+      if (path === 'channels.saveConfig') {
+        return { success: true, activationPending: true };
+      }
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<ChannelsSettings />);
+    await screen.findByRole('button', { name: /QQ Bot/ });
+    hostApiCallMock.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: /QQ Bot/ }));
+    fireEvent.change(document.getElementById('appId') as HTMLInputElement, {
+      target: { value: 'qq-app-id' },
+    });
+    fireEvent.change(document.getElementById('clientSecret') as HTMLInputElement, {
+      target: { value: 'qq-client-secret' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'dialog.saveAndConnect' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('dialog.configureTitle')).not.toBeInTheDocument();
+    });
+    const postSaveAccountCalls = hostApiCallMock.mock.calls.filter(
+      ([path]) => path === 'channels.accounts',
+    );
+    expect(postSaveAccountCalls).toEqual([
+      ['channels.accounts', expect.objectContaining({ mode: 'config', probe: false })],
+    ]);
+  });
+
+  it('resets an existing DingTalk workspace authorization from the channel card', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    let reset = false;
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
+        return {
+          success: true,
+          channels: [{
+            channelType: 'dingtalk',
+            defaultAccountId: 'default',
+            status: 'connected',
+            ...(reset ? { statusNote: 'dingtalk_dws_auth_required' } : {}),
+            accounts: [{
+              accountId: 'default',
+              name: 'default',
+              configured: true,
+              connected: true,
+              status: 'connected',
+              isDefault: true,
+            }],
+          }],
+        };
+      }
+      if (path === 'agents.list') return { success: true, agents: [] };
+      if (path === 'channels.dingtalkWorkspaceAuthReset') {
+        reset = true;
+        return { success: true, status: 'needs_auth' };
+      }
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<ChannelsSettings />);
+    fireEvent.click(await screen.findByTestId('dingtalk-workspace-reset'));
+    fireEvent.click(screen.getByRole('button', { name: 'account.resetWorkspaceAuthConfirmAction' }));
+
+    await waitFor(() => {
+      expect(hostApiCallMock).toHaveBeenCalledWith(
+        'channels.dingtalkWorkspaceAuthReset',
+        { accountId: 'default' },
+      );
+    });
+    expect(await screen.findByTestId('dingtalk-workspace-authorize')).toBeInTheDocument();
+    expect(toastSuccessMock).toHaveBeenCalledWith('toast.dingtalkWorkspaceAuthReset');
+  });
+
+  it('allows skipped DingTalk workspace authorization to be started later', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
+        return {
+          success: true,
+          channels: [{
+            channelType: 'dingtalk',
+            defaultAccountId: 'default',
+            status: 'connected',
+            statusNote: 'dingtalk_dws_auth_required',
+            accounts: [{
+              accountId: 'default',
+              name: 'default',
+              configured: true,
+              connected: true,
+              status: 'connected',
+              isDefault: true,
+            }],
+          }],
+        };
+      }
+      if (path === 'agents.list') return { success: true, agents: [] };
+      if (path === 'channels.dingtalkWorkspaceAuthStart') {
+        return {
+          success: true,
+          status: 'pending',
+          verificationUriComplete: 'https://login.dingtalk.com/oauth2/auth?client_id=test',
+        };
+      }
+      if (path === 'channels.dingtalkWorkspaceAuthStatus') return { success: true, status: 'pending' };
+      if (path === 'channels.dingtalkWorkspaceAuthCancel') return { success: true, status: 'needs_auth' };
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<ChannelsSettings />);
+    fireEvent.click(await screen.findByTestId('dingtalk-workspace-authorize'));
+
+    expect(await screen.findByTestId('dingtalk-workspace-auth')).toBeInTheDocument();
+    expect(hostApiCallMock).not.toHaveBeenCalledWith(
+      'channels.dingtalkWorkspaceAuthStart',
+      expect.anything(),
+    );
+    fireEvent.click(screen.getByTestId('dingtalk-workspace-auth-start'));
+
+    await waitFor(() => {
+      expect(hostApiCallMock).toHaveBeenCalledWith(
+        'channels.dingtalkWorkspaceAuthStart',
+        { accountId: 'default' },
+      );
+    });
+    expect(await screen.findByRole('button', { name: 'dialog.dingtalkWorkspaceAuthOpen' })).toBeInTheDocument();
+  });
+
+  it('offers DingTalk workspace authorization after a new bot is saved', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') return { success: true, channels: [] };
+      if (path === 'agents.list') return { success: true, agents: [] };
+      if (path === 'channels.validateCredentials') return { success: true, valid: true, warnings: [] };
+      if (path === 'channels.saveConfig') return { success: true };
+      if (path === 'channels.dingtalkWorkspaceAuthStatus') return { success: true, status: 'needs_auth' };
+      if (path === 'channels.dingtalkWorkspaceAuthStart') {
+        return {
+          success: true,
+          status: 'pending',
+          verificationUri: 'https://login.dingtalk.com/oauth2/device/verify.htm',
+          verificationUriComplete: 'https://login.dingtalk.com/oauth2/device/verify.htm?user_code=TEST-CODE',
+          userCode: 'TEST-CODE',
+        };
+      }
+      if (path === 'shell.openExternal') return { success: true };
+      if (path === 'channels.dingtalkWorkspaceAuthCancel') return { success: true, status: 'needs_auth' };
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<ChannelsSettings />);
+    fireEvent.click(await screen.findByRole('button', { name: /DingTalk/ }));
+    fireEvent.change(document.getElementById('clientId') as HTMLInputElement, {
+      target: { value: 'ding-client-id' },
+    });
+    fireEvent.change(document.getElementById('clientSecret') as HTMLInputElement, {
+      target: { value: 'ding-client-secret' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'dialog.saveAndConnect' }));
+
+    await waitFor(() => {
+      expect(hostApiCallMock).toHaveBeenCalledWith('channels.dingtalkWorkspaceAuthStart', { accountId: undefined });
+    });
+    expect(await screen.findByTestId('dingtalk-workspace-code')).toHaveTextContent('TEST-CODE');
+    expect(hostApiCallMock).toHaveBeenCalledWith('shell.openExternal', {
+      url: 'https://login.dingtalk.com/oauth2/device/verify.htm?user_code=TEST-CODE',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'dialog.dingtalkWorkspaceAuthSkip' }));
+    await waitFor(() => {
+      expect(screen.queryByTestId('dingtalk-workspace-auth')).not.toBeInTheDocument();
+    });
+    expect(hostApiCallMock).toHaveBeenCalledWith('channels.dingtalkWorkspaceAuthCancel', { accountId: undefined });
+  });
+
+  it('validates Feishu credentials before saving and shows the localized rejection', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') return { success: true, channels: [] };
+      if (path === 'agents.list') return { success: true, agents: [] };
+      if (path === 'channels.validateCredentials') {
+        return {
+          success: true,
+          valid: false,
+          errors: ['App Secret is identical to App ID.'],
+          errorCodes: [{ code: 'feishuAppSecretEqualsAppId' }],
+          warnings: [],
+        };
+      }
+      if (path === 'channels.saveConfig') return { success: true };
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<ChannelsSettings />);
+    fireEvent.click(await screen.findByRole('button', { name: /Feishu/ }));
+    fireEvent.change(document.getElementById('appId') as HTMLInputElement, {
+      target: { value: 'cli_a8cf7d97fbb8d00d' },
+    });
+    fireEvent.change(document.getElementById('appSecret') as HTMLInputElement, {
+      target: { value: 'cli_a8cf7d97fbb8d00d' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'dialog.saveAndConnect' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('dialog.validationErrors.feishuAppSecretEqualsAppId')).toBeInTheDocument();
+    });
+    expect(hostApiCallMock.mock.calls.filter(([path]) => path === 'channels.validateCredentials')).toEqual([
+      ['channels.validateCredentials', {
+        channelType: 'feishu',
+        config: { appId: 'cli_a8cf7d97fbb8d00d', appSecret: 'cli_a8cf7d97fbb8d00d' },
+      }],
+    ]);
+    expect(hostApiCallMock.mock.calls.filter(([path]) => path === 'channels.saveConfig')).toHaveLength(0);
+    expect(screen.getByText('dialog.configureTitle')).toBeInTheDocument();
+  });
+
+  it('removes a channel optimistically before the host delete settles', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    const deleteDeferred = createDeferred<{ success: true }>();
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
+        return {
+          success: true,
+          channels: [{
+            channelType: 'feishu',
+            defaultAccountId: 'default',
+            status: 'connected',
+            accounts: [{
+              accountId: 'default',
+              name: 'Primary Account',
+              configured: true,
+              status: 'connected',
+              isDefault: true,
+            }],
+          }],
+        };
+      }
+      if (path === 'agents.list') return { success: true, agents: [] };
+      if (path === 'channels.deleteConfig') return deleteDeferred.promise;
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<ChannelsSettings />);
+    await screen.findByTitle('account.deleteChannel');
+    fireEvent.click(screen.getByTitle('account.deleteChannel'));
+    fireEvent.click(await screen.findByTestId('confirm-dialog-confirm-button'));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('confirm-dialog-confirm-button')).not.toBeInTheDocument();
+      expect(screen.queryByTitle('account.deleteChannel')).not.toBeInTheDocument();
+    });
+    expect(toastSuccessMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      deleteDeferred.resolve({ success: true });
+      await deleteDeferred.promise;
+    });
+    await waitFor(() => {
+      expect(toastSuccessMock).toHaveBeenCalledWith('toast.channelDeleted');
+    });
+  });
+
+  it('restores the config-backed view when an optimistic channel delete fails', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    const deleteDeferred = createDeferred<{ success: true }>();
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
+        return {
+          success: true,
+          channels: [{
+            channelType: 'feishu',
+            defaultAccountId: 'default',
+            status: 'connected',
+            accounts: [{
+              accountId: 'default',
+              name: 'Primary Account',
+              configured: true,
+              status: 'connected',
+              isDefault: true,
+            }],
+          }],
+        };
+      }
+      if (path === 'agents.list') return { success: true, agents: [] };
+      if (path === 'channels.deleteConfig') return deleteDeferred.promise;
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<ChannelsSettings />);
+    await screen.findByTitle('account.deleteChannel');
+    fireEvent.click(screen.getByTitle('account.deleteChannel'));
+    fireEvent.click(await screen.findByTestId('confirm-dialog-confirm-button'));
+
+    await waitFor(() => {
+      expect(screen.queryByTitle('account.deleteChannel')).not.toBeInTheDocument();
+    });
+    await act(async () => {
+      deleteDeferred.reject(new Error('delete failed'));
+      try {
+        await deleteDeferred.promise;
+      } catch {
+        // Expected host failure.
+      }
+    });
+
+    await waitFor(() => {
+      expect(toastErrorMock).toHaveBeenCalledWith('toast.configFailed');
+      expect(hostApiCallMock).toHaveBeenCalledWith(
+        'channels.accounts',
+        expect.objectContaining({ mode: 'config', probe: false }),
+      );
+      expect(screen.getByTitle('account.deleteChannel')).toBeInTheDocument();
+    });
   });
 
   it('refetches channel accounts when gateway channel-status events arrive', async () => {
@@ -785,5 +1124,67 @@ describe('Channels page status refresh', () => {
     });
 
     expect(diagnosticsFetchCount).toBe(2);
+  });
+
+  it.each([
+    { recoveryState: 'verifying', healthState: 'degraded', reason: 'gateway_verifying' },
+    { recoveryState: 'restart-executing', healthState: 'unresponsive', reason: 'gateway_unresponsive' },
+    { recoveryState: 'external-unavailable', healthState: 'degraded', reason: 'external_gateway_unavailable' },
+  ])('explains $recoveryState recovery through the existing diagnostics panel', async ({
+    recoveryState,
+    healthState,
+    reason,
+  }) => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    const recovery = {
+      state: recoveryState,
+      lastAliveAt: 100,
+      deadlineAt: 280,
+      externallyManaged: recoveryState === 'external-unavailable',
+    };
+
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
+        return {
+          success: true,
+          gatewayHealth: {
+            state: healthState,
+            reasons: [reason],
+            consecutiveHeartbeatMisses: 1,
+            recovery,
+          },
+          channels: [],
+        };
+      }
+      if (path === 'agents.list') return { success: true, agents: [] };
+      if (path === 'diagnostics.gatewaySnapshot') {
+        return {
+          capturedAt: 123,
+          platform: 'darwin',
+          gateway: {
+            state: healthState,
+            reasons: [reason],
+            consecutiveHeartbeatMisses: 1,
+            recovery,
+          },
+          channels: [],
+          clawxLogTail: 'clawx',
+          gatewayLogTail: 'gateway',
+          gatewayErrLogTail: '',
+        };
+      }
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<ChannelsSettings />);
+
+    expect(await screen.findByTestId('channels-health-banner')).toBeInTheDocument();
+    expect(screen.getByText(`health.reasons.${reason}`)).toBeInTheDocument();
+    expect(screen.getByTestId('channels-recovery-status')).toHaveTextContent(`health.recovery.${recoveryState}`);
+
+    fireEvent.click(screen.getByTestId('channels-toggle-diagnostics'));
+    await waitFor(() => {
+      expect(screen.getByTestId('channels-diagnostics')).toHaveTextContent(`"state": "${recoveryState}"`);
+    });
   });
 });

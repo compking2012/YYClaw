@@ -10,12 +10,22 @@
  */
 import { app } from 'electron';
 import path from 'node:path';
-import { existsSync, cpSync, copyFileSync, lstatSync, mkdirSync, readFileSync, writeFileSync, readdirSync, readlinkSync, realpathSync, symlinkSync } from 'node:fs';
+import { existsSync, cpSync, copyFileSync, lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync, readdirSync, realpathSync, symlinkSync, type Dirent } from 'node:fs';
 import { readdir, lstat, copyFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { logger } from './logger';
 import { getOpenClawResolvedDir } from './paths';
+import {
+  DINGTALK_COMMUNITY_NPM,
+  DINGTALK_OFFICIAL_NPM,
+  DINGTALK_OFFICIAL_PLUGIN_ID,
+  DINGTALK_PLUGIN_ID,
+  patchDingTalkChannelIdsInJs,
+  remapDingTalkOfficialManifest,
+  remapDingTalkOfficialPackageJson,
+} from './dingtalk-plugin-compat';
+import { ensureDingTalkDwsInstalled } from './dingtalk-dws';
 import { safeRmSync } from './safe-fs';
 import {
   upsertPluginInstallRecordsIntoSqlite,
@@ -138,6 +148,7 @@ function toErrorDiagnostic(error: unknown): { code?: string; name?: string; mess
 // patch both the manifest AND the compiled JS so the Gateway accepts them.
 const MANIFEST_ID_FIXES: Record<string, string> = {
   'wecom-openclaw-plugin': 'wecom',
+  'dingtalk-connector': 'dingtalk',
 };
 
 /**
@@ -158,6 +169,11 @@ export function fixupPluginManifest(targetDir: string): void {
       manifest.id = newId;
       modified = true;
       logger.info(`[plugin] Fixed manifest ID: ${oldId} → ${newId}`);
+    }
+
+    if (remapDingTalkOfficialManifest(manifest)) {
+      modified = true;
+      logger.info('[plugin] Remapped official DingTalk connector onto dingtalk channel identity');
     }
 
     // OpenClaw 2026.7.1 treats configured channel plugins without a static
@@ -207,6 +223,11 @@ export function fixupPluginManifest(targetDir: string): void {
       modified = true;
     }
 
+    if (remapDingTalkOfficialPackageJson(pkg)) {
+      modified = true;
+      logger.info(`[plugin] Remapped official DingTalk package channel id in ${targetDir}`);
+    }
+
     if (modified) {
       writeFileSync(fsPath(pkgPath), JSON.stringify(pkg, null, 2) + '\n', 'utf-8');
       logger.info(`[plugin] Restored package.json npm metadata in ${targetDir}`);
@@ -218,6 +239,38 @@ export function fixupPluginManifest(targetDir: string): void {
   // 3. Fix hardcoded plugin IDs in compiled JS entry files.
   //    The Gateway validates that the JS export's `id` matches the manifest.
   patchPluginEntryIds(targetDir);
+  patchDingTalkCompiledChannelIds(targetDir);
+
+  // 4. Keep the WeCom business tool usable from account-less desktop Chat
+  // sessions when there is exactly one configured account. Upstream 2026.8.17
+  // treats any non-empty `accounts` map as ambiguous, but ClawX always writes
+  // even its sole default account into that map.
+  patchWeComCliSingleAccountFallback(targetDir);
+}
+
+function patchWeComCliSingleAccountFallback(targetDir: string): void {
+  const toolPath = join(targetDir, 'dist', 'src', 'cli', 'tool.js');
+  if (!existsSync(fsPath(toolPath))) return;
+
+  try {
+    const content = readFileSync(fsPath(toolPath), 'utf-8');
+    const next = content
+      .replace(
+        'import { hasMultiAccounts, resolveWeComAccountMulti } from "../accounts.js";',
+        'import { listWeComAccountIds, resolveWeComAccountMulti } from "../accounts.js";',
+      )
+      .replace(
+        '    const multi = hasMultiAccounts(cfg);\n    const id = accountId?.trim();\n    if (!id && multi) {',
+        '    const configuredAccountIds = listWeComAccountIds(cfg);\n    const id = accountId?.trim();\n    if (!id && configuredAccountIds.length > 1) {',
+      );
+
+    if (next !== content) {
+      writeFileSync(fsPath(toolPath), next, 'utf-8');
+      logger.info('[plugin] Patched WeCom desktop single-account tool fallback');
+    }
+  } catch (error) {
+    logger.warn('[plugin] Failed to patch WeCom desktop single-account tool fallback:', error);
+  }
 }
 
 /**
@@ -266,10 +319,78 @@ function patchPluginEntryIds(targetDir: string): void {
   }
 }
 
+function patchDingTalkCompiledChannelIds(targetDir: string): void {
+  const pkgPath = join(targetDir, 'package.json');
+  let pkgName: string | undefined;
+  try {
+    pkgName = (JSON.parse(readFileSync(fsPath(pkgPath), 'utf-8')) as { name?: string }).name;
+  } catch {
+    return;
+  }
+  if (pkgName !== DINGTALK_OFFICIAL_NPM) return;
+
+  const distDir = join(targetDir, 'dist');
+  const files = collectJsFiles(distDir);
+  const pkg = (() => {
+    try {
+      return JSON.parse(readFileSync(fsPath(pkgPath), 'utf-8')) as { main?: string; module?: string };
+    } catch {
+      return {};
+    }
+  })();
+  for (const entry of [pkg.main, pkg.module].filter(Boolean) as string[]) {
+    files.push(join(targetDir, entry));
+  }
+
+  const seen = new Set<string>();
+  for (const filePath of files) {
+    const normalized = fsPath(filePath);
+    if (seen.has(normalized) || !existsSync(normalized)) continue;
+    seen.add(normalized);
+    let content: string;
+    try {
+      content = readFileSync(normalized, 'utf-8');
+    } catch {
+      continue;
+    }
+    const { content: next, patched } = patchDingTalkChannelIdsInJs(content);
+    if (patched) {
+      writeFileSync(normalized, next, 'utf-8');
+      logger.info(`[plugin] Remapped DingTalk channel id in ${filePath}`);
+    }
+  }
+}
+
+function collectJsFiles(rootDir: string): string[] {
+  if (!existsSync(fsPath(rootDir))) return [];
+  const files: string[] = [];
+  const stack = [rootDir];
+  while (stack.length > 0) {
+    const current = stack.pop() as string;
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(fsPath(current), { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const child = join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(child);
+        continue;
+      }
+      if (entry.isFile() && /\.(js|mjs|cjs)$/.test(entry.name)) {
+        files.push(child);
+      }
+    }
+  }
+  return files;
+}
+
 // ── Plugin npm name mapping ──────────────────────────────────────────────────
 
 const PLUGIN_NPM_NAMES: Record<string, string> = {
-  dingtalk: '@soimy/dingtalk',
+  dingtalk: DINGTALK_OFFICIAL_NPM,
   wecom: '@wecom/wecom-openclaw-plugin',
   'openclaw-lark': '@larksuite/openclaw-lark',
 
@@ -293,7 +414,12 @@ type TrustedOfficialExtensionPlugin = {
 };
 
 export const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensionPlugin> = {
-  dingtalk: { npmName: '@soimy/dingtalk' },
+  dingtalk: {
+    npmName: DINGTALK_OFFICIAL_NPM,
+    pluginId: DINGTALK_PLUGIN_ID,
+    recordSource: 'path',
+    legacyPluginIds: [DINGTALK_OFFICIAL_PLUGIN_ID],
+  },
   // WeCom intentionally runs under ClawX's legacy-compatible `wecom` id even
   // though the upstream package manifest still declares
   // `wecom-openclaw-plugin`. Keep it path-owned so startup migration does not
@@ -718,13 +844,44 @@ export function resolvePluginNpmPackagePath(npmName: string): string | null {
   return null;
 }
 
-function readPluginVersion(pkgJsonPath: string): string | null {
+export function readPluginVersion(pkgJsonPath: string): string | null {
   try {
     const raw = readFileSync(fsPath(pkgJsonPath), 'utf-8');
     const parsed = JSON.parse(raw) as { version?: string };
     return parsed.version ?? null;
   } catch {
     return null;
+  }
+}
+
+function readPluginName(pkgJsonPath: string): string | null {
+  try {
+    const raw = readFileSync(fsPath(pkgJsonPath), 'utf-8');
+    const parsed = JSON.parse(raw) as { name?: string };
+    return parsed.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function removeLegacyOfficialDingTalkExtension(options: { requireCanonicalMirror?: boolean } = {}): void {
+  const extensionsDir = join(homedir(), '.openclaw', 'extensions');
+  const leftover = join(extensionsDir, DINGTALK_OFFICIAL_PLUGIN_ID);
+  if (!existsSync(fsPath(leftover))) return;
+
+  if (options.requireCanonicalMirror) {
+    const canonicalPackage = join(extensionsDir, DINGTALK_PLUGIN_ID, 'package.json');
+    if (readPluginName(canonicalPackage) !== DINGTALK_OFFICIAL_NPM) {
+      logger.warn('[plugin] Keeping dingtalk-connector extension until the canonical official mirror is installed');
+      return;
+    }
+  }
+
+  try {
+    safeRmSync(fsPath(leftover));
+    logger.info('[plugin] Removed leftover official DingTalk extension at ~/.openclaw/extensions/dingtalk-connector');
+  } catch (error) {
+    logger.warn('[plugin] Failed to remove leftover dingtalk-connector extension:', error);
   }
 }
 
@@ -856,6 +1013,10 @@ export async function ensurePluginInstalled(
   const sourceDir = candidateSources.find((dir) => existsSync(fsPath(join(dir, 'openclaw.plugin.json'))));
 
   async function finalizeInstalledMirror(): Promise<{ installed: true; peerLinkOk: boolean }> {
+    // Compatibility fixups must also run for an already-installed plugin whose
+    // upstream version is unchanged. This lets a ClawX patch repair existing
+    // 2026.8.17 mirrors instead of waiting for another upstream version bump.
+    fixupPluginManifest(targetDir);
     await syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
     return { installed: true, peerLinkOk: repairPluginOpenClawPeerLink(targetDir) };
   }
@@ -867,7 +1028,12 @@ export async function ensurePluginInstalled(
     }
     const installedVersion = readPluginVersion(targetPkgJson);
     const sourceVersion = readPluginVersion(join(sourceDir, 'package.json'));
-    if (!sourceVersion || !installedVersion || sourceVersion === installedVersion) {
+    const installedName = readPluginName(targetPkgJson);
+    const sourceName = readPluginName(join(sourceDir, 'package.json'));
+    const communityDingTalkMirror = pluginDirName === DINGTALK_PLUGIN_ID
+      && installedName === DINGTALK_COMMUNITY_NPM
+      && sourceName === DINGTALK_OFFICIAL_NPM;
+    if (!communityDingTalkMirror && (!sourceVersion || !installedVersion || sourceVersion === installedVersion)) {
       return await finalizeInstalledMirror(); // same version or unable to compare
     }
     // Version differs — fall through to overwrite install
@@ -890,7 +1056,6 @@ export async function ensurePluginInstalled(
         if (!existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
           return { installed: false, warning: `Failed to install ${pluginLabel} plugin mirror (manifest missing).` };
         }
-        fixupPluginManifest(targetDir);
         const installed = await finalizeInstalledMirror();
         logger.info(`Installed ${pluginLabel} plugin from bundled mirror: ${sourceDir}`);
         return installed;
@@ -938,7 +1103,6 @@ export async function ensurePluginInstalled(
           try {
             mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
             copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
-            fixupPluginManifest(targetDir);
             if (existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
               return await finalizeInstalledMirror();
             }
@@ -992,8 +1156,16 @@ export function buildCandidateSources(pluginDirName: string): string[] {
 
 // ── Per-channel plugin helpers ───────────────────────────────────────────────
 
-export function ensureDingTalkPluginInstalled(): Promise<PluginInstallResult> {
-  return ensurePluginInstalled('dingtalk', buildCandidateSources('dingtalk'), 'DingTalk');
+export async function ensureDingTalkPluginInstalled(): Promise<PluginInstallResult> {
+  const result = await ensurePluginInstalled('dingtalk', buildCandidateSources('dingtalk'), 'DingTalk');
+  if (result.installed) {
+    const dws = ensureDingTalkDwsInstalled();
+    removeLegacyOfficialDingTalkExtension({ requireCanonicalMirror: true });
+    if (dws.warning) {
+      return { ...result, warning: dws.warning };
+    }
+  }
+  return result;
 }
 
 export function ensureWeComPluginInstalled(): Promise<PluginInstallResult> {

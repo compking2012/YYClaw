@@ -4,12 +4,16 @@ import type {
   AgentUpdateModelPayload,
   AgentUpdateAutoSelectPayload,
   AgentUpdatePayload,
+  AsrConfig,
+  AsrConfigPayload,
+  AsrTranscribePayload,
   AcpTraceRecordPayload,
   AttachmentFileRef,
   AttachmentSourceRef,
   ChannelAccountsPayload,
   ChannelSaveConfigPayload,
   ChannelTargetsPayload,
+  DingTalkWorkspaceAuthResult,
   ClawHubSearchPayload,
   CronSessionHistoryPayload,
   DialogMessagePayload,
@@ -19,7 +23,9 @@ import type {
   ImageGenerationSettingsPayload,
   LegacyFetchPayload,
   LegacyFetchResult,
+  IssueReportExportPayload,
   MediaThumbnailEntry,
+  OpenClawCompactionReserveResult,
   OpenClawDoctorMode,
   OpenClawDoctorResult,
   OpenAttachmentWithPayload,
@@ -62,6 +68,7 @@ import type {
   AcpChatLoadPayload,
   AcpChatPromptPayload,
   AcpChatRespondPermissionPayload,
+  AcpSessionFamilyPayload,
 } from '@shared/acp-chat/types';
 import type { CronJobCreateInput, CronJobUpdateInput } from '@shared/types/cron';
 import { invokeHost } from './host-api-client';
@@ -83,6 +90,7 @@ export type {
   ChannelSaveConfigResult,
   ChannelTargetOption,
   ChannelTargetsResult,
+  DingTalkWorkspaceAuthResult,
   ClawHubInstalledSkill,
   ClawHubListResult,
   ClawHubSearchResult,
@@ -90,13 +98,19 @@ export type {
   DeliveryChannelAccount,
   DeliveryChannelGroup,
   DeliveryTargetsResult,
+  DiagnosticsGatewaySnapshotGateway,
+  DiagnosticsGatewaySnapshotResult,
   GatewayHealthSummary,
+  GatewayRecoverySnapshot,
+  GatewayRecoveryState,
   ImageGenerationProvidersResult,
   ImageGenerationSettingsResult,
+  IssueReportExportResult,
   LocalSkillsResult,
   LogContentResult,
   LogDirResult,
   OpenClawCliCommandResult,
+  OpenClawCompactionReserveResult,
   OpenClawDoctorResult,
   OpenClawStatusResult,
   OpenAttachmentResult,
@@ -121,7 +135,6 @@ export type {
   WorkspaceNativeFileResult,
   WorkspaceOpenHandlersResult,
 } from '@shared/host-api/contract';
-
 export const hostApi = {
   app: {
     openClawDoctor: async (mode: OpenClawDoctorMode): Promise<OpenClawDoctorResult> => ({
@@ -140,8 +153,17 @@ export const hostApi = {
   },
   openclaw: {
     status: () => invokeHost('openclaw', 'status'),
+    getConfigPath: () => invokeHost('openclaw', 'getConfigPath'),
     getSkillsDir: () => invokeHost('openclaw', 'getSkillsDir'),
     getCliCommand: () => invokeHost('openclaw', 'getCliCommand'),
+    getCompactionReserve: () => (
+      invokeHost('openclaw', 'getCompactionReserve') as Promise<OpenClawCompactionReserveResult>
+    ),
+  },
+  computerUse: {
+    status: () => invokeHost('computerUse', 'status'),
+    setEnabled: (enabled: boolean) => invokeHost('computerUse', 'setEnabled', { enabled }),
+    requestPermissions: () => invokeHost('computerUse', 'requestPermissions'),
   },
   shell: {
     openExternal: (url: string) => invokeHost('shell', 'openExternal', { url } satisfies ShellOpenExternalPayload),
@@ -227,8 +249,12 @@ export const hostApi = {
     deleteConfig: (channelType: string, accountId?: string) => (
       invokeHost('channels', 'deleteConfig', { channelType, accountId })
     ),
-    validateCredentials: (channelType: string, config: Record<string, unknown>) => (
-      invokeHost('channels', 'validateCredentials', { channelType, config })
+    validateCredentials: (channelType: string, config: Record<string, unknown>, accountId?: string) => (
+      invokeHost('channels', 'validateCredentials', {
+        channelType,
+        config,
+        ...(accountId ? { accountId } : {}),
+      })
     ),
     saveBinding: (input: { channelType: string; accountId: string; agentId: string }) => (
       invokeHost('channels', 'bindingSave', input)
@@ -256,6 +282,30 @@ export const hostApi = {
     feishuDeleteApp: (input: { appId: string }) => invokeHost('channels', 'feishuDeleteApp', input),
     feishuRetryLarkCli: (input: { appId: string; appSecret: string }) => (
       invokeHost('channels', 'feishuRetryLarkCli', input)
+    ),
+    dingtalkWorkspaceAuthStart: (accountId?: string) => (
+      invokeHost('channels', 'dingtalkWorkspaceAuthStart', {
+        channelType: 'dingtalk',
+        ...(accountId ? { accountId } : {}),
+      }) as Promise<DingTalkWorkspaceAuthResult>
+    ),
+    dingtalkWorkspaceAuthStatus: (accountId?: string) => (
+      invokeHost('channels', 'dingtalkWorkspaceAuthStatus', {
+        channelType: 'dingtalk',
+        ...(accountId ? { accountId } : {}),
+      }) as Promise<DingTalkWorkspaceAuthResult>
+    ),
+    dingtalkWorkspaceAuthCancel: (accountId?: string) => (
+      invokeHost('channels', 'dingtalkWorkspaceAuthCancel', {
+        channelType: 'dingtalk',
+        ...(accountId ? { accountId } : {}),
+      }) as Promise<DingTalkWorkspaceAuthResult>
+    ),
+    dingtalkWorkspaceAuthReset: (accountId?: string) => (
+      invokeHost('channels', 'dingtalkWorkspaceAuthReset', {
+        channelType: 'dingtalk',
+        ...(accountId ? { accountId } : {}),
+      }) as Promise<DingTalkWorkspaceAuthResult>
     ),
   },
   agents: {
@@ -303,6 +353,9 @@ export const hostApi = {
     gatewaySnapshot: () => invokeHost('diagnostics', 'gatewaySnapshot'),
     acpTrace: () => invokeHost('diagnostics', 'acpTrace'),
     recordAcpTrace: (input: AcpTraceRecordPayload) => invokeHost('diagnostics', 'recordAcpTrace', input),
+    exportIssueReport: (input: IssueReportExportPayload) => (
+      invokeHost('diagnostics', 'exportIssueReport', input)
+    ),
   },
   providers: {
     list: () => invokeHost('providers', 'list'),
@@ -437,6 +490,9 @@ export const hostApi = {
   },
   chat: {
     sendWithMedia: (input: ChatSendWithMediaPayload) => invokeHost('chat', 'sendWithMedia', input),
+    getAcpSessionFamily: (input: AcpSessionFamilyPayload) => (
+      invokeHost('chat', 'getAcpSessionFamily', input)
+    ),
     loadAcpSession: (input: AcpChatLoadPayload) => invokeHost('chat', 'loadAcpSession', input),
     sendAcpPrompt: (input: AcpChatPromptPayload) => invokeHost('chat', 'sendAcpPrompt', input),
     cancelAcpSession: (input: AcpChatCancelPayload) => invokeHost('chat', 'cancelAcpSession', input),
@@ -584,6 +640,17 @@ export const hostApi = {
     status: (input: { runId: string }) => invokeHost('workflow', 'status', input),
     startDynamic: (input: { task?: string; definition?: Record<string, unknown>; input?: Record<string, unknown>; skills?: Array<{ name: string; description?: string }> }) => (
       invokeHost('workflow', 'startDynamic', input)
+      ),
+    },
+  asr: {
+    getMicrophoneAccess: () => invokeHost('asr', 'getMicrophoneAccess'),
+    openMicrophoneSettings: () => invokeHost('asr', 'openMicrophoneSettings'),
+    getConfig: () => invokeHost('asr', 'getConfig'),
+    saveConfig: (config: AsrConfig, apiKey?: string) => (
+      invokeHost('asr', 'saveConfig', { config, apiKey } satisfies AsrConfigPayload)
+    ),
+    transcribe: (wav: Uint8Array) => (
+      invokeHost('asr', 'transcribe', { wav } satisfies AsrTranscribePayload)
     ),
   },
 };

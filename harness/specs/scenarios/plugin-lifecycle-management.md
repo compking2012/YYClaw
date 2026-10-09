@@ -26,6 +26,9 @@ ownedPaths:
   - harness/specs/scenarios/plugin-lifecycle-management.md
   - harness/specs/rules/**
   - harness/specs/tasks/**
+  - patches/@wecom__wecom-openclaw-plugin@2026.8.17.patch
+  - pnpm-workspace.yaml
+  - pnpm-lock.yaml
 requiredProfiles:
   - fast
 conditionalProfiles:
@@ -93,3 +96,5 @@ materialize into `~/.openclaw/extensions/tokenjuice`, activate through `plugins.
 `plugins.allow`), registers it as path-owned in `TRUSTED_OFFICIAL_EXTENSION_PLUGINS` so the
 kernel's official-install repair pass cannot route it back through npm, and writes the activation
 entry only when the mirror is genuinely on disk — see `configured-plugin-install-precondition`.
+
+Bundled WeCom patches must preserve account isolation: account-less desktop sessions may resolve a sole configured account, while genuinely ambiguous multi-account sessions remain blocked.

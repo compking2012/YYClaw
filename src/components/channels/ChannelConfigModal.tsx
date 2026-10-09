@@ -22,7 +22,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 
-import { hostApi, hostApiFetch } from '@/lib/host-api';
+import { hostApi, hostApiFetch, type DingTalkWorkspaceAuthResult } from '@/lib/host-api';
 import { subscribeHostEvent } from '@/lib/host-events';
 import { cn } from '@/lib/utils';
 import { ModalPortal } from '@/components/ui/modal-portal';
@@ -59,6 +59,7 @@ interface ChannelConfigModalProps {
   allowEditAccountId?: boolean;
   existingAccountIds?: string[];
   initialConfigValues?: Record<string, string>;
+  openDingTalkWorkspaceAuth?: boolean;
   agentId?: string;
   accountId?: string;
   onClose: () => void;
@@ -81,12 +82,13 @@ export function ChannelConfigModal({
   allowEditAccountId = false,
   existingAccountIds = [],
   initialConfigValues,
+  openDingTalkWorkspaceAuth = false,
   agentId,
   accountId,
   onClose,
   onChannelSaved,
 }: ChannelConfigModalProps) {
-  const { t } = useTranslation(['channels', 'common']);
+  const { t, i18n } = useTranslation(['channels', 'common']);
   const { channels, addChannel, fetchChannels } = useChannelsStore();
   const [selectedType, setSelectedType] = useState<ChannelType | null>(initialSelectedType);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
@@ -99,6 +101,10 @@ export function ChannelConfigModal({
   const [validating, setValidating] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [isExistingConfig, setIsExistingConfig] = useState(false);
+  const [dingtalkWorkspaceAuth, setDingtalkWorkspaceAuth] = useState<DingTalkWorkspaceAuthResult | null>(
+    openDingTalkWorkspaceAuth ? { success: true, status: 'needs_auth' } : null,
+  );
+  const dingtalkWorkspaceAuthActiveRef = useRef(false);
   const firstInputRef = useRef<HTMLInputElement>(null);
   const [validationResult, setValidationResult] = useState<{
     valid: boolean;
@@ -205,7 +211,22 @@ export function ChannelConfigModal({
   }, [selectedType, configValues.appId, configValues.appSecret]);
 
   const meta: ChannelMeta | null = selectedType ? CHANNEL_META[selectedType] : null;
-  const shouldUseCredentialValidation = selectedType !== 'feishu';
+  const shouldUseCredentialValidation = meta?.connectionType === 'token';
+
+  // Main returns stable error codes next to its English fallback text so the
+  // modal can show localized messages (e.g. Feishu App Secret pasted as App ID).
+  const localizeValidationErrors = useCallback((response: {
+    errors?: string[];
+    errorCodes?: Array<{ code: string; params?: Record<string, string> }>;
+  }): string[] => {
+    const fallback = response.errors ?? [];
+    if (!response.errorCodes?.length) return fallback;
+    return response.errorCodes.map(({ code, params }, index) => {
+      const key = `dialog.validationErrors.${code}`;
+      const localized = t(key, { ...params, defaultValue: '' });
+      return localized || fallback[index] || fallback[0] || code;
+    });
+  }, [t]);
   const usesManagedQrAccounts = usesPluginManagedQrAccounts(selectedType);
   const showAccountIdEditor = allowEditAccountId && !usesManagedQrAccounts;
   const resolvedAccountId = usesManagedQrAccounts
@@ -329,6 +350,69 @@ export function ChannelConfigModal({
   useEffect(() => {
     translateRef.current = t;
   }, [t]);
+
+  const completeDingtalkWorkspaceAuth = useCallback(async () => {
+    dingtalkWorkspaceAuthActiveRef.current = false;
+    toast.success(translateRef.current('dialog.dingtalkWorkspaceAuthSuccess'));
+    // Refresh the configured channel view so the authorization reminder and
+    // its action disappear as soon as DWS reports success.
+    await finishSaveRef.current('dingtalk');
+    onCloseRef.current();
+  }, []);
+
+  useEffect(() => () => {
+    if (dingtalkWorkspaceAuthActiveRef.current) {
+      void hostApi.channels.dingtalkWorkspaceAuthCancel(resolvedAccountId);
+    }
+  }, [resolvedAccountId]);
+
+  useEffect(() => {
+    if (dingtalkWorkspaceAuth?.status !== 'pending' && dingtalkWorkspaceAuth?.status !== 'starting') return;
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const result = await hostApi.channels.dingtalkWorkspaceAuthStatus(resolvedAccountId);
+        if (stopped) return;
+        setDingtalkWorkspaceAuth(result);
+        if (result.status === 'authorized') {
+          await completeDingtalkWorkspaceAuth();
+        }
+      } catch {
+        // The active CLI process remains authoritative; retry on the next tick.
+      }
+    };
+    const timer = window.setInterval(() => void poll(), 2_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [completeDingtalkWorkspaceAuth, dingtalkWorkspaceAuth?.status, resolvedAccountId]);
+
+  const startDingtalkWorkspaceAuth = useCallback(async () => {
+    setDingtalkWorkspaceAuth({ success: true, status: 'starting' });
+    dingtalkWorkspaceAuthActiveRef.current = true;
+    try {
+      const result = await hostApi.channels.dingtalkWorkspaceAuthStart(resolvedAccountId);
+      setDingtalkWorkspaceAuth(result);
+      if (result.status === 'authorized') {
+        await completeDingtalkWorkspaceAuth();
+        return;
+      }
+      // Device flow does not open a browser itself. Desktop loopback OAuth
+      // does, so only auto-open here when DWS returned a device user code.
+      if (result.status === 'pending' && result.verificationUriComplete && result.userCode) {
+        void hostApi.shell.openExternal(result.verificationUriComplete).catch(() => {});
+      }
+    } catch {
+      setDingtalkWorkspaceAuth({ success: false, status: 'error', errorCode: 'authorization_failed' });
+    }
+  }, [completeDingtalkWorkspaceAuth, resolvedAccountId]);
+
+  const skipDingtalkWorkspaceAuth = useCallback(() => {
+    dingtalkWorkspaceAuthActiveRef.current = false;
+    void hostApi.channels.dingtalkWorkspaceAuthCancel(resolvedAccountId);
+    onClose();
+  }, [onClose, resolvedAccountId]);
 
   function normalizeQrImageSource(data: { qr?: string; raw?: string }): string | null {
     const qr = typeof data.qr === 'string' ? data.qr.trim() : '';
@@ -508,16 +592,7 @@ export function ChannelConfigModal({
     setValidationResult(null);
 
     try {
-      const result = await hostApiFetch<{
-        success: boolean;
-        valid?: boolean;
-        errors?: string[];
-        warnings?: string[];
-        details?: Record<string, string>;
-      }>('/api/channels/credentials/validate', {
-        method: 'POST',
-        body: JSON.stringify({ channelType: selectedType, config: configValues }),
-      });
+      const result = await hostApi.channels.validateCredentials(selectedType, configValues, resolvedAccountId);
 
       const warnings = result.warnings || [];
       if (result.valid && result.details) {
@@ -529,7 +604,7 @@ export function ChannelConfigModal({
 
       setValidationResult({
         valid: result.valid || false,
-        errors: result.errors || [],
+        errors: localizeValidationErrors(result),
         warnings,
       });
     } catch (error) {
@@ -585,22 +660,19 @@ export function ChannelConfigModal({
         return;
       }
 
+      let discoveredDomain: string | undefined;
       if (meta.connectionType === 'token' && shouldUseCredentialValidation) {
-        const validationResponse = await hostApiFetch<{
-          success: boolean;
-          valid?: boolean;
-          errors?: string[];
-          warnings?: string[];
-          details?: Record<string, string>;
-        }>('/api/channels/credentials/validate', {
-          method: 'POST',
-          body: JSON.stringify({ channelType: selectedType, config: configValues }),
-        });
+        const validationResponse = await hostApi.channels.validateCredentials(
+          selectedType,
+          configValues,
+          resolvedAccountId,
+        );
 
         if (!validationResponse.valid) {
+          const errors = localizeValidationErrors(validationResponse);
           setValidationResult({
             valid: false,
-            errors: validationResponse.errors || ['Validation failed'],
+            errors: errors.length > 0 ? errors : [t('dialog.validationFailed')],
             warnings: validationResponse.warnings || [],
           });
           setConnecting(false);
@@ -613,6 +685,9 @@ export function ChannelConfigModal({
           if (details.botUsername) warnings.push(`Bot: @${details.botUsername}`);
           if (details.guildName) warnings.push(`Server: ${details.guildName}`);
           if (details.channelName) warnings.push(`Channel: #${details.channelName}`);
+          if (typeof details.domain === 'string' && details.domain.trim()) {
+            discoveredDomain = details.domain.trim();
+          }
         }
 
         setValidationResult({
@@ -623,19 +698,16 @@ export function ChannelConfigModal({
       }
 
       const config: Record<string, unknown> = { ...configValues };
-      const saveResult = await hostApiFetch<{
-        success?: boolean;
-        error?: string;
-        warning?: string;
-      }>('/api/channels/config', {
-        method: 'POST',
-        body: JSON.stringify({ channelType: selectedType, config, accountId: resolvedAccountId }),
-      });
+      if (discoveredDomain) {
+        config.domain = discoveredDomain;
+      }
+      const saveResult = await hostApi.channels.saveConfig({ channelType: selectedType, config, accountId: resolvedAccountId });
       if (!saveResult?.success) {
         throw new Error(saveResult?.error || 'Failed to save channel config');
       }
       if (typeof saveResult.warning === 'string' && saveResult.warning) {
-        toast.warning(saveResult.warning);
+        const warningKey = `health.reasons.${saveResult.warning}`;
+        toast.warning(i18n.exists(warningKey, { ns: 'channels' }) ? t(warningKey) : saveResult.warning);
       }
 
       try {
@@ -647,6 +719,21 @@ export function ChannelConfigModal({
 
       toast.success(t('toast.channelSaved', { name: meta.name }));
       toast.success(t('toast.channelConnecting', { name: meta.name }));
+
+      if (selectedType === 'dingtalk') {
+        try {
+          const authStatus = await hostApi.channels.dingtalkWorkspaceAuthStatus(resolvedAccountId);
+          if (authStatus.status === 'needs_auth') {
+            setConnecting(false);
+            setDingtalkWorkspaceAuth(authStatus);
+            await startDingtalkWorkspaceAuth();
+            return;
+          }
+        } catch {
+          // Workspace OAuth is optional and must never turn a successful chat
+          // configuration save into a failure.
+        }
+      }
       onClose();
     } catch (error) {
       toast.error(t('toast.configFailed', { error: String(error) }));
@@ -776,6 +863,86 @@ export function ChannelConfigModal({
                   </button>
                 );
               })}
+            </div>
+          ) : selectedType === 'dingtalk' && dingtalkWorkspaceAuth ? (
+            <div className="space-y-6" data-testid="dingtalk-workspace-auth">
+              <div className="text-center space-y-3">
+                <div className="mx-auto h-14 w-14 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-400 flex items-center justify-center">
+                  {dingtalkWorkspaceAuth.status === 'authorized' ? (
+                    <CheckCircle className="h-7 w-7" />
+                  ) : dingtalkWorkspaceAuth.status === 'error' ? (
+                    <AlertCircle className="h-7 w-7 text-destructive" />
+                  ) : (
+                    <ShieldCheck className="h-7 w-7" />
+                  )}
+                </div>
+                <h3 className="text-xl font-serif font-normal tracking-tight">
+                  {t('dialog.dingtalkWorkspaceAuthTitle')}
+                </h3>
+                <p className="text-sm text-muted-foreground max-w-lg mx-auto">
+                  {t('dialog.dingtalkWorkspaceAuthDescription')}
+                </p>
+              </div>
+
+              {dingtalkWorkspaceAuth.status === 'starting' && (
+                <div className="flex items-center justify-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 p-5 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t('dialog.dingtalkWorkspaceAuthStarting')}
+                </div>
+              )}
+
+              {dingtalkWorkspaceAuth.status === 'pending' && (
+                <div className="rounded-2xl border border-black/10 dark:border-white/10 p-5 text-center space-y-4 bg-surface-input">
+                  {dingtalkWorkspaceAuth.userCode && (
+                    <>
+                      <p className="text-sm text-muted-foreground">{t('dialog.dingtalkWorkspaceAuthCodeHint')}</p>
+                      <p className="font-mono text-3xl tracking-widest text-foreground" data-testid="dingtalk-workspace-code">
+                        {dingtalkWorkspaceAuth.userCode}
+                      </p>
+                    </>
+                  )}
+                  {dingtalkWorkspaceAuth.verificationUriComplete && (
+                    <Button
+                      className={primaryButtonClasses}
+                      onClick={() => void hostApi.shell.openExternal(dingtalkWorkspaceAuth.verificationUriComplete!)}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      {t('dialog.dingtalkWorkspaceAuthOpen')}
+                    </Button>
+                  )}
+                  <p className="text-xs text-muted-foreground">{t('dialog.dingtalkWorkspaceAuthWaiting')}</p>
+                </div>
+              )}
+
+              {(dingtalkWorkspaceAuth.status === 'error' || dingtalkWorkspaceAuth.status === 'unavailable') && (
+                <div className="rounded-2xl border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
+                  {t(`dialog.dingtalkWorkspaceAuthErrors.${
+                    dingtalkWorkspaceAuth.status === 'unavailable'
+                      ? 'unavailable'
+                      : dingtalkWorkspaceAuth.errorCode || 'authorization_failed'
+                  }`)}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" className={outlineButtonClasses} onClick={skipDingtalkWorkspaceAuth}>
+                  {t('dialog.dingtalkWorkspaceAuthSkip')}
+                </Button>
+                {dingtalkWorkspaceAuth.status === 'needs_auth' && (
+                  <Button
+                    className={primaryButtonClasses}
+                    data-testid="dingtalk-workspace-auth-start"
+                    onClick={() => void startDingtalkWorkspaceAuth()}
+                  >
+                    {t('dialog.dingtalkWorkspaceAuthStart')}
+                  </Button>
+                )}
+                {(dingtalkWorkspaceAuth.status === 'error' || dingtalkWorkspaceAuth.status === 'unavailable') && (
+                  <Button className={primaryButtonClasses} onClick={() => void startDingtalkWorkspaceAuth()}>
+                    {t('dialog.dingtalkWorkspaceAuthRetry')}
+                  </Button>
+                )}
+              </div>
             </div>
           ) : qrCode ? (
             <div className="text-center space-y-6">

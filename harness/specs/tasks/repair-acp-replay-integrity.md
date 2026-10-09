@@ -1,0 +1,140 @@
+---
+id: repair-acp-replay-integrity
+title: Preserve OpenClaw ACP ledger integrity for compaction and terminal text
+scenario: gateway-backend-communication
+taskType: runtime-bridge
+intent: Ensure OpenClaw preserves and records direct recovery compactions and all buffered terminal assistant text in its ACP event ledger without replacing complete ledger replay from transcript prose.
+touchedAreas:
+  - harness/specs/tasks/repair-acp-replay-integrity.md
+  - harness/specs/tasks/show-acp-compaction-lifecycle.md
+  - harness/specs/tasks/hydrate-settled-acp-timeline.md
+  - harness/specs/rules/acp-chat-state-and-history.md
+  - harness/specs/rules/compaction-context-progress.md
+  - harness/reference/acp-chat.md
+  - harness/specs/tasks/recover-compaction-tool-pressure.md
+  - docs/*/*.md
+  - patches/openclaw@2026.7.1-2.patch
+  - pnpm-lock.yaml
+  - shared/i18n/locales/en/chat.json
+  - shared/i18n/locales/zh/chat.json
+  - shared/i18n/locales/ja/chat.json
+  - shared/i18n/locales/ru/chat.json
+  - src/lib/acp/reducer.ts
+  - src/lib/acp/timeline-types.ts
+  - src/pages/Chat/AcpAssistantTurn.tsx
+  - src/pages/Chat/AcpCompactionStatus.tsx
+  - src/stores/acp-chat-session.ts
+  - tests/unit/acp-reducer.test.ts
+  - tests/unit/acp-chat-components.test.tsx
+  - tests/unit/acp-chat-store.test.ts
+  - tests/unit/openclaw-acp-stream-patch.test.ts
+  - tests/unit/openclaw-acp-compaction-patch.test.ts
+  - tests/unit/openclaw-compaction-tail-patch.test.ts
+  - tests/unit/openclaw-restart-recovery-patch.test.ts
+  - tests/e2e/chat-acp-process-timeline.spec.ts
+  - tests/e2e/chat-acp-inline-timeline.spec.ts
+expectedUserBehavior:
+  - Automatic overflow, preflight, and timeout recovery compactions appear live and settle in place even when the original embedded AgentSession has already ended.
+  - A shorter non-prefix final assistant chunk is emitted and recorded instead of being discarded by a stale character-count comparison.
+  - A final assistant snapshot is reconciled against text actually emitted to Gateway, so parser-observed but undelivered text cannot suppress its missing suffix.
+  - Gateway preserves the assistant buffer through lifecycle-error retry grace until terminal Chat projection flushes it, unless a real retry start first clears the prior attempt.
+  - Buffered assistant text carried by an aborted terminal is recorded before the prompt settles as cancelled.
+  - Reopening a conversation with a complete ACP event ledger replays that ledger without comparing or substituting transcript prose.
+  - Existing persisted ledgers are not migrated or modified by this change.
+requiredProfiles:
+  - fast
+  - comms
+  - e2e
+requiredRules:
+  - backend-communication-boundary
+  - renderer-main-boundary
+  - acp-chat-state-and-history
+  - comms-regression
+  - e2e-parallel-isolation
+  - docs-sync
+requiredTests:
+  - pnpm exec vitest run tests/unit/openclaw-acp-stream-patch.test.ts tests/unit/openclaw-acp-compaction-patch.test.ts tests/unit/openclaw-restart-recovery-patch.test.ts
+  - pnpm run typecheck
+  - pnpm run build:vite
+  - pnpm run comms:replay
+  - pnpm run comms:compare
+  - pnpm exec playwright test tests/e2e/chat-acp-process-timeline.spec.ts
+acceptance:
+  - Explicit context-engine compaction calls used by overflow, preflight, and timeout recovery emit one structured start and one terminal agent compaction event regardless of the context engine ownsCompaction flag; in-session AgentSession compaction lifecycle remains unchanged.
+  - The direct lifecycle reuses one compactionId for start and terminal events, maps aborted work to cancelled, successful work to completed, and incomplete non-aborted work to failed.
+  - Incomplete non-aborted direct, command, and session-operation compactions keep source separate from a stable reasonCode and bounded failureReason for recorded ACP projection.
+  - Assistant snapshot extensions emit only their unseen suffix, identical or stale prefixes emit nothing, and shorter non-prefix chunks emit in full through the ordinary recorded ACP update path.
+  - Embedded assistant finalization tracks parser-observed and successfully emitted text separately; message-end reconciliation emits any suffix absent from the latter before lifecycle terminal delivery.
+  - Gateway does not clear buffered assistant text when lifecycle-error retry grace starts; terminal Chat projection flushes it before cleanup, while a subsequent lifecycle start clears the prior attempt before the retry emits text.
+  - An aborted Chat terminal carrying buffered assistant text runs that text through the same recorded delta path before prompt cancellation; error-terminal prose is not projected as an ordinary assistant message.
+  - Complete ledger replay does not fetch the bounded transcript, run a cross-source selector, strip injected prompt envelopes, or replace ledger events with transcript-derived events.
+  - The existing bounded transcript fallback remains limited to cases where the ACP event ledger is unavailable or incomplete.
+  - No runtime migration, startup repair, or direct write modifies an existing persisted ACP ledger.
+docs:
+  required: true
+---
+
+## Field Evidence
+
+For `agent:main:session-1788073441789`, the existing ACP replay ledger has
+assistant chunk lengths `1`, `103`, `25`, `558`, `597`, and `629`; the durable
+assistant response is a strict extension with a final `545`-character suffix.
+The pinned adapter's former `fullText.length <= sentSoFar` condition therefore
+discarded that final shorter non-prefix chunk deterministically. The missing
+compaction came from a separate `ownsCompaction` gate around direct recovery
+lifecycle publication after the AgentSession lifecycle had ended.
+
+For `agent:main:session-1788085358142`, the durable final assistant message has
+`5733` characters while its complete-marked ACP ledger contains a strict
+`5619`-character prefix, leaving a `114`-character suffix unrecorded. The run
+settled as aborted after overflow compaction. Gateway's aborted terminal carried
+the complete buffered assistant message, but the pinned ACP bridge processed
+message content only for delta and final states before cancelling the prompt.
+
+This task repairs those producer paths for future events. It intentionally does
+not rewrite the existing field ledger. ClawX remains an ACP consumer and does
+not add a parallel transcript text projection.
+
+For `agent:main:session-1788096137870`, the durable final assistant message has
+`5144` characters while the complete-marked ACP ledger contains a strict
+`5014`-character prefix, leaving a `130`-character suffix unrecorded. The model
+completed successfully, but a later aborted lifecycle error reached Gateway's
+terminal branch. That branch unconditionally cleared the live assistant buffer
+before constructing the aborted Chat payload, so the terminal carried no
+message and the ACP bridge had no suffix to record. The same producer failure
+left `410` characters unrecorded for `agent:main:session-1788095494373`. Gateway
+must retain the buffer for aborted lifecycle errors and let terminal projection
+perform the ordinary final cleanup after it captures the complete message.
+
+The three-layer diagnostic run for `agent:main:session-1788099602856` isolates
+the same producer failure. Embedded finalization and Gateway projection both
+reached `2534` characters, while the last throttled ACP snapshot and complete
+ledger stopped at a strict `2082`-character prefix. A lifecycle error entered
+the 15-second retry grace after the model had completed, cleared the Gateway
+buffer immediately, and later produced an aborted terminal with zero text, so
+the remaining `452` characters could not be flushed. Lifecycle error is
+provisional during that grace: the buffer remains owned by terminal projection
+unless a subsequent lifecycle start proves that a retry began, in which case
+the old attempt is cleared at that start boundary.
+
+Post-fix verification used the same two prompts in
+`agent:main:session-1788100892918`. The second durable assistant response has
+`3201` characters, and complete replay session
+`5b41814b-59f1-43df-8310-d086e20867a5` records exactly `3201` assistant
+characters after the second user event (`complete=1`, `next_seq=117`). The
+session still reports `abortedLastRun=true`, so this exercises the delayed
+aborted terminal path rather than bypassing it; terminal projection now flushes
+the throttled tail before cleanup.
+
+For `agent:main:session-1788102558415`, successful run
+`5ac30cc6-7ba9-4d3c-8511-1e748f078f59` persisted a `2665`-character durable
+assistant message, while complete replay session
+`f1b08d07-92c6-4fd0-b2f6-7e4ee22ffa44` contains exactly its first `2046`
+characters. Both prefixes have SHA-256
+`c0b429a175924972c93f5bfcbe544fe4d3807f7bd742f50d45b7121b2f46ff9d`,
+leaving one contiguous `619`-character terminal suffix absent. The selection
+layer previously used one field for both the latest parsed stream snapshot and
+the latest snapshot emitted to Gateway. If parsing advanced that field without
+delivery, message-end finalization compared the durable final text to the
+parser state and emitted nothing. The repair records successful stream
+emission separately and uses that value for final snapshot reconciliation.

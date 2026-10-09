@@ -4,7 +4,7 @@ const alphaModelRef = 'custom-alpha123/model-alpha';
 const betaModelRef = 'custom-beta5678/provider/model-beta';
 
 test.describe('ClawX agent model picker', () => {
-  test('switches the current agent model without requesting a gateway refresh', async ({ launchElectronApp }) => {
+  test('keeps account labels and conversation overrides separate from agent defaults', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -190,9 +190,33 @@ test.describe('ClawX agent model picker', () => {
         }).__releaseChatModelProviders = releaseProviderAccounts;
       }, { alphaModelRef, betaModelRef });
 
+      await app.evaluate(() => {
+        (globalThis as typeof globalThis & { __releaseChatModelProviders?: () => void }).__releaseChatModelProviders?.();
+      });
+
       const page = await getStableWindow(app);
       await page.reload();
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByTestId('chat-page')).toBeVisible();
+      await expect(page.getByTestId('chat-model-picker-button')).toContainText('Alpha');
+      await page.getByTestId('chat-model-picker-button').click();
+      await page.getByTestId('chat-model-picker-option-Beta').click();
+      await expect(page.getByTestId('chat-model-picker-button')).toContainText('Beta');
+      const modelRequests = await app.evaluate(() => (
+        (globalThis as typeof globalThis & { __chatModelPickerRequests?: Array<{ path: string }> }).__chatModelPickerRequests ?? []
+      ));
+      expect(modelRequests.some((request) => request.path === '/api/agents/main/model')).toBe(false);
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.webContents.send('chat:acp-session-update', {
+          sessionKey: 'agent:main:main',
+          generation: 1,
+          notification: {
+            sessionId: 'agent:main:main',
+            update: { sessionUpdate: 'usage_update', used: 25_000, size: 100_000 },
+          },
+        });
+      });
+      await expect(page.getByRole('progressbar', { name: '25% context used: 25,000 / 100,000 tokens' })).toBeVisible();
       await page.evaluate(() => {
         window.location.hash = '#/agents';
       });
@@ -226,6 +250,7 @@ test.describe('ClawX agent model picker', () => {
         || request.path === 'gateway:start'
         || request.path === 'gateway:config.patch'
       )).toBe(false);
+
     } finally {
       await closeElectronApp(app);
     }

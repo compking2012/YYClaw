@@ -40,6 +40,17 @@ vi.mock('@/lib/host-api', () => ({
   hostApiFetch: vi.fn().mockResolvedValue({ success: true, summaries: [] }),
 }));
 
+function deferredCatalog(): {
+  promise: Promise<Record<string, unknown>>;
+  resolve: (value: Record<string, unknown>) => void;
+} {
+  let resolve!: (value: Record<string, unknown>) => void;
+  const promise = new Promise<Record<string, unknown>>((resolver) => {
+    resolve = resolver;
+  });
+  return { promise, resolve };
+}
+
 describe('chat store loadSessions startup selection', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -99,6 +110,84 @@ describe('chat store loadSessions startup selection', () => {
       )?.createdLocally,
     ).toBe(true);
     nowSpy.mockRestore();
+  });
+
+  it('does not recreate a missing selected native child during catalog repair', async () => {
+    const missingChildKey = 'agent:main:subagent:missing-child';
+    const retainedChildKey = 'agent:main:subagent:retained-child';
+    gatewayRpcMock.mockResolvedValue({
+      ts: 1,
+      sessions: [{ key: retainedChildKey, updatedAt: 9_000 }],
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: missingChildKey,
+      currentAgentId: 'main',
+      sessions: [{ key: missingChildKey }],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    await useChatStore.getState().loadSessions();
+
+    const state = useChatStore.getState();
+    expect(state.currentSessionKey).toMatch(/^agent:main:session-\d+$/);
+    expect(state.currentSessionKey).not.toBe(missingChildKey);
+    expect(state.currentSessionKey).not.toBe(retainedChildKey);
+    expect(state.sessions).toContainEqual(expect.objectContaining({ key: retainedChildKey }));
+    expect(state.sessions).not.toContainEqual(expect.objectContaining({ key: missingChildKey }));
+  });
+
+  it('rejects stale list rows and buffered events for a deleted agent until recreation', async () => {
+    const deletedKey = 'agent:test1:session-delayed';
+    const catalog = deferredCatalog();
+    gatewayRpcMock
+      .mockReturnValueOnce(catalog.promise)
+      .mockResolvedValue({
+        ts: 3,
+        sessions: [
+          { key: 'agent:main:main', derivedTitle: 'Main conversation' },
+          { key: deletedKey, derivedTitle: 'Stale deleted-agent row' },
+        ],
+      });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: deletedKey,
+      currentAgentId: 'test1',
+      sessions: [{ key: deletedKey }],
+      sessionLabels: { [deletedKey]: 'Deleted conversation' },
+      sessionLastActivity: { [deletedKey]: 1 },
+    });
+
+    const loadPromise = useChatStore.getState().loadSessions({ force: true });
+    await vi.waitFor(() => expect(gatewayRpcMock).toHaveBeenCalledTimes(1));
+    useChatStore.getState().handleSessionsChanged({
+      sessionKey: deletedKey,
+      session: { key: deletedKey, derivedTitle: 'Buffered deleted-agent event' },
+      ts: 2,
+    });
+    useChatStore.getState().removeAgentSessions('test1');
+    catalog.resolve({
+      ts: 1,
+      sessions: [
+        { key: 'agent:main:main', derivedTitle: 'Main conversation' },
+        { key: deletedKey, derivedTitle: 'Stale deleted-agent row' },
+      ],
+    });
+    await loadPromise;
+
+    expect(gatewayRpcMock.mock.calls.filter(([method]) => method === 'sessions.list')).toHaveLength(2);
+    expect(useChatStore.getState().sessions.some((session) => session.key === deletedKey)).toBe(false);
+
+    useChatStore.getState().reconcileAgentSessionTombstones(['test1']);
+    await useChatStore.getState().loadSessions({ force: true });
+
+    expect(useChatStore.getState().sessions).toContainEqual(expect.objectContaining({
+      key: deletedKey,
+      derivedTitle: 'Stale deleted-agent row',
+    }));
   });
 
   it('mints the fresh conversation under the configured default agent id (not the legacy main)', async () => {

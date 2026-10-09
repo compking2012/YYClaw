@@ -26,7 +26,7 @@ touchedAreas:
   - tests/unit/use-workspace-availability.test.tsx
   - tests/unit/chat-acp-page.test.tsx
   - tests/unit/chat-acp-inline-timeline.test.tsx
-  - tests/unit/chat-session-management.test.ts
+  - tests/unit/chat-store-delete-session-workflow.test.ts
   - tests/unit/settings-store.test.ts
   - tests/e2e/chat-workspace-context.spec.ts
 expectedUserBehavior:
@@ -51,7 +51,7 @@ requiredRules:
   - docs-sync
 requiredTests:
   - pnpm harness validate --spec harness/specs/tasks/delete-unavailable-chat-workspace.md
-  - pnpm exec vitest run tests/unit/use-workspace-availability.test.tsx tests/unit/chat-session-management.test.ts tests/unit/settings-store.test.ts
+  - pnpm exec vitest run tests/unit/use-workspace-availability.test.tsx tests/unit/chat-store-delete-session-workflow.test.ts tests/unit/settings-store.test.ts
   - pnpm exec playwright test tests/e2e/chat-workspace-context.spec.ts
   - pnpm run typecheck
   - pnpm run build:vite

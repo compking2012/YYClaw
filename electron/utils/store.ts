@@ -7,10 +7,22 @@ import { randomBytes } from 'crypto';
 import { app } from 'electron';
 import { resolveSupportedLanguage } from '@shared/language';
 import { DEFAULT_WORKSPACE_CWD } from '@shared/workspace';
+import { bomTolerantDeserialize } from './json-bom-deserialize';
 
 // Lazy-load electron-store (ESM module)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let settingsStoreInstance: any = null;
+let computerUsePreferenceHandler: ((enabled: boolean) => Promise<void>) | undefined;
+
+export function registerComputerUsePreferenceHandler(handler: (enabled: boolean) => Promise<void>): void {
+  computerUsePreferenceHandler = handler;
+}
+
+/** Only the serialized Computer Use service writes this preference directly. */
+export async function saveComputerUseEnabled(enabled: boolean): Promise<void> {
+  const store = await getSettingsStore();
+  store.set('computerUseEnabled', enabled);
+}
 
 /**
  * Generate a random token for gateway authentication
@@ -34,6 +46,7 @@ export interface AppSettings {
 
   // Gateway
   gatewayAutoStart: boolean;
+  computerUseEnabled: boolean;
   gatewayPort: number;
   gatewayToken: string;
   configKey: string;
@@ -101,6 +114,7 @@ function createDefaultSettings(): AppSettings {
 
     // Gateway
     gatewayAutoStart: true,
+    computerUseEnabled: false,
     gatewayPort: 18789,
     gatewayToken: generateToken(),
     configKey: generateToken(),
@@ -151,6 +165,7 @@ async function getSettingsStore() {
     const Store = (await import('electron-store')).default;
     settingsStoreInstance = new Store<AppSettings>({
       name: 'settings',
+      deserialize: bomTolerantDeserialize,
       defaults: createDefaultSettings(),
     });
   }
@@ -172,6 +187,12 @@ export async function setSetting<K extends keyof AppSettings>(
   key: K,
   value: AppSettings[K]
 ): Promise<void> {
+  if (key === 'computerUseEnabled') {
+    if (typeof value !== 'boolean' || !computerUsePreferenceHandler) {
+      throw new Error('Invalid or unavailable Computer Use preference handler');
+    }
+    return computerUsePreferenceHandler(value);
+  }
   const store = await getSettingsStore();
   store.set(key, value);
 }
@@ -190,8 +211,12 @@ export async function getAllSettings(): Promise<AppSettings> {
  * Reset settings to defaults
  */
 export async function resetSettings(): Promise<void> {
+  await computerUsePreferenceHandler?.(false);
   const store = await getSettingsStore();
+  // A later queued opt-in may have completed while reset awaited the handler.
+  const computerUseEnabled = store.get('computerUseEnabled') === true;
   store.clear();
+  store.set('computerUseEnabled', computerUseEnabled);
 }
 
 /**
@@ -211,6 +236,13 @@ export async function importSettings(json: string): Promise<void> {
   try {
     const settings = JSON.parse(json) as Record<string, unknown>;
     delete settings.officeCollaborationEnabled;
+    if (Object.prototype.hasOwnProperty.call(settings, 'computerUseEnabled')) {
+      if (typeof settings.computerUseEnabled !== 'boolean') {
+        throw new Error('Invalid Computer Use preference');
+      }
+      await setSetting('computerUseEnabled', settings.computerUseEnabled);
+      delete settings.computerUseEnabled;
+    }
     const store = await getSettingsStore();
     store.set(settings);
   } catch {

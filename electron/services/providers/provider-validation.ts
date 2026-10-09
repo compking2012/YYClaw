@@ -1,5 +1,6 @@
 import { proxyAwareFetch } from '../../utils/proxy-fetch';
 import { getProviderConfig } from '../../utils/provider-registry';
+import type { ProviderRecoveryAction } from '@shared/host-api/contract';
 
 type ValidationProfile =
   | 'openai-completions'
@@ -9,8 +10,30 @@ type ValidationProfile =
   | 'openrouter'
   | 'none';
 
-type ValidationResult = { valid: boolean; error?: string; status?: number };
+type ValidationResult = {
+  valid: boolean;
+  error?: string;
+  status?: number;
+  recoveryAction?: ProviderRecoveryAction;
+};
 type ClassifiedValidationResult = ValidationResult & { authFailure?: boolean };
+
+const TOKENDANCE_RECOVERY_ACTIONS = new Set<ProviderRecoveryAction>([
+  'top_up_balance',
+  'reauthorize_api_key',
+  'api_key_quota',
+]);
+
+function getTokenDanceRecoveryAction(response: Response): ProviderRecoveryAction | undefined {
+  const value = response.headers.get('TokenDance-Recovery-Action')?.trim();
+  return value && TOKENDANCE_RECOVERY_ACTIONS.has(value as ProviderRecoveryAction)
+    ? value as ProviderRecoveryAction
+    : undefined;
+}
+
+function getProviderHeaders(providerType: string): Record<string, string> {
+  return { ...(getProviderConfig(providerType)?.headers ?? {}) };
+}
 
 const AUTH_ERROR_PATTERN = /\b(unauthorized|forbidden|access denied|invalid api key|api key invalid|incorrect api key|api key incorrect|authentication failed|auth failed|invalid credential|credential invalid|invalid signature|signature invalid|invalid access token|access token invalid|invalid bearer token|bearer token invalid|access token expired)\b|鉴权失败|認証失敗|认证失败|無效密鑰|无效密钥|密钥无效|密鑰無效|憑證無效|凭证无效/i;
 const AUTH_ERROR_CODE_PATTERN = /\b(unauthorized|forbidden|access[_-]?denied|invalid[_-]?api[_-]?key|api[_-]?key[_-]?invalid|incorrect[_-]?api[_-]?key|api[_-]?key[_-]?incorrect|authentication[_-]?failed|auth[_-]?failed|invalid[_-]?credential|credential[_-]?invalid|invalid[_-]?signature|signature[_-]?invalid|invalid[_-]?access[_-]?token|access[_-]?token[_-]?invalid|invalid[_-]?bearer[_-]?token|bearer[_-]?token[_-]?invalid|access[_-]?token[_-]?expired|invalid[_-]?token|token[_-]?invalid|token[_-]?expired)\b/i;
@@ -118,24 +141,123 @@ function getValidationProfile(
   }
 }
 
-async function performProviderValidationRequest(
+async function requestProviderValidation(
   providerLabel: string,
   url: string,
   headers: Record<string, string>,
-): Promise<ClassifiedValidationResult> {
+): Promise<{ result: ClassifiedValidationResult; data: unknown }> {
   try {
     logValidationRequest(providerLabel, 'GET', url, headers);
     const response = await proxyAwareFetch(url, { headers });
     logValidationStatus(providerLabel, response.status);
     const data = await response.json().catch(() => ({}));
     const result = classifyAuthResponse(response.status, data);
-    return { ...result, status: response.status };
+    return {
+      result: {
+        ...result,
+        status: response.status,
+        recoveryAction: getTokenDanceRecoveryAction(response),
+      },
+      data,
+    };
   } catch (error) {
     return {
-      valid: false,
-      error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+      result: {
+        valid: false,
+        error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+      },
+      data: undefined,
     };
   }
+}
+
+async function performProviderValidationRequest(
+  providerLabel: string,
+  url: string,
+  headers: Record<string, string>,
+): Promise<ClassifiedValidationResult> {
+  const { result } = await requestProviderValidation(providerLabel, url, headers);
+  return result;
+}
+
+/**
+ * Hosts whose model listing enumerates everything the key can reach, so an
+ * absent model id proves the configuration is dead rather than merely unlisted.
+ *
+ * Restricted to the vendors' own endpoints on purpose: an Anthropic- or
+ * Gemini-compatible relay may advertise a subset of what it serves, and
+ * rejecting a working model there would be worse than the silent failure this
+ * check exists to catch.
+ */
+const AUTHORITATIVE_MODEL_LISTING_HOSTS = new Set([
+  'generativelanguage.googleapis.com',
+  'api.anthropic.com',
+]);
+
+function hasAuthoritativeModelListing(url: string): boolean {
+  try {
+    return AUTHORITATIVE_MODEL_LISTING_HOSTS.has(new URL(url).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Collect model ids from a listing response. Google returns fully qualified
+ * resource names (`models/gemini-3.5-flash`); Anthropic and OpenAI-compatible
+ * endpoints return bare ids under `data`.
+ */
+function extractListedModelIds(data: unknown): string[] {
+  if (!data || typeof data !== 'object') return [];
+  const rows = (data as { models?: unknown; data?: unknown }).models
+    ?? (data as { data?: unknown }).data;
+  if (!Array.isArray(rows)) return [];
+
+  const ids: string[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const raw = (row as { name?: unknown; id?: unknown }).name
+      ?? (row as { id?: unknown }).id;
+    if (typeof raw !== 'string') continue;
+    const id = raw.trim().replace(/^models\//, '');
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * Reject a model id the provider does not serve.
+ *
+ * A key that authenticates says nothing about whether the configured model
+ * exists, and OpenClaw cannot route a model it never resolves, so an unknown id
+ * would otherwise be saved as a healthy provider and fail at the first turn.
+ */
+function classifyConfiguredModel(
+  result: ClassifiedValidationResult,
+  listingUrl: string,
+  data: unknown,
+  modelId: string | undefined,
+): ClassifiedValidationResult {
+  const model = modelId?.trim();
+  if (!result.valid || !model || !hasAuthoritativeModelListing(listingUrl)) {
+    return result;
+  }
+
+  const listed = extractListedModelIds(data);
+  if (listed.length === 0) {
+    return result;
+  }
+
+  const normalized = model.toLowerCase();
+  if (listed.some((id) => id.toLowerCase() === normalized)) {
+    return result;
+  }
+
+  return {
+    ...result,
+    valid: false,
+    error: `Model "${model}" is not available for this API key. Choose one of the models this key can reach, for example ${listed.slice(0, 3).join(', ')}.`,
+  };
 }
 
 function classifyAuthResponse(
@@ -167,7 +289,7 @@ function classifyAuthResponse(
 }
 
 function shouldFallbackFromModelsProbe(result: ClassifiedValidationResult): boolean {
-  if (result.valid || result.status === undefined) return false;
+  if (result.valid || result.status === undefined || result.recoveryAction) return false;
   if (result.status === 401 || result.status === 403) return false;
   if (result.authFailure) return false;
   return true;
@@ -203,11 +325,22 @@ async function validateOpenAiCompatibleKey(
     return { valid: false, error: `Base URL is required for provider "${providerType}" validation` };
   }
 
-  const headers = { Authorization: `Bearer ${apiKey}` };
+  const headers = {
+    ...getProviderHeaders(providerType),
+    Authorization: `Bearer ${apiKey}`,
+  };
   const probeModel = modelId?.trim() || 'validation-probe';
   const { modelsUrl, probeUrl } = resolveOpenAiProbeUrls(trimmedBaseUrl, apiProtocol);
-  const modelsResult = await performProviderValidationRequest(providerType, modelsUrl, headers);
 
+  // TokenDance exposes /models publicly, so it cannot prove that a key is valid.
+  // Use the configured model for a minimal authenticated request instead.
+  if (providerType === 'tokendance') {
+    return apiProtocol === 'openai-responses'
+      ? await performResponsesProbe(providerType, probeUrl, headers, probeModel)
+      : await performChatCompletionsProbe(providerType, probeUrl, headers, probeModel);
+  }
+
+  const modelsResult = await performProviderValidationRequest(providerType, modelsUrl, headers);
   if (shouldFallbackFromModelsProbe(modelsResult)) {
     console.log(
       `[clawx-validate] ${providerType} /models returned ${modelsResult.status}, falling back to ${apiProtocol} probe`,
@@ -239,7 +372,10 @@ async function performResponsesProbe(
     });
     logValidationStatus(providerLabel, response.status);
     const data = await response.json().catch(() => ({}));
-    return classifyProbeResponse(response.status, data);
+    return {
+      ...classifyProbeResponse(response.status, data),
+      recoveryAction: getTokenDanceRecoveryAction(response),
+    };
   } catch (error) {
     return {
       valid: false,
@@ -267,7 +403,10 @@ async function performChatCompletionsProbe(
     });
     logValidationStatus(providerLabel, response.status);
     const data = await response.json().catch(() => ({}));
-    return classifyProbeResponse(response.status, data);
+    return {
+      ...classifyProbeResponse(response.status, data),
+      recoveryAction: getTokenDanceRecoveryAction(response),
+    };
   } catch (error) {
     return {
       valid: false,
@@ -294,7 +433,10 @@ async function performAnthropicMessagesProbe(
     });
     logValidationStatus(providerLabel, response.status);
     const data = await response.json().catch(() => ({}));
-    return classifyProbeResponse(response.status, data);
+    return {
+      ...classifyProbeResponse(response.status, data),
+      recoveryAction: getTokenDanceRecoveryAction(response),
+    };
   } catch (error) {
     return {
       valid: false,
@@ -303,30 +445,40 @@ async function performAnthropicMessagesProbe(
   }
 }
 
+/**
+ * Page size is large enough to enumerate the vendor's whole catalog in one
+ * request, because a truncated listing cannot disprove a model's existence.
+ */
+const MODEL_LISTING_PAGE_SIZE = 1000;
+
 async function validateGoogleQueryKey(
   providerType: string,
   apiKey: string,
   baseUrl?: string,
+  modelId?: string,
 ): Promise<ValidationResult> {
   const base = normalizeBaseUrl(baseUrl || 'https://generativelanguage.googleapis.com/v1beta');
-  const url = `${base}/models?pageSize=1&key=${encodeURIComponent(apiKey)}`;
-  return await performProviderValidationRequest(providerType, url, {});
+  const url = `${base}/models?pageSize=${MODEL_LISTING_PAGE_SIZE}&key=${encodeURIComponent(apiKey)}`;
+  const { result, data } = await requestProviderValidation(providerType, url, {});
+  return classifyConfiguredModel(result, url, data, modelId);
 }
 
 async function validateAnthropicHeaderKey(
   providerType: string,
   apiKey: string,
   baseUrl?: string,
+  modelId?: string,
 ): Promise<ValidationResult> {
   const rawBase = normalizeBaseUrl(baseUrl || 'https://api.anthropic.com/v1');
   const base = rawBase.endsWith('/v1') ? rawBase : `${rawBase}/v1`;
-  const url = `${base}/models?limit=1`;
+  const url = `${base}/models?limit=${MODEL_LISTING_PAGE_SIZE}`;
   const headers = {
+    ...getProviderHeaders(providerType),
     'x-api-key': apiKey,
     'anthropic-version': '2023-06-01',
   };
 
-  const modelsResult = await performProviderValidationRequest(providerType, url, headers);
+  const { result: modelsResult, data: modelsData } = await requestProviderValidation(providerType, url, headers);
 
   // If the endpoint doesn't implement /models (like Minimax Anthropic compatibility), fallback to a /messages probe.
   if (
@@ -342,7 +494,7 @@ async function validateAnthropicHeaderKey(
     return await performAnthropicMessagesProbe(providerType, messagesUrl, headers);
   }
 
-  return modelsResult;
+  return classifyConfiguredModel(modelsResult, url, modelsData, modelId);
 }
 
 async function validateOpenRouterKey(
@@ -350,7 +502,10 @@ async function validateOpenRouterKey(
   apiKey: string,
 ): Promise<ValidationResult> {
   const url = 'https://openrouter.ai/api/v1/auth/key';
-  const headers = { Authorization: `Bearer ${apiKey}` };
+  const headers = {
+    ...getProviderHeaders(providerType),
+    Authorization: `Bearer ${apiKey}`,
+  };
   return await performProviderValidationRequest(providerType, url, headers);
 }
 
@@ -390,9 +545,9 @@ export async function validateApiKeyWithProvider(
           options?.modelId,
         );
       case 'google-query-key':
-        return await validateGoogleQueryKey(providerType, trimmedKey, resolvedBaseUrl);
+        return await validateGoogleQueryKey(providerType, trimmedKey, resolvedBaseUrl, options?.modelId);
       case 'anthropic-header':
-        return await validateAnthropicHeaderKey(providerType, trimmedKey, resolvedBaseUrl);
+        return await validateAnthropicHeaderKey(providerType, trimmedKey, resolvedBaseUrl, options?.modelId);
       case 'openrouter':
         return await validateOpenRouterKey(providerType, trimmedKey);
       default:

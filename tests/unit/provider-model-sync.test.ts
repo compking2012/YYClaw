@@ -34,7 +34,7 @@ describe('provider-model-sync', () => {
         baseUrl: 'https://api.moonshot.cn/v1',
         api: 'openai-completions',
         apiKey: 'MOONSHOT_API_KEY',
-        models: [{ id: 'kimi-k2.6', name: 'kimi-k2.6' }],
+        models: [{ id: 'kimi-k2.6', name: 'kimi-k2.6', cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
       },
     });
   });
@@ -74,7 +74,7 @@ describe('provider-model-sync', () => {
         baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
         api: 'openai-completions',
         apiKey: 'MODELSTUDIO_API_KEY',
-        models: [{ id: 'qwen3.5-plus', name: 'qwen3.5-plus' }],
+        models: [{ id: 'qwen3.5-plus', name: 'qwen3.5-plus', cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
       },
     });
 

@@ -3,6 +3,7 @@ import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from
 
 const CONTROL_SESSION_KEY = 'agent:main:main';
 const TARGET_SESSION_KEY = 'agent:main:attention-target';
+const SUBAGENT_SESSION_KEY = 'agent:main:subagent:child-1';
 const WORKSPACE = '/workspace';
 const LIST_TS = 1_753_000_000_000;
 const GATEWAY_CONNECTED_AT = 1_752_999_000_000;
@@ -50,6 +51,15 @@ async function installSessionAttentionMocks(app: ElectronApplication): Promise<v
       derivedTitle: 'Attention target',
       workspacePath: WORKSPACE,
       updatedAt: LIST_TS - 2_000,
+      status: 'done',
+      hasActiveRun: false,
+    },
+    {
+      key: SUBAGENT_SESSION_KEY,
+      displayName: '[Subagent Context] You are running as a subagent (depth 1/1).',
+      derivedTitle: '[Subagent Context] You are running as a subagent (depth 1/1).',
+      workspacePath: WORKSPACE,
+      updatedAt: LIST_TS - 3_000,
       status: 'done',
       hasActiveRun: false,
     },
@@ -103,6 +113,7 @@ async function installSessionAttentionMocks(app: ElectronApplication): Promise<v
       }])]: { ok: true, workspaceRoot: WORKSPACE, executionCwd: WORKSPACE },
       ...acpLoadResponse(CONTROL_SESSION_KEY),
       ...acpLoadResponse(TARGET_SESSION_KEY),
+      ...acpLoadResponse(SUBAGENT_SESSION_KEY),
     },
   });
 }
@@ -143,6 +154,47 @@ async function emitSessionSnapshot(
 }
 
 test.describe('ClawX sidebar session attention', () => {
+  test('hides native subagent rows without removing their exact-key attention state', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installSessionAttentionMocks(app);
+      const page = await reloadStableWindow(app);
+      await expect(page.getByTestId(`sidebar-session-${SUBAGENT_SESSION_KEY}`)).toHaveCount(0);
+      await expect(page.getByTestId(`sidebar-session-subagent-${SUBAGENT_SESSION_KEY}`)).toHaveCount(0);
+      await expect(page.getByTestId(`sidebar-session-${CONTROL_SESSION_KEY}`))
+        .not.toContainText('Subagent');
+
+      await emitSessionSnapshot(app, {
+        sessionKey: SUBAGENT_SESSION_KEY,
+        ts: LIST_TS + 1_000,
+        status: 'running',
+        hasActiveRun: true,
+      });
+      await expect.poll(async () => page.evaluate((sessionKey) => {
+        const persisted = JSON.parse(localStorage.getItem('clawx.session-attention') ?? '{}') as {
+          state?: { bySessionKey?: Record<string, { observedBusy: boolean; unread: boolean }> };
+        };
+        return persisted.state?.bySessionKey?.[sessionKey];
+      }, SUBAGENT_SESSION_KEY)).toEqual({ observedBusy: true, unread: false });
+      await emitSessionSnapshot(app, {
+        sessionKey: SUBAGENT_SESSION_KEY,
+        ts: LIST_TS + 2_000,
+        status: 'done',
+        hasActiveRun: false,
+      });
+
+      await expect.poll(async () => page.evaluate((sessionKey) => {
+        const persisted = JSON.parse(localStorage.getItem('clawx.session-attention') ?? '{}') as {
+          state?: { bySessionKey?: Record<string, { observedBusy: boolean; unread: boolean }> };
+        };
+        return persisted.state?.bySessionKey?.[sessionKey];
+      }, SUBAGENT_SESSION_KEY)).toEqual({ observedBusy: false, unread: true });
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('projects Gateway busy and unread state through Chat mount, key changes, and unmount', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
@@ -242,6 +294,43 @@ test.describe('ClawX sidebar session attention', () => {
       await expect(targetBusy).toHaveCount(0);
       await expect(targetUnread).toHaveCount(0);
       await expect(targetTime).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('keeps unsent composer text and caret position independent for each conversation', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installSessionAttentionMocks(app);
+      const page = await reloadStableWindow(app);
+      const composer = page.getByTestId('chat-composer-input');
+      const controlRow = page.getByTestId(`sidebar-session-${CONTROL_SESSION_KEY}`);
+      const targetRow = page.getByTestId(`sidebar-session-${TARGET_SESSION_KEY}`);
+
+      await expect(controlRow).toHaveAttribute('aria-current', 'page');
+      await expect(composer).toBeEnabled({ timeout: 30_000 });
+      const controlDraft = 'Unsent control draft';
+      const controlCaretPosition = controlDraft.length - 1;
+      await composer.fill(controlDraft);
+      await composer.press('ArrowLeft');
+      await expect.poll(() => composer.evaluate((element: HTMLTextAreaElement) => element.selectionStart))
+        .toBe(controlCaretPosition);
+
+      await targetRow.click();
+      await expect(targetRow).toHaveAttribute('aria-current', 'page');
+      await expect(composer).toHaveValue('');
+      await composer.fill('Unsent target draft');
+
+      await controlRow.click();
+      await expect(composer).toHaveValue(controlDraft);
+      await expect(composer).toBeFocused();
+      await expect.poll(() => composer.evaluate((element: HTMLTextAreaElement) => element.selectionStart))
+        .toBe(controlCaretPosition);
+
+      await targetRow.click();
+      await expect(composer).toHaveValue('Unsent target draft');
     } finally {
       await closeElectronApp(app);
     }

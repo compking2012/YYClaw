@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   getSessionDisplayTitle,
   isAcpWorkingDirectoryTruncatedTitle,
+  isGatewayAcpPlaceholderDisplayName,
   isOpenClawSessionIdFallbackTitle,
   stripAcpWorkingDirectoryPrefix,
 } from '@shared/chat/session-title'
@@ -91,6 +92,75 @@ describe('getSessionDisplayTitle', () => {
 
   it('falls back safely when session labels are unavailable', () => {
     expect(getSessionDisplayTitle(session)).toBe('Generated title')
+  })
+
+  it('removes cwd metadata from automatic display titles', () => {
+    expect(getSessionDisplayTitle({
+      key: session.key,
+      derivedTitle: '[Working directory: ~/.openclaw/workspace]\n\nExplain this repository',
+    })).toBe('Explain this repository')
+  })
+
+  it('skips a cwd envelope truncated before the prompt', () => {
+    expect(getSessionDisplayTitle({
+      key: session.key,
+      derivedTitle: '[Working directory: ~/.openclaw/workspace]…',
+      displayName: 'ClawX',
+    })).toBe('ClawX')
+  })
+
+  it('preserves an explicit label that resembles a cwd envelope', () => {
+    const explicitTitle = '[Working directory: ~/.openclaw/workspace]…'
+    expect(getSessionDisplayTitle({
+      key: session.key,
+      label: explicitTitle,
+      derivedTitle: 'Generated title',
+    })).toBe(explicitTitle)
+    expect(getSessionDisplayTitle(session, { [session.key]: explicitTitle })).toBe(explicitTitle)
+  })
+
+  it('skips the Gateway ACP placeholder display name at startup', () => {
+    expect(getSessionDisplayTitle({
+      key: session.key,
+      displayName: 'ACP',
+    })).toBe(session.key)
+  })
+
+  it('prefers the derived title over the Gateway ACP placeholder display name', () => {
+    expect(getSessionDisplayTitle({
+      key: session.key,
+      derivedTitle: 'Derived title',
+      displayName: 'ACP',
+    })).toBe('Derived title')
+  })
+
+  it('still shows a derived title that literally reads ACP', () => {
+    expect(getSessionDisplayTitle({
+      key: session.key,
+      derivedTitle: 'ACP',
+    })).toBe('ACP')
+  })
+
+  it('still shows an explicit user rename that literally reads ACP', () => {
+    expect(getSessionDisplayTitle({
+      key: session.key,
+      label: 'ACP',
+      displayName: 'ACP',
+    })).toBe('ACP')
+    expect(getSessionDisplayTitle({
+      key: session.key,
+      displayName: 'ACP',
+    }, { [session.key]: 'ACP' })).toBe('ACP')
+  })
+})
+
+describe('isGatewayAcpPlaceholderDisplayName', () => {
+  it('matches the literal Gateway placeholder only', () => {
+    expect(isGatewayAcpPlaceholderDisplayName('ACP')).toBe(true)
+    expect(isGatewayAcpPlaceholderDisplayName('  ACP  ')).toBe(true)
+    expect(isGatewayAcpPlaceholderDisplayName('acp')).toBe(false)
+    expect(isGatewayAcpPlaceholderDisplayName('ACP protocol')).toBe(false)
+    expect(isGatewayAcpPlaceholderDisplayName('')).toBe(false)
   })
 })
 

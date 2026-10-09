@@ -11,6 +11,7 @@ import {
   type ContentBlock,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
+  type SessionInfo,
   type SessionNotification,
 } from '@agentclientprotocol/sdk';
 import { HOST_EVENT_CHANNELS } from '@shared/host-events/contract';
@@ -21,8 +22,10 @@ import type {
   AcpChatPromptPayload,
   AcpChatRespondPermissionPayload,
   AcpPermissionRequestEnvelope,
+  AcpSessionFamilyResult,
   AcpSessionUpdateEnvelope,
 } from '@shared/acp-chat/types';
+import { projectAcpSessionFamily } from '@shared/acp-chat/subagent-lineage';
 import { getOpenClawEmbeddedForkSpec } from '../utils/openclaw-cli';
 import {
   approvePendingLocalDeviceRequests,
@@ -38,7 +41,10 @@ import {
   OPENCLAW_ACP_RECOVERY_GRACE_ENV,
 } from '../gateway/recovery-budget';
 
-type AcpConnection = Pick<ClientSideConnection, 'initialize' | 'newSession' | 'loadSession' | 'prompt' | 'cancel'>;
+type AcpConnection = Pick<
+  ClientSideConnection,
+  'initialize' | 'newSession' | 'loadSession' | 'listSessions' | 'prompt' | 'cancel'
+>;
 type MainWindowLike = {
   webContents: Pick<BrowserWindow['webContents'], 'send'>;
 };
@@ -68,6 +74,15 @@ type AcpChildProcess = ChildProcess & {
   stdout: NonNullable<ChildProcess['stdout']>;
   stderr: NonNullable<ChildProcess['stderr']>;
 };
+type AcpInitializationFlight = {
+  promise: Promise<AcpConnection> | null;
+};
+
+const ACP_SESSION_LIST_MAX_PAGES = 128;
+// The ACP child only shuts down on SIGINT/SIGTERM and deliberately survives
+// Gateway loss by reconnecting, so quit cleanup must signal it explicitly.
+const ACP_STOP_SIGTERM_GRACE_MS = 3_000;
+const ACP_STOP_SIGKILL_WAIT_MS = 1_000;
 
 const ACP_GATEWAY_WAIT_TIMEOUT_MS = 30_000;
 const ACP_CONNECT_ATTEMPTS = 3;
@@ -100,12 +115,44 @@ function fail(error: unknown): AcpChatOperationResult {
   return { success: false, error: error instanceof Error ? error.message : String(error) };
 }
 
+function failSessionFamily(error: unknown): AcpSessionFamilyResult {
+  return {
+    success: false,
+    current: null,
+    children: [],
+    error: error instanceof Error ? error.message : String(error),
+  };
+}
+
 function cancelledPermissionResponse(): RequestPermissionResponse {
   return { outcome: { outcome: 'cancelled' } };
 }
 
 function isValidSessionKey(value: unknown): value is string {
   return typeof value === 'string' && value.startsWith('agent:') && value.length > 'agent:'.length;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isAcpSessionInfo(value: unknown): value is SessionInfo {
+  return isPlainRecord(value)
+    && typeof value.sessionId === 'string'
+    && value.sessionId.length > 0
+    && typeof value.cwd === 'string';
+}
+
+function readAcpSessionListPage(value: unknown): { sessions: SessionInfo[]; nextCursor?: unknown } | null {
+  if (!isPlainRecord(value) || !Array.isArray(value.sessions) || !value.sessions.every(isAcpSessionInfo)) {
+    return null;
+  }
+  return {
+    sessions: value.sessions,
+    ...(Object.hasOwn(value, 'nextCursor') ? { nextCursor: value.nextCursor } : {}),
+  };
 }
 
 function sessionUpdateType(notification: SessionNotification): string | undefined {
@@ -156,7 +203,7 @@ function filterAcpStdoutDiagnostics(output: ReadableStream<Uint8Array>): Readabl
 export class AcpChatService {
   private child: AcpChildProcess | null = null;
   private connection: AcpConnection | null;
-  private initializing: Promise<AcpConnection> | null = null;
+  private initializationFlight: AcpInitializationFlight | null = null;
   private initialized = false;
   private generation = 0;
   private generationSeq = 0;
@@ -167,6 +214,7 @@ export class AcpChatService {
   private historicalSessionKey: string | null = null;
   private historicalGeneration: number | null = null;
   private permissionsEnabled = false;
+  private sessionListSupported = false;
   private loadQueue: Promise<void> | null = null;
   private activeLoadBatch: AcpSessionLoadBatch | null = null;
   private readonly livePrompts = new Map<string, AcpLivePromptContext>();
@@ -230,6 +278,43 @@ export class AcpChatService {
     return run();
   }
 
+  async getSessionFamily(payload: unknown): Promise<AcpSessionFamilyResult> {
+    if (!isPlainRecord(payload) || !isValidSessionKey(payload.sessionKey)) {
+      return failSessionFamily('Invalid ACP session family payload');
+    }
+
+    try {
+      const connection = await this.ensureConnection();
+      if (!this.sessionListSupported) {
+        return failSessionFamily('ACP agent does not support session/list');
+      }
+
+      const sessions: SessionInfo[] = [];
+      const seenCursors = new Set<string>();
+      let cursor: string | undefined;
+      for (let page = 0; page < ACP_SESSION_LIST_MAX_PAGES; page += 1) {
+        const result = readAcpSessionListPage(await connection.listSessions(cursor ? { cursor } : {}));
+        if (!result) return failSessionFamily('Invalid ACP session/list response');
+        sessions.push(...result.sessions);
+
+        const nextCursor = result.nextCursor;
+        if (nextCursor == null) {
+          return projectAcpSessionFamily(payload.sessionKey, sessions);
+        }
+        if (typeof nextCursor !== 'string' || !nextCursor.trim() || seenCursors.has(nextCursor)) {
+          return failSessionFamily('Invalid ACP session/list cursor');
+        }
+        seenCursors.add(nextCursor);
+        cursor = nextCursor;
+      }
+
+      return failSessionFamily(`ACP session/list exceeded ${ACP_SESSION_LIST_MAX_PAGES} pages`);
+    } catch (error) {
+      logger.error(`[acp-chat] getSessionFamily failed: ${String(error)}`);
+      return failSessionFamily(error);
+    }
+  }
+
   private async performLoadSession(payload: AcpChatLoadPayload): Promise<AcpChatOperationResult> {
     if (!isValidSessionKey(payload.sessionKey) || !payload.workspaceRoot || !payload.cwd) {
       return fail('Invalid ACP session load payload');
@@ -238,7 +323,11 @@ export class AcpChatService {
     this.permissionsEnabled = false;
     this.trace('session/load:start', {
       sessionKey: payload.sessionKey,
-      details: { createIfMissing: !!payload.createIfMissing, cwdPresent: Boolean(payload.cwd) },
+      details: {
+        createIfMissing: !!payload.createIfMissing,
+        forceDurableReplay: !!payload.forceDurableReplay,
+        cwdPresent: Boolean(payload.cwd),
+      },
     });
 
     let previousSessionKey = this.activeSessionKey;
@@ -321,7 +410,8 @@ export class AcpChatService {
 
       this.generation = nextGeneration;
       this.activeSessionKey = payload.sessionKey;
-      this.activeAcpSessionId = payload.createIfMissing ? null : payload.sessionKey;
+      const createFreshAcpSession = !!payload.createIfMissing || !!payload.forceDurableReplay;
+      this.activeAcpSessionId = createFreshAcpSession ? null : payload.sessionKey;
       this.loadedSessionKey = null;
       this.loadedAcpSessionId = null;
       this.historicalSessionKey = payload.createIfMissing ? null : payload.sessionKey;
@@ -338,7 +428,7 @@ export class AcpChatService {
       }
 
       let acpSessionId = payload.sessionKey;
-      if (payload.createIfMissing) {
+      if (createFreshAcpSession) {
         const created = await connection.newSession({
           cwd: preparedAccessGrant.executionCwd,
           mcpServers: [],
@@ -360,7 +450,11 @@ export class AcpChatService {
       this.trace('session/load:success', {
         sessionKey: payload.sessionKey,
         generation: nextGeneration,
-        details: { createIfMissing: !!payload.createIfMissing, acpSessionId },
+        details: {
+          createIfMissing: !!payload.createIfMissing,
+          forceDurableReplay: !!payload.forceDurableReplay,
+          acpSessionId,
+        },
       });
       if (this.activeLoadBatch === loadBatch) this.activeLoadBatch = null;
       return ok(
@@ -534,15 +628,61 @@ export class AcpChatService {
     return ok(waiter.generation);
   }
 
+  /**
+   * Terminates the owned ACP child process (openclaw-acp).
+   *
+   * The child only shuts down on SIGINT/SIGTERM — it neither watches stdin EOF
+   * nor its parent PID, and it reconnects when the Gateway disappears, so it
+   * must be signalled explicitly or it will be orphaned when ClawX quits.
+   */
+  async stop(sigtermGraceMs: number = ACP_STOP_SIGTERM_GRACE_MS): Promise<void> {
+    const child = this.child;
+    if (!child) return;
+
+    if (child.exitCode !== null || child.signalCode) {
+      this.dropConnectionForChild(child);
+      return;
+    }
+
+    this.trace('connection/stop:start', {});
+    const exited = this.waitForChildExit(child);
+    child.kill('SIGTERM');
+
+    const stoppedGracefully = await Promise.race([
+      exited.then(() => true),
+      new Promise<'sigterm-timeout'>((resolve) => {
+        setTimeout(() => resolve('sigterm-timeout'), sigtermGraceMs).unref();
+      }),
+    ]);
+    if (stoppedGracefully === true) return;
+
+    this.trace('connection/stop:timeout', { details: { sigtermGraceMs } });
+    try {
+      child.kill('SIGKILL');
+    } catch (error) {
+      logger.warn(`[acp-chat] ACP SIGKILL failed: ${String(error)}`);
+      return;
+    }
+    await Promise.race([
+      exited,
+      new Promise((resolve) => {
+        setTimeout(resolve, ACP_STOP_SIGKILL_WAIT_MS).unref();
+      }),
+    ]);
+  }
+
   private async ensureConnection(): Promise<AcpConnection> {
     if (this.connection && this.initialized) return this.connection;
-    if (this.initializing) return this.initializing;
+    if (this.initializationFlight?.promise) return this.initializationFlight.promise;
 
-    this.initializing = this.initializeConnection();
+    const flight: AcpInitializationFlight = { promise: null };
+    this.initializationFlight = flight;
+    const initializing = this.initializeConnection(flight);
+    flight.promise = initializing;
     try {
-      return await this.initializing;
+      return await initializing;
     } finally {
-      this.initializing = null;
+      if (this.initializationFlight === flight) this.initializationFlight = null;
     }
   }
 
@@ -594,8 +734,6 @@ export class AcpChatService {
 
   private resetFailedConnectionAttempt(): void {
     const child = this.child;
-    // Keep `this.initializing` intact so concurrent ensureConnection callers
-    // continue awaiting this in-flight bootstrap instead of spawning a second ACP.
     this.initialized = false;
     this.connection = null;
     this.child = null;
@@ -607,10 +745,13 @@ export class AcpChatService {
     }
   }
 
-  private async initializeConnection(): Promise<AcpConnection> {
+  private async initializeConnection(flight: AcpInitializationFlight): Promise<AcpConnection> {
     this.lastChildDiagnostics = '';
     await this.waitForGatewayAcceptingConnections();
     await this.approveLocalDeviceRequests();
+    if (this.initializationFlight !== flight) {
+      throw new Error('ACP initialization was superseded');
+    }
 
     let lastError: unknown;
     for (let attempt = 1; attempt <= ACP_CONNECT_ATTEMPTS; attempt++) {
@@ -620,6 +761,10 @@ export class AcpChatService {
         lastError = error;
         // stderr 'data' can land slightly after 'exit'; give it a beat before classifying.
         await delay(25);
+        if (this.initializationFlight !== flight) {
+          if (this.initializationFlight !== null) throw error;
+          this.initializationFlight = flight;
+        }
         const message = error instanceof Error ? error.message : String(error);
         const shouldRetry =
           isRetryableAcpLaunchError(message, this.lastChildDiagnostics)
@@ -634,6 +779,7 @@ export class AcpChatService {
         await this.waitForGatewayAcceptingConnections();
         await this.approveLocalDeviceRequests();
         await delay(250 * attempt);
+        if (this.initializationFlight !== flight) throw error;
       }
     }
 
@@ -667,6 +813,7 @@ export class AcpChatService {
       this.trace('connection/initialize:failed', { details: { reason: 'missing-loadSession-capability' } });
       throw new Error('ACP agent does not support session/load');
     }
+    this.sessionListSupported = isPlainRecord(result.agentCapabilities.sessionCapabilities?.list);
     this.initialized = true;
     this.trace('connection/initialize:success', { details: { protocolVersion: PROTOCOL_VERSION, attempt } });
 
@@ -745,9 +892,7 @@ export class AcpChatService {
     this.trace('connection/dropped', { details: { pendingPermissionCount: this.permissionWaiters.size } });
     this.resolveAllPermissionWaiters(cancelledPermissionResponse());
     this.initialized = false;
-    // Do not clear `this.initializing` here. Concurrent ensureConnection callers
-    // must keep awaiting the in-flight bootstrap promise; ensureConnection's
-    // finally block clears it when bootstrap settles.
+    this.initializationFlight = null;
     this.connection = null;
     this.child = null;
     this.loadedSessionKey = null;
@@ -755,6 +900,7 @@ export class AcpChatService {
     this.historicalSessionKey = null;
     this.historicalGeneration = null;
     this.permissionsEnabled = false;
+    this.sessionListSupported = false;
     this.livePrompts.clear();
   }
 
@@ -891,7 +1037,12 @@ export class AcpChatService {
       const fsP = await import('node:fs/promises');
       for (const item of media) {
         const mimeType = item.mimeType || 'application/octet-stream';
-        if (mimeType.startsWith('image/')) {
+        // A native file picker or drag/drop already gives Main a stable path.
+        // Keep that image as an ACP resource link: OpenClaw otherwise converts
+        // inline image bytes into a second ~/.openclaw/media/inbound file for
+        // text-only models, hiding the source path from the agent. Clipboard
+        // images have no stable source and must continue through inline bytes.
+        if (mimeType.startsWith('image/') && item.sourceKind !== 'path') {
           const data = await fsP.readFile(item.filePath, 'base64');
           blocks.push({
             type: 'image',
@@ -926,10 +1077,22 @@ export class AcpChatService {
   }
 }
 
+let activeInstance: AcpChatService | null = null;
+
+/**
+ * The AcpChatService created for this app run, or null before chat handlers
+ * are registered. Quit cleanup uses this to terminate the ACP child process.
+ */
+export function getActiveAcpChatService(): AcpChatService | null {
+  return activeInstance;
+}
+
 export function createAcpChatService(
   mainWindow: MainWindowLike,
   accessRegistry: AcpSessionAccessRegistry,
   gateway?: GatewayPairingRpcClient,
 ): AcpChatService {
-  return new AcpChatService(mainWindow, accessRegistry, undefined, gateway);
+  const service = new AcpChatService(mainWindow, accessRegistry, undefined, gateway);
+  activeInstance = service;
+  return service;
 }

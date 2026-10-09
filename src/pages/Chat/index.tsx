@@ -2,15 +2,21 @@
  * Chat Page
  * ACP-native runtime rendering through the ordered inline timeline.
  */
-import { Suspense, lazy, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ArrowDownToLine, FolderOpen } from 'lucide-react';
+import {
+  Suspense, lazy, useCallback, useDeferredValue, useEffect,
+  useMemo, useRef, useState, type SetStateAction,
+} from 'react';
+import { AlertTriangle, ArrowDownToLine, ArrowLeft, BotMessageSquare, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { DEFAULT_SESSION_KEY } from '@shared/chat/types';
+import type { AcpSessionFamilyResult } from '@shared/acp-chat/types';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { useChatStore } from '@/stores/chat';
+import { useComposerDraftStore } from '@/stores/composer-drafts';
 import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useSettingsStore } from '@/stores/settings';
 import { ensureAcpChatSubscriptions, useAcpChatSessionStore } from '@/stores/acp-chat-session';
@@ -23,8 +29,11 @@ import {
   resolveEffectiveWorkspace,
 } from '@/lib/workspace-context';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
+import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
 import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
-import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
+import { getCurrentAcpPlan } from '@/lib/acp/current-plan';
+import type { MessageSegmentItem, RenderPart, ToolCallItem } from '@/lib/acp/timeline-types';
+import type { AcpTurnTiming } from '@/lib/acp/turn-timings';
 import { createEmptyAcpTimeline } from '@/lib/acp/reducer';
 import { projectOpenClawFileActivities, type AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { projectAcpObservedWorkflow } from '@/lib/acp/observed-workflow-projection';
@@ -45,6 +54,9 @@ import { WorkflowTurnBlock } from './WorkflowTurnBlock';
 import { buildConversationBlocks } from './workflow-timeline-merge';
 import { groupAcpTimelineItems } from '@/lib/acp/timeline-groups';
 import { WorkflowFloatingPanel } from './WorkflowFloatingPanel';
+import { projectSessionRunState } from '@/stores/chat/session-status';
+import { formatSubagentSessionTitle, isNativeSubagentSessionKey } from '@/stores/chat/session-key-utils';
+import type { AcpSubagentSession } from './AcpSubagentSessions';
 
 const ArtifactPanelLazy = lazy(() =>
   import('@/components/file-preview/ArtifactPanel').then((m) => ({ default: m.ArtifactPanel })),
@@ -60,10 +72,34 @@ const EMPTY_FILE_ACTIVITY: AcpFileActivityProjection = {
   uniqueFileCount: 0,
 };
 
+// A session switch remounts Chat before the child catalog row is refreshed.
+const activeSubagentSessionKeys = new Set<string>();
+
 type WorkspaceContextCheck = {
   key: string;
   available: boolean;
 };
+
+type LoadedAcpSessionFamily = {
+  sessionKey: string;
+  result: Extract<AcpSessionFamilyResult, { success: true }>;
+};
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function successfulSessionSpawnIdentity(item: ToolCallItem): string | null {
+  const toolName = item.title.split(':', 1)[0]?.trim();
+  if (toolName !== 'sessions_spawn' || item.status !== 'completed') return null;
+  const details = recordValue(recordValue(item.output)?.details);
+  if (details?.status !== 'accepted') return null;
+  const runId = typeof details.runId === 'string' ? details.runId.trim() : '';
+  const childSessionKey = typeof details.childSessionKey === 'string' ? details.childSessionKey.trim() : '';
+  return runId && childSessionKey ? `${item.toolCallId}\0${runId}\0${childSessionKey}` : null;
+}
 
 function buildQuestionDirectoryTitle(item: MessageSegmentItem, fallback: string): string {
   const markdown = item.parts.find(
@@ -80,6 +116,19 @@ function buildQuestionDirectoryTitle(item: MessageSegmentItem, fallback: string)
 
 function isRecoverableInitialAcpLoadError(message: string | null): boolean {
   return !!message && message.includes("reply was never sent");
+}
+
+function AcpLoadingState() {
+  const [showSpinner, setShowSpinner] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setShowSpinner(true), 200);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center" aria-busy="true">
+      {showSpinner && <div data-testid="acp-chat-loading"><LoadingSpinner size="md" /></div>}
+    </div>
+  );
 }
 
 function AcpEmptyState() {
@@ -140,13 +189,15 @@ export function Chat() {
   const sessions = useChatStore((s) => s.sessions);
   const sessionLabels = useChatStore((s) => s.sessionLabels);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
+  const composerDraft = useComposerDraftStore((s) => s.drafts[currentSessionKey] ?? '');
+  const setComposerDraft = useComposerDraftStore((s) => s.setDraft);
   const loadSessions = useChatStore((s) => s.loadSessions);
+  const switchSession = useChatStore((s) => s.switchSession);
   const selectAcpSession = useChatStore((s) => s.selectAcpSession);
   const acknowledgeAcpSessionCreated = useChatStore((s) => s.acknowledgeAcpSessionCreated);
   const setSessionWorkspaceOverride = useChatStore((s) => s.setSessionWorkspaceOverride);
   const setSessionModelOverride = useChatStore((s) => s.setSessionModelOverride);
   const routeAndMaybeStartWorkflow = useChatStore((s) => s.routeAndMaybeStartWorkflow);
-  const workflowRoutingSessionKey = useChatStore((s) => s.workflowRoutingSessionKey);
   const ingestAcpObservedWorkflow = useChatStore((s) => s.ingestAcpObservedWorkflow);
   const failObservedWorkflow = useChatStore((s) => s.failObservedWorkflow);
   const healStaleObservedWorkflows = useChatStore((s) => s.healStaleObservedWorkflows);
@@ -154,10 +205,13 @@ export function Chat() {
   const getWorkflowSkillByReadPath = useSkillWorkflowStore((s) => s.getWorkflowSkillByReadPath);
   const workflowSkillsByName = useSkillWorkflowStore((s) => s.byName);
   const setVisibleSession = useSessionAttentionStore((s) => s.setVisibleSession);
+  const sessionAttentionByKey = useSessionAttentionStore((s) => s.bySessionKey);
+  const markSessionRead = useSessionAttentionStore((s) => s.markRead);
   const chatWorkspacePath = useSettingsStore((s) => s.chatWorkspacePath);
   const recentWorkspacePaths = useSettingsStore((s) => s.recentWorkspacePaths ?? []);
   const workspaceLabels = useSettingsStore((s) => s.workspaceLabels);
   const setChatWorkspacePath = useSettingsStore((s) => s.setChatWorkspacePath);
+  const removeWorkspace = useSettingsStore((s) => s.removeWorkspace);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
   const agents = useAgentsStore((s) => s.agents);
   const [sessionDiscoveryAttempted, setSessionDiscoveryAttempted] = useState(false);
@@ -170,13 +224,16 @@ export function Chat() {
     executionCwd: string;
   } | null>(null);
   const [workspaceContextCheck, setWorkspaceContextCheck] = useState<WorkspaceContextCheck | null>(null);
+  const [loadedSessionFamily, setLoadedSessionFamily] = useState<LoadedAcpSessionFamily | null>(null);
   const currentSession = useMemo(
     () => sessions.find((session) => session.key === currentSessionKey) ?? null,
     [currentSessionKey, sessions],
   );
-  const currentSessionTitle = currentSession
-    ? getSessionDisplayTitle(currentSession, sessionLabels)
-    : currentSessionKey;
+  const catalogSessionTitle = currentSession?.createdLocally
+    ? t('newSession')
+    : currentSession
+      ? getSessionDisplayTitle(currentSession, sessionLabels)
+      : currentSessionKey;
   const allWorkspacePaths = useMemo(() => {
     const seen = new Set<string>();
     const paths: string[] = [];
@@ -196,6 +253,38 @@ export function Chat() {
     }
     return paths;
   }, [chatWorkspacePath, recentWorkspacePaths, sessions]);
+  const unreferencedRecentWorkspacePaths = useMemo(() => {
+    if (agents.length === 0) return [];
+    const referencedPaths = new Set(
+      [
+        chatWorkspacePath,
+        ...agents.map((agent) => agent.workspace),
+        ...sessions.map((session) => session.workspacePath).filter((path): path is string => !!path),
+      ]
+        .map((path) => normalizeWorkspacePath(path))
+        .filter((path): path is string => Boolean(path)),
+    );
+    return recentWorkspacePaths.filter((path) => {
+      const normalized = normalizeWorkspacePath(path);
+      return Boolean(
+        normalized
+        && !isDefaultWorkspacePath(normalized)
+        && !referencedPaths.has(normalized),
+      );
+    });
+  }, [agents, chatWorkspacePath, recentWorkspacePaths, sessions]);
+  const unreferencedWorkspaceAvailability = useWorkspaceAvailability(unreferencedRecentWorkspacePaths);
+
+  useEffect(() => {
+    const unavailablePaths = unreferencedRecentWorkspacePaths.filter(
+      (path) => unreferencedWorkspaceAvailability[path] === 'unavailable',
+    );
+    if (unavailablePaths.length === 0) return;
+    void removeWorkspace(unavailablePaths[0]!, unavailablePaths.slice(1)).catch((error) => {
+      console.warn('[chat] Failed to prune unavailable recent workspaces:', error);
+    });
+  }, [removeWorkspace, unreferencedRecentWorkspacePaths, unreferencedWorkspaceAvailability]);
+
   const workspaceOptions = useMemo<ChatWorkspaceOption[]>(() => {
     return allWorkspacePaths.map((normalized) => ({
       path: normalized,
@@ -231,16 +320,20 @@ export function Chat() {
   );
 
   const acpTimeline = useAcpChatSessionStore((s) => s.timeline);
+  const acpActiveSessionKey = useAcpChatSessionStore((s) => s.activeSessionKey);
   const renderedAcpTimeline = useDeferredValue(acpTimeline);
   const emptyCurrentTimeline = useMemo(
     () => createEmptyAcpTimeline(currentSessionKey ?? '', 0),
     [currentSessionKey],
   );
-  const visibleAcpTimeline = renderedAcpTimeline.sessionId === currentSessionKey
-    ? renderedAcpTimeline
-    : acpTimeline.sessionId === currentSessionKey
-      ? acpTimeline
-      : emptyCurrentTimeline;
+  // Defer streaming updates, not session boundaries or the first history render.
+  const canDeferAcpTimeline = renderedAcpTimeline.sessionId === acpTimeline.sessionId
+    && renderedAcpTimeline.loadGeneration === acpTimeline.loadGeneration
+    && renderedAcpTimeline.itemOrder.length > 0
+    && acpTimeline.itemOrder.length > 0;
+  const visibleAcpTimeline = acpTimeline.sessionId === currentSessionKey
+    ? canDeferAcpTimeline ? renderedAcpTimeline : acpTimeline
+    : emptyCurrentTimeline;
   const acpTurnTimings = useAcpChatSessionStore((s) => s.turnTimingsByUserMessageId);
   const acpLoading = useAcpChatSessionStore((s) => s.loading);
   const acpSending = useAcpChatSessionStore((s) => s.sending);
@@ -249,7 +342,6 @@ export function Chat() {
   );
   const acpCancelling = useAcpChatSessionStore((s) => s.cancelling);
   const acpError = useAcpChatSessionStore((s) => s.error);
-  const acpActiveSessionKey = useAcpChatSessionStore((s) => s.activeSessionKey);
   const acpWorkspaceRoot = useAcpChatSessionStore((s) => s.workspaceRoot);
   const acpCwd = useAcpChatSessionStore((s) => s.cwd);
   const prepareLocalAcpSession = useAcpChatSessionStore((s) => s.prepareLocalSession);
@@ -258,16 +350,40 @@ export function Chat() {
   const cancelAcp = useAcpChatSessionStore((s) => s.cancel);
   const respondAcpPermission = useAcpChatSessionStore((s) => s.respondPermission);
   const clearAcpError = useAcpChatSessionStore((s) => s.clearError);
-
   const panelOpen = useArtifactPanel((s) => s.open);
   const panelWidthPct = useArtifactPanel((s) => s.widthPct);
   const closeArtifactPanel = useArtifactPanel((s) => s.close);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const acpLoadInFlightKeyRef = useRef<string | null>(null);
+  const familyRequestIdRef = useRef(0);
+  const selectedFamilySessionKeyRef = useRef(currentSessionKey);
+  const spawnInvalidationRef = useRef({ sessionKey: '', signature: '' });
   const { contentRef, scrollRef, scrollToBottom, isAtBottom } = useStickToBottomInstant(
     currentSessionKey,
     acpSending || acpCancelling,
   );
+  selectedFamilySessionKeyRef.current = currentSessionKey;
+
+  const loadCurrentSessionFamily = useCallback((sessionKey: string) => {
+    const requestId = ++familyRequestIdRef.current;
+    void hostApi.chat.getAcpSessionFamily({ sessionKey }).then((result) => {
+      if (
+        requestId !== familyRequestIdRef.current
+        || selectedFamilySessionKeyRef.current !== sessionKey
+        || !result.success
+      ) return;
+      setLoadedSessionFamily({ sessionKey, result });
+    }).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    familyRequestIdRef.current += 1;
+    setLoadedSessionFamily((current) => current?.sessionKey === currentSessionKey ? current : null);
+    if (currentSessionKey) loadCurrentSessionFamily(currentSessionKey);
+    return () => {
+      familyRequestIdRef.current += 1;
+    };
+  }, [currentSessionKey, loadCurrentSessionFamily]);
 
   useEffect(() => {
     setVisibleSession(currentSessionKey);
@@ -328,6 +444,10 @@ export function Chat() {
   const workspaceUnavailable = !!workspaceContextKey
     && workspaceContextCheck?.key === workspaceContextKey
     && !workspaceContextCheck.available;
+  const acpPresentationPending = !currentSession?.createdLocally && (
+    acpLoading
+    || (acpTimeline.sessionId !== currentSessionKey && !workspaceUnavailable)
+  );
 
   useEffect(() => {
     if (currentSessionKey !== DEFAULT_SESSION_KEY || sessions.length > 0 || sessionDiscoveryAttempted) return;
@@ -380,7 +500,6 @@ export function Chat() {
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
   const isWindows = platform === 'win32';
-  const composerBusy = acpSending || acpCancelling || workflowRoutingSessionKey === currentSessionKey;
   const showScrollToLatest = visibleAcpTimeline.itemOrder.length > 0 && !isAtBottom;
   const hasAttemptedAcpPromptForCurrentSession = lastPromptAttemptSessionKey === currentSessionKey;
   const visibleAcpError = !workspaceUnavailable && acpError
@@ -544,10 +663,6 @@ export function Chat() {
     () => buildConversationBlocks(groupAcpTimelineItems(visibleAcpTimeline), sortedWorkflowCards),
     [visibleAcpTimeline, sortedWorkflowCards],
   );
-  const streamingSegmentIds = useMemo(
-    () => streamingMessageSegmentIds(visibleAcpTimeline, acpSending || acpCancelling),
-    [visibleAcpTimeline, acpSending, acpCancelling],
-  );
   const timelineWorkspaceRoot = resolvedWorkspaceContext?.key === workspaceContextKey
     ? resolvedWorkspaceContext.workspaceRoot
     : undefined;
@@ -560,10 +675,151 @@ export function Chat() {
   // session's content under the new key: treat a mismatch as loading. The
   // `acpActiveSessionKey !== null` precondition keeps cold-start / default empty
   // sessions on the welcome screen instead of a spurious spinner.
-  const acpTimelineMatchesSession =
-    acpActiveSessionKey === currentSessionKey && acpTimeline.sessionId === currentSessionKey;
-  const acpTransitionPending = acpActiveSessionKey !== null && !acpTimelineMatchesSession;
-  const showAcpLoading = acpLoading || acpTransitionPending;
+  const composerContextUsage = visibleAcpTimeline.metadata.usage;
+  const currentPlan = useMemo(
+    () => visibleAcpTimeline.sessionId === currentSessionKey
+      ? getCurrentAcpPlan(visibleAcpTimeline)
+      : null,
+    [currentSessionKey, visibleAcpTimeline],
+  );
+  const successfulSpawnSignature = useMemo(() => {
+    if (visibleAcpTimeline.sessionId !== currentSessionKey) return '';
+    return visibleAcpTimeline.itemOrder
+      .map((itemId) => visibleAcpTimeline.itemsById[itemId])
+      .filter((item): item is ToolCallItem => item?.kind === 'tool-call')
+      .map(successfulSessionSpawnIdentity)
+      .filter((identity): identity is string => identity !== null)
+      .join('\n');
+  }, [currentSessionKey, visibleAcpTimeline]);
+  useEffect(() => {
+    const previous = spawnInvalidationRef.current;
+    if (previous.sessionKey !== currentSessionKey) {
+      spawnInvalidationRef.current = { sessionKey: currentSessionKey, signature: successfulSpawnSignature };
+      return;
+    }
+    if (previous.signature === successfulSpawnSignature) return;
+    spawnInvalidationRef.current = { sessionKey: currentSessionKey, signature: successfulSpawnSignature };
+    if (successfulSpawnSignature) loadCurrentSessionFamily(currentSessionKey);
+  }, [currentSessionKey, loadCurrentSessionFamily, successfulSpawnSignature]);
+  const visibleSessionFamily = loadedSessionFamily?.sessionKey === currentSessionKey
+    ? loadedSessionFamily.result
+    : null;
+  const catalogSessionByKey = useMemo(
+    () => new Map(sessions.map((session) => [session.key, session])),
+    [sessions],
+  );
+  const currentCatalogSession = catalogSessionByKey.get(currentSessionKey);
+  const currentSessionRunState = currentCatalogSession
+    ? projectSessionRunState(currentCatalogSession)
+    : 'unknown';
+  const subagentSessions = useMemo<AcpSubagentSession[]>(() => {
+    if (!visibleSessionFamily) return [];
+    return visibleSessionFamily.children.flatMap((child) => {
+      const catalogSession = catalogSessionByKey.get(child.sessionKey);
+      if (!catalogSession) return [];
+      const runState = catalogSession ? projectSessionRunState(catalogSession) : 'unknown';
+      return [{
+        sessionKey: child.sessionKey,
+        title: child.title,
+        busy: runState === 'busy'
+          || (runState === 'unknown' && sessionAttentionByKey[child.sessionKey]?.observedBusy === true),
+      }];
+    });
+  }, [catalogSessionByKey, sessionAttentionByKey, visibleSessionFamily]);
+  useEffect(() => {
+    for (const session of subagentSessions) {
+      if (!session.busy) activeSubagentSessionKeys.delete(session.sessionKey);
+    }
+    if (currentSessionRunState === 'idle') {
+      activeSubagentSessionKeys.delete(currentSessionKey);
+    }
+  }, [currentSessionKey, currentSessionRunState, subagentSessions]);
+  const isCurrentSessionSubagent = visibleSessionFamily?.current?.sessionKey === currentSessionKey
+    && isNativeSubagentSessionKey(currentSessionKey);
+  const currentSessionTitle = isNativeSubagentSessionKey(currentSessionKey)
+    ? isCurrentSessionSubagent
+      ? formatSubagentSessionTitle(currentSessionKey, visibleSessionFamily.current!.title)
+      : currentSessionKey
+    : catalogSessionTitle;
+  const familyParentSessionKey = isCurrentSessionSubagent
+    ? visibleSessionFamily.current?.parentSessionKey
+    : null;
+  const directParentSessionKey = familyParentSessionKey && catalogSessionByKey.has(familyParentSessionKey)
+    ? familyParentSessionKey
+    : null;
+  const currentSubagentBusy = isCurrentSessionSubagent && (
+    currentSessionRunState === 'busy'
+    || (currentSessionRunState === 'unknown' && (
+      sessionAttentionByKey[currentSessionKey]?.observedBusy === true
+      || activeSubagentSessionKeys.has(currentSessionKey)
+    ))
+  );
+  const completedSubagentTurn = useMemo(() => {
+    if (!currentSubagentBusy) return null;
+    for (let index = visibleAcpTimeline.itemOrder.length - 1; index >= 0; index -= 1) {
+      const item = visibleAcpTimeline.itemsById[visibleAcpTimeline.itemOrder[index]];
+      if (item?.kind !== 'message-segment' || item.role !== 'user') continue;
+      const timing = acpTurnTimings[item.messageId];
+      if (timing?.status === 'complete') {
+        return { messageId: item.messageId, durationMs: timing.durationMs };
+      }
+    }
+    return null;
+  }, [acpTurnTimings, currentSubagentBusy, visibleAcpTimeline]);
+  const [liveSubagentTurn, setLiveSubagentTurn] = useState<{
+    sessionKey: string;
+    messageId: string;
+    startedAtMs: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!completedSubagentTurn) {
+      setLiveSubagentTurn((current) => (
+        current?.sessionKey === currentSessionKey ? null : current
+      ));
+      return;
+    }
+    setLiveSubagentTurn((current) => (
+      current?.sessionKey === currentSessionKey && current.messageId === completedSubagentTurn.messageId
+        ? current
+        : {
+            sessionKey: currentSessionKey,
+            messageId: completedSubagentTurn.messageId,
+            startedAtMs: Date.now() - completedSubagentTurn.durationMs,
+          }
+    ));
+  }, [completedSubagentTurn, currentSessionKey]);
+  const visibleTurnTimings = useMemo(() => {
+    if (liveSubagentTurn?.sessionKey !== currentSessionKey) return acpTurnTimings;
+    return {
+      ...acpTurnTimings,
+      [liveSubagentTurn.messageId]: {
+        source: 'live',
+        status: 'running',
+        startedAtMs: liveSubagentTurn.startedAtMs,
+      } satisfies AcpTurnTiming,
+    };
+  }, [acpTurnTimings, currentSessionKey, liveSubagentTurn]);
+  const navigateToSession = useCallback((sessionKey: string) => {
+    if (!useChatStore.getState().sessions.some((session) => session.key === sessionKey)) return;
+    markSessionRead(sessionKey);
+    if (sessionKey !== currentSessionKey) switchSession(sessionKey);
+  }, [currentSessionKey, markSessionRead, switchSession]);
+  const selectSubagentSession = useCallback((sessionKey: string) => {
+    if (
+      projectSessionRunState(catalogSessionByKey.get(sessionKey) ?? {}) === 'busy'
+      || sessionAttentionByKey[sessionKey]?.observedBusy === true
+    ) {
+      activeSubagentSessionKeys.add(sessionKey);
+    }
+    navigateToSession(sessionKey);
+  }, [catalogSessionByKey, navigateToSession, sessionAttentionByKey]);
+  const streamingSegmentIds = useMemo(
+    () => streamingMessageSegmentIds(visibleAcpTimeline, acpSending || acpCancelling || currentSubagentBusy),
+    [visibleAcpTimeline, acpSending, acpCancelling, currentSubagentBusy],
+  );
+  const handleComposerDraftChange = useCallback((update: SetStateAction<string>) => {
+    setComposerDraft(currentSessionKey, update);
+  }, [currentSessionKey, setComposerDraft]);
 
   return (
     <div
@@ -577,21 +833,49 @@ export function Chat() {
       )}
       style={{ height: isMac ? 'calc(100vh - 1px)' : 'calc(100vh - 2.5rem)' }}
     >
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className={cn(
           'relative flex shrink-0 items-center px-4 py-2',
           isWindows ? 'gap-4' : 'justify-end',
         )}>
           <div data-testid="chat-toolbar-drag-region" className="drag-region absolute inset-0 z-0" aria-hidden="true" />
-          {isWindows && (
-            <div className="drag-region relative z-10 min-w-0 flex-1">
-              <h1
-                data-testid="chat-session-title"
-                title={currentSessionTitle}
-                className="truncate text-sm font-medium text-foreground"
-              >
-                {currentSessionTitle}
-              </h1>
+          {(isWindows || isCurrentSessionSubagent) && (
+            <div className={cn(
+              'relative z-10 flex min-w-0 flex-1 items-center gap-2',
+              isWindows ? 'drag-region' : 'no-drag',
+            )}>
+              {isWindows && (
+                <h1
+                  data-testid="chat-session-title"
+                  title={currentSessionTitle}
+                  className="min-w-0 truncate text-sm font-medium text-foreground"
+                >
+                  {currentSessionTitle}
+                </h1>
+              )}
+              {isCurrentSessionSubagent && (
+                <>
+                  <Badge
+                    variant="secondary"
+                    data-testid="chat-subagent-marker"
+                    className="no-drag shrink-0 gap-1 px-1.5 py-0.5 text-2xs font-medium"
+                  >
+                    <BotMessageSquare aria-hidden="true" className="h-3 w-3" />
+                    {t('acp.subagentSessions.marker')}
+                  </Badge>
+                  {directParentSessionKey && (
+                    <button
+                      type="button"
+                      onClick={() => navigateToSession(directParentSessionKey)}
+                      aria-label={t('acp.subagentSessions.returnToParent')}
+                      className="no-drag inline-flex min-w-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10"
+                    >
+                      <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{t('acp.subagentSessions.returnToParent')}</span>
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           )}
           <div data-testid="chat-toolbar-actions" className="no-drag relative z-10">
@@ -619,11 +903,11 @@ export function Chat() {
                       onChooseWorkspace={effectiveWorkspace.readOnly ? undefined : () => void chooseReplacementWorkspace()}
                     />
                   )}
-                  {visibleAcpError && <AcpErrorBanner message={visibleAcpError} onDismiss={clearAcpError} />}
-                  {showAcpLoading ? (
-                    <div className="flex min-h-[40vh] items-center justify-center" data-testid="acp-chat-loading">
-                      <LoadingSpinner size="md" />
-                    </div>
+                  {visibleAcpError && (acpPresentationPending || conversationBlocks.length === 0) && (
+                    <AcpErrorBanner message={visibleAcpError} kind={hasAttemptedAcpPromptForCurrentSession ? 'prompt' : 'load'} onDismiss={clearAcpError} />
+                  )}
+                  {acpPresentationPending ? (
+                    <AcpLoadingState key={currentSessionKey} />
                   ) : conversationBlocks.length === 0 ? (
                     <AcpEmptyState />
                   ) : (
@@ -636,7 +920,7 @@ export function Chat() {
                             streamingSegmentIds={streamingSegmentIds}
                             fileActivity={fileActivity}
                             workspaceRoot={timelineWorkspaceRoot}
-                            timing={block.group.kind !== 'user' && block.group.userMessageId ? acpTurnTimings?.[block.group.userMessageId] : undefined}
+                            timing={block.group.kind !== 'user' && block.group.userMessageId ? visibleTurnTimings?.[block.group.userMessageId] : undefined}
                             onPermissionSelect={(requestId, optionId) => {
                               void respondAcpPermission(requestId, optionId);
                             }}
@@ -646,6 +930,9 @@ export function Chat() {
                         ),
                       )}
                     </div>
+                  )}
+                  {visibleAcpError && !acpPresentationPending && conversationBlocks.length > 0 && (
+                    <AcpErrorBanner message={visibleAcpError} kind={hasAttemptedAcpPromptForCurrentSession ? 'prompt' : 'load'} onDismiss={clearAcpError} />
                   )}
                 </div>
               </div>
@@ -667,7 +954,10 @@ export function Chat() {
           </div>
         </div>
 
-        <ChatInput
+        {(!isCurrentSessionSubagent || currentSubagentBusy) && <ChatInput
+          draft={composerDraft}
+          draftKey={currentSessionKey}
+          onDraftChange={handleComposerDraftChange}
           onSend={(text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => {
             if (!currentSessionKey || !cwd || !workspaceContextAvailable) return;
             const targetAgent = targetAgentId
@@ -689,6 +979,7 @@ export function Chat() {
               .map((file) => ({
                 filePath: file.stagedPath,
                 stagingId: file.id,
+                sourceKind: file.sourceKind,
                 fileName: file.fileName,
                 mimeType: file.mimeType,
               }));
@@ -764,7 +1055,8 @@ export function Chat() {
             void cancelAcp();
           }}
           disabled={acpLoading || acpCancelling || !cwd || !workspaceContextAvailable}
-          sending={composerBusy}
+          sending={isCurrentSessionSubagent ? currentSubagentBusy : acpSending || acpCancelling}
+          statusOnly={isCurrentSessionSubagent}
           imageGenerating={imageGenerationPending}
           workspaceLabel={workspaceLabel}
           workspacePath={cwd}
@@ -776,7 +1068,11 @@ export function Chat() {
           }}
           sessionModelOverride={sessionModelOverride}
           onSelectModel={handleSelectModel}
-        />
+          contextUsage={composerContextUsage}
+          currentPlan={currentPlan}
+          subagentSessions={subagentSessions}
+          onSelectSubagent={selectSubagentSession}
+        />}
       </div>
 
       {panelOpen && (

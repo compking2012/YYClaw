@@ -52,16 +52,21 @@ afterPack: ./scripts/after-pack.cjs
 asar: true
 asarUnpack:
   - "**/*.node"
+  # CUA's UniFFI loader resolves its adjacent platform library relative to its
+  # own module URL. cua-sdk.ts explicitly imports physical unpacked URLs;
+  # unpacking alone does not change Electron's virtual ESM paths. Include the
+  # JS dependencies too so those physical imports can resolve their packages.
+  - "**/node_modules/@trycua/**"
+  - "**/node_modules/@ubjs/**"
   # lru-cache CJS/ESM interop: older CJS versions (v5, v6, v7) don't export
   # `LRUCache` as a named property, breaking `import { LRUCache }` in Node.js
   # 22+ (Electron 40+).  Unpacking lets afterPack patch them in place.
   - "**/node_modules/lru-cache/**"
 
 # Disable native module rebuilding.
-# The Electron renderer/main process has no native (.node) dependencies.
-# All native modules (opus, sharp, koffi …) belong to openclaw, which is
-# bundled separately (bundle-openclaw.mjs → extraResources) and runs in its
-# own process — @electron/rebuild must NOT touch them.
+# The Electron main process uses CUA's prebuilt native package. Other native
+# modules (opus, sharp, koffi …) belong to separately bundled OpenClaw.
+# @electron/rebuild must not replace any of these pinned prebuilt artifacts.
 npmRebuild: false
 
 # Auto-update configuration

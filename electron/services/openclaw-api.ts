@@ -1,11 +1,13 @@
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import { readOpenClawConfigSnapshot } from '../gateway/config-delivery';
 import { getOpenClawCliCommand } from '../utils/openclaw-cli';
-import { ensureDir, getOpenClawSkillsDir, getOpenClawStatus } from '../utils/paths';
+import { ensureDir, getOpenClawSkillsDir, getOpenClawStatus, resolveOpenClawConfigPath } from '../utils/paths';
 import { existsSync } from 'node:fs';
 
 export function createOpenClawApi(): CompleteHostServiceRegistry['openclaw'] {
   return {
     status: () => getOpenClawStatus(),
+    getConfigPath: () => resolveOpenClawConfigPath(),
     getSkillsDir: () => {
       const dir = getOpenClawSkillsDir();
       ensureDir(dir);
@@ -20,6 +22,16 @@ export function createOpenClawApi(): CompleteHostServiceRegistry['openclaw'] {
         return { success: false, error: `OpenClaw entry script not found at: ${status.entryPath}` };
       }
       return { success: true, command: getOpenClawCliCommand() };
+    },
+    getCompactionReserve: async () => {
+      const { config } = await readOpenClawConfigSnapshot();
+      const agents = config.agents as Record<string, unknown> | undefined;
+      const defaults = agents?.defaults as Record<string, unknown> | undefined;
+      const compaction = defaults?.compaction as Record<string, unknown> | undefined;
+      const reserveTokensFloor = compaction?.reserveTokensFloor;
+      return {
+        reserveTokensFloor: typeof reserveTokensFloor === 'number' ? reserveTokensFloor : undefined,
+      };
     },
   };
 }

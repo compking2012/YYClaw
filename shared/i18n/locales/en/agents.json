@@ -61,9 +61,10 @@
         "idPlaceholder": "Leave empty to auto-generate"
     },
     "deleteDialog": {
-        "title": "Delete Agent",
+        "title": "Permanently delete Agent?",
         "message": "Delete \"{{name}}\" from $t(common:appName)? This permanently deletes the agent and its $t(common:appName)-managed workspace, runtime, and session files from disk.",
-        "messageLast": "Delete \"{{name}}\" from $t(common:appName)? This is the last agent, so the list will become empty. You can add a new first agent afterwards."
+        "messageLast": "Delete \"{{name}}\" from $t(common:appName)? This is the last agent, so the list will become empty. You can add a new first agent afterwards.",
+        "confirm": "Permanently delete"
     },
     "settingsDialog": {
         "title": "{{name}} Settings",

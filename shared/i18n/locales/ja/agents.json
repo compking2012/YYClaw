@@ -61,9 +61,10 @@
         "idPlaceholder": "空白の場合は名前から自動生成"
     },
     "deleteDialog": {
-        "title": "Agent を削除",
+        "title": "Agent を完全に削除しますか？",
         "message": "$t(common:appName) から「{{name}}」を削除しますか？この操作により Agent と、その $t(common:appName) 管理下のワークスペース、実行時ファイル、セッションファイルがディスクから完全に削除されます。",
-        "messageLast": "$t(common:appName) から「{{name}}」を削除しますか？これは最後の Agent なので、削除後はリストが空になります。あとから新しい最初の Agent を追加できます。"
+        "messageLast": "$t(common:appName) から「{{name}}」を削除しますか？これは最後の Agent なので、削除後はリストが空になります。あとから新しい最初の Agent を追加できます。",
+        "confirm": "完全に削除"
     },
     "settingsDialog": {
         "title": "{{name}} Settings",

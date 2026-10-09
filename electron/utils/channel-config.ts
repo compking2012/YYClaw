@@ -8,7 +8,13 @@ import { access, mkdir, readFile, writeFile, readdir, stat, rm, rename } from 'f
 import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import { mutateOpenClawConfig } from '../gateway/config-delivery';
+import {
+    assertNoRedactedSentinels,
+    mutateOpenClawConfig,
+    OPENCLAW_REDACTED_SENTINEL,
+    readDurableOpenClawConfig,
+    restoreRedactedSentinelsFromBaseline,
+} from '../gateway/config-delivery';
 import { getOpenClawResolvedDir, resolveOpenClawConfigPath } from './paths';
 import * as logger from './logger';
 import { proxyAwareFetch } from './proxy-fetch';
@@ -21,6 +27,14 @@ import {
     normalizeOpenClawAccountId,
     toOpenClawChannelType,
 } from './channel-alias';
+import {
+    DINGTALK_OFFICIAL_PLUGIN_ID,
+    DINGTALK_PLUGIN_ID,
+    ensureDingTalkPluginActivation,
+    migrateDingTalkChannelSection,
+    migrateDingTalkPluginRegistrations,
+    sanitizeDingTalkChannelConfig,
+} from './dingtalk-plugin-compat';
 
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
@@ -37,7 +51,7 @@ const DEFAULT_ACCOUNT_ID = 'default';
 // credential keys MUST NOT appear at the top level of `channels.<type>`.
 // All other channels get the default account mirrored to the top level
 // so their runtime/plugin can discover the credentials.
-const CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR = new Set(['dingtalk']);
+const CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR = new Set<string>();
 const CHANNEL_TOP_LEVEL_KEYS_TO_KEEP = new Set(['accounts', 'defaultAccount', 'enabled']);
 const WECHAT_STATE_DIR = join(OPENCLAW_DIR, WECHAT_PLUGIN_ID);
 const WECHAT_ACCOUNT_INDEX_FILE = join(WECHAT_STATE_DIR, 'accounts.json');
@@ -159,6 +173,8 @@ function sanitizeChannelSectionsBeforeWrite(config: OpenClawConfig): void {
     }
 
     if (!config.channels) return;
+    migrateDingTalkChannelSection(config);
+    migrateDingTalkPluginRegistrations(config);
     for (const channelType of CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR) {
         const section = config.channels[channelType];
         if (section) {
@@ -594,6 +610,10 @@ export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void>
     await ensureConfigDir();
 
     try {
+        const durableConfig = await readDurableOpenClawConfig(CONFIG_FILE);
+        restoreRedactedSentinelsFromBaseline(config, durableConfig);
+        assertNoRedactedSentinels(config);
+
         // Enable graceful in-process reload authorization for SIGUSR1 flows.
         const commands =
             config.commands && typeof config.commands === 'object'
@@ -674,17 +694,9 @@ async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType:
     }
 
     if (channelType === 'dingtalk') {
-        if (!currentConfig.plugins) {
-            currentConfig.plugins = { allow: ['dingtalk'], enabled: true };
-        } else {
-            currentConfig.plugins.enabled = true;
-            const allow: string[] = Array.isArray(currentConfig.plugins.allow)
-                ? (currentConfig.plugins.allow as string[])
-                : [];
-            if (!allow.includes('dingtalk')) {
-                currentConfig.plugins.allow = [...allow, 'dingtalk'];
-            }
-        }
+        migrateDingTalkChannelSection(currentConfig);
+        migrateDingTalkPluginRegistrations(currentConfig);
+        ensureDingTalkPluginActivation(currentConfig);
     }
 
     if (channelType === 'wecom') {
@@ -831,15 +843,7 @@ function transformChannelConfig(
     }
 
     if (channelType === 'dingtalk') {
-        // The per-account schema uses additionalProperties:false and does
-        // NOT include these legacy/obsolete fields.  Strip them before
-        // writing to accounts.<id> to avoid schema validation errors.
-        //   robotCode  – never existed in the plugin schema; clientId IS the robot code
-        //   corpId     – top-level only, legacy compat, runtime ignores it
-        //   agentId    – top-level only, legacy compat, runtime ignores it
-        delete transformedConfig.robotCode;
-        delete transformedConfig.corpId;
-        delete transformedConfig.agentId;
+        sanitizeDingTalkChannelConfig(transformedConfig, 'account');
     }
 
     return transformedConfig;
@@ -1122,6 +1126,26 @@ export async function getChannelFormValues(channelType: string, accountId?: stri
     return Object.keys(values).length > 0 ? values : undefined;
 }
 
+/** Read an account directly from disk when Main needs an unredacted secret. */
+export async function getDurableChannelConfig(
+    channelType: string,
+    accountId?: string,
+): Promise<ChannelConfigData | undefined> {
+    const config = await readDurableOpenClawConfig();
+    const resolvedChannelType = resolveStoredChannelType(channelType);
+    const channels = config.channels && typeof config.channels === 'object' && !Array.isArray(config.channels)
+        ? config.channels as Record<string, ChannelConfigData>
+        : undefined;
+    const channelSection = channels?.[resolvedChannelType];
+    if (!channelSection) return undefined;
+
+    const resolvedAccountId = accountId || DEFAULT_ACCOUNT_ID;
+    const accounts = getChannelAccountsMap(channelSection);
+    if (accounts?.[resolvedAccountId]) return accounts[resolvedAccountId];
+    if (!accounts || Object.keys(accounts).length === 0) return channelSection;
+    return undefined;
+}
+
 export async function deleteChannelAccountConfig(channelType: string, accountId: string): Promise<void> {
     const resolvedChannelType = resolveStoredChannelType(channelType);
     let deleteWeChatAccount = false;
@@ -1243,7 +1267,11 @@ export async function deleteChannelConfig(channelType: string): Promise<void> {
                 }
             }
             if (resolvedChannelType === 'dingtalk') {
-                removePluginRegistration(currentConfig, 'dingtalk');
+                removePluginRegistration(currentConfig, DINGTALK_PLUGIN_ID);
+                removePluginRegistration(currentConfig, DINGTALK_OFFICIAL_PLUGIN_ID);
+                if (currentConfig.channels?.[DINGTALK_OFFICIAL_PLUGIN_ID]) {
+                    delete currentConfig.channels[DINGTALK_OFFICIAL_PLUGIN_ID];
+                }
             }
             if (resolvedChannelType === 'wecom') {
                 removePluginRegistration(currentConfig, WECOM_PLUGIN_ID);
@@ -1659,25 +1687,211 @@ export function parseDoctorValidationOutput(channelType: string, output: string)
     };
 }
 
+/**
+ * Stable identifier for a validation error so the renderer can localize it;
+ * `errors` keeps the English fallback text.
+ */
+export interface CredentialValidationErrorCode {
+    code: string;
+    params?: Record<string, string>;
+}
+
 export interface CredentialValidationResult {
     valid: boolean;
     errors: string[];
     warnings: string[];
+    errorCodes?: CredentialValidationErrorCode[];
     details?: Record<string, string>;
 }
 
 export async function validateChannelCredentials(
     channelType: string,
-    config: Record<string, string>
+    config: Record<string, string>,
+    options?: { accountId?: string },
 ): Promise<CredentialValidationResult> {
     switch (resolveStoredChannelType(channelType)) {
         case 'discord':
             return validateDiscordCredentials(config);
         case 'telegram':
             return validateTelegramCredentials(config);
+        case 'feishu':
+            return validateFeishuCredentials(config, options);
         default:
             return { valid: true, errors: [], warnings: ['No online validation available for this channel type.'] };
     }
+}
+
+const FEISHU_API_ORIGINS = {
+    feishu: 'https://open.feishu.cn',
+    lark: 'https://open.larksuite.com',
+} as const;
+
+type FeishuApiDomain = keyof typeof FEISHU_API_ORIGINS;
+
+export function resolveFeishuApiOrigin(domain: unknown): string {
+    return FEISHU_API_ORIGINS[resolveFeishuApiDomain(domain)];
+}
+
+function resolveFeishuApiDomain(domain: unknown): FeishuApiDomain {
+    if (typeof domain === 'string' && domain.trim().toLowerCase() === 'lark') {
+        return 'lark';
+    }
+    return 'feishu';
+}
+
+/** New accounts have no domain field; try Feishu first, then Lark. */
+function feishuValidationDomains(domain: unknown): FeishuApiDomain[] {
+    if (typeof domain === 'string' && domain.trim()) {
+        return [resolveFeishuApiDomain(domain)];
+    }
+    return ['feishu', 'lark'];
+}
+
+function pickPreservedFeishuAppSecret(account: ChannelConfigData | undefined): string | undefined {
+    const secret = typeof account?.appSecret === 'string' ? account.appSecret.trim() : '';
+    if (!secret || secret === OPENCLAW_REDACTED_SENTINEL) return undefined;
+    return secret;
+}
+
+/**
+ * `config.get` redacts appSecret to `__OPENCLAW_REDACTED__` while Gateway is
+ * running. Validation must use the durable file so an edit that leaves the
+ * secret untouched does not send the placeholder to Feishu.
+ */
+async function resolvePreservedFeishuAppSecret(
+    appId: string,
+    accountId?: string,
+): Promise<string | undefined> {
+    try {
+        const config = await readDurableOpenClawConfig();
+        const section = config.channels && typeof config.channels === 'object' && !Array.isArray(config.channels)
+            ? (config.channels as Record<string, ChannelConfigData>).feishu
+            : undefined;
+        if (!section || typeof section !== 'object' || Array.isArray(section)) return undefined;
+
+        const accounts = getChannelAccountsMap(section);
+        if (accountId) {
+            const fromAccount = pickPreservedFeishuAppSecret(accounts?.[accountId]);
+            if (fromAccount) return fromAccount;
+        }
+        for (const account of Object.values(accounts ?? {})) {
+            const candidateAppId = typeof account.appId === 'string' ? account.appId.trim() : '';
+            if (candidateAppId === appId) {
+                const fromMatch = pickPreservedFeishuAppSecret(account);
+                if (fromMatch) return fromMatch;
+            }
+        }
+        return pickPreservedFeishuAppSecret(accounts?.default) ?? pickPreservedFeishuAppSecret(section);
+    } catch {
+        return undefined;
+    }
+}
+
+function feishuValidationFailure(
+    code: string,
+    message: string,
+    params?: Record<string, string>,
+    warnings: string[] = [],
+): CredentialValidationResult {
+    return { valid: false, errors: [message], warnings, errorCodes: [{ code, params }] };
+}
+
+async function requestFeishuTenantAccessToken(
+    origin: string,
+    appId: string,
+    appSecret: string,
+): Promise<
+    | { ok: true }
+    | { ok: false; kind: 'rejected'; reason: string }
+    | { ok: false; kind: 'connection'; reason: string }
+> {
+    try {
+        const response = await proxyAwareFetch(`${origin}/open-apis/auth/v3/tenant_access_token/internal`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+            code?: number;
+            msg?: string;
+            tenant_access_token?: string;
+        };
+        if (!response.ok || payload.code !== 0 || !payload.tenant_access_token) {
+            const reason = payload.msg?.trim()
+                || (typeof payload.code === 'number' ? `code ${payload.code}` : `HTTP ${response.status}`);
+            return { ok: false, kind: 'rejected', reason };
+        }
+        return { ok: true };
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return { ok: false, kind: 'connection', reason };
+    }
+}
+
+/**
+ * The openclaw-lark plugin keeps its account "running" even when Feishu rejects
+ * the credentials (it only logs `app_id or app_secret is invalid`), so the
+ * Channels view would show Connected for a bot that can never receive events.
+ * Request a tenant_access_token before persisting so bad credentials are
+ * rejected in the modal instead.
+ */
+async function validateFeishuCredentials(
+    config: Record<string, string>,
+    options?: { accountId?: string },
+): Promise<CredentialValidationResult> {
+    const appId = config.appId?.trim();
+    let appSecret = config.appSecret?.trim();
+
+    if (!appId) return feishuValidationFailure('feishuAppIdRequired', 'App ID is required');
+    if (appSecret === OPENCLAW_REDACTED_SENTINEL) {
+        const preserved = await resolvePreservedFeishuAppSecret(appId, options?.accountId);
+        if (!preserved) {
+            return feishuValidationFailure(
+                'feishuAppSecretReenter',
+                'Re-enter the App Secret to update this account. The stored secret is hidden while Gateway is running.',
+            );
+        }
+        appSecret = preserved;
+    }
+    if (!appSecret) return feishuValidationFailure('feishuAppSecretRequired', 'App Secret is required');
+    if (appSecret === appId) {
+        return feishuValidationFailure(
+            'feishuAppSecretEqualsAppId',
+            'App Secret is identical to App ID. Copy the App Secret from Feishu Developer Console → Credentials & Basic Info.',
+        );
+    }
+
+    let firstRejection: CredentialValidationResult | undefined;
+    let firstConnectionError: CredentialValidationResult | undefined;
+    for (const domain of feishuValidationDomains(config.domain)) {
+        const result = await requestFeishuTenantAccessToken(FEISHU_API_ORIGINS[domain], appId, appSecret);
+        if (result.ok) {
+            return {
+                valid: true,
+                errors: [],
+                warnings: [],
+                ...(domain === 'lark' ? { details: { domain: 'lark' } } : {}),
+            };
+        }
+        if (result.kind === 'rejected') {
+            firstRejection ??= feishuValidationFailure(
+                'feishuRejected',
+                `Feishu rejected the credentials: ${result.reason}`,
+                { error: result.reason },
+            );
+            continue;
+        }
+        firstConnectionError ??= feishuValidationFailure(
+            'feishuConnectionError',
+            `Connection error when validating Feishu credentials: ${result.reason}`,
+            { error: result.reason },
+        );
+    }
+
+    return firstRejection ?? firstConnectionError ?? feishuValidationFailure(
+        'feishuConnectionError',
+        'Connection error when validating Feishu credentials',
+    );
 }
 
 async function validateDiscordCredentials(

@@ -28,6 +28,7 @@ import {
   getGatewayWsDiagnosticEnabled,
   setGatewayWsDiagnosticEnabled,
 } from '@/lib/gateway-ws-diagnostic';
+import { IssueReportExport } from '@/components/settings/IssueReportExport';
 import { toUserMessage } from '@/lib/error-message';
 import {
   clearUiTelemetry,
@@ -38,8 +39,11 @@ import {
 } from '@/lib/telemetry';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
-import { hostApi } from '@/lib/host-api';
-import type { OpenClawDoctorResult } from '@/lib/host-api';
+import {
+  hostApi,
+  type OpenClawCompactionReserveResult,
+  type OpenClawDoctorResult,
+} from '@/lib/host-api';
 import { cn } from '@/lib/utils';
 type ControlUiInfo = {
   url: string;
@@ -117,6 +121,7 @@ export function SystemSettingsTab({
   const [logContent, setLogContent] = useState('');
   const [doctorRunningMode, setDoctorRunningMode] = useState<'diagnose' | 'fix' | null>(null);
   const [doctorResult, setDoctorResult] = useState<OpenClawDoctorResult | null>(null);
+  const [compactionReserve, setCompactionReserve] = useState<OpenClawCompactionReserveResult | null>(null);
 
   const [maintenanceMode, setMaintenanceMode] = useState<'warn' | 'enforce'>('enforce');
   const [maintenancePruneAfter, setMaintenancePruneAfter] = useState('');
@@ -317,6 +322,24 @@ export function SystemSettingsTab({
 
     return () => { cancelled = true; };
   }, [devModeUnlocked, showCliTools]);
+
+  useEffect(() => {
+    if (!devModeUnlocked) {
+      setCompactionReserve(null);
+      return;
+    }
+    let cancelled = false;
+    void hostApi.openclaw.getCompactionReserve()
+      .then((result) => {
+        if (!cancelled) setCompactionReserve(result);
+      })
+      .catch(() => {
+        if (!cancelled) setCompactionReserve(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [devModeUnlocked]);
 
   const handleCopyCliCommand = async () => {
     if (!openclawCliCommand) return;
@@ -952,6 +975,17 @@ export function SystemSettingsTab({
                     </div>
                   </div>
 
+                  <div className="space-y-2" data-testid="settings-developer-compaction-reserve">
+                    <Label className="text-sm font-medium text-foreground/80">{t('developer.compactionReserve')}</Label>
+                    <p className="text-meta text-muted-foreground">{t('developer.compactionReserveDesc')}</p>
+                    <Input
+                      readOnly
+                      value={compactionReserve?.reserveTokensFloor?.toLocaleString() || ''}
+                      placeholder={t('developer.compactionReserveUnavailable')}
+                      className="font-mono text-meta h-10 rounded-xl bg-surface-input border-transparent"
+                    />
+                  </div>
+
                   {showCliTools && (
                     <div className="space-y-3">
                       <Label className="text-[15px] font-medium text-foreground">{t('developer.cli')}</Label>
@@ -1345,6 +1379,10 @@ export function SystemSettingsTab({
                   {t('about.docs')}
                 </Button>
               </div>
+            </div>
+
+            <div className="mt-8 border-t border-black/5 dark:border-white/10 pt-6" data-testid="settings-support-section">
+              <IssueReportExport />
             </div>
 
             {(devModeUnlocked || devToggleRevealed) && (

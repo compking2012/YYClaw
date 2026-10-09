@@ -1,0 +1,573 @@
+---
+id: merge-upstream-channel-activation
+title: Merge upstream plugin channel activation
+scenario: gateway-backend-communication
+taskType: runtime-bridge
+intent: Adopt upstream official DingTalk and plugin activation while preserving local Feishu extensions.
+touchedAreas:
+  - tests/unit/subagent-session.test.ts
+  - .github/workflows/check.yml
+  - .github/workflows/electron-e2e.yml
+  - .github/workflows/release.yml
+  - README.ja-JP.md
+  - README.md
+  - README.ru-RU.md
+  - README.zh-CN.md
+  - docs/en-US/architecture.md
+  - docs/en-US/features.md
+  - docs/ja-JP/architecture.md
+  - docs/ja-JP/features.md
+  - docs/ru-RU/architecture.md
+  - docs/ru-RU/features.md
+  - docs/zh-CN/architecture.md
+  - docs/zh-CN/features.md
+  - electron-builder.yml
+  - electron/extensions/builtin/diagnostics.ts
+  - electron/gateway/compaction-activity.ts
+  - electron/gateway/config-delivery.ts
+  - electron/gateway/config-sync-env.ts
+  - electron/gateway/config-sync.ts
+  - electron/gateway/connection-monitor.ts
+  - electron/gateway/manager.ts
+  - electron/gateway/recovery-budget.ts
+  - electron/gateway/recovery-controller.test.ts
+  - electron/gateway/recovery-controller.ts
+  - electron/gateway/session-delete.ts
+  - electron/main/index.ts
+  - electron/main/ipc-handlers.ts
+  - electron/main/native-theme.ts
+  - electron/main/provider-model-sync.ts
+  - electron/main/window.ts
+  - electron/main/zoom-shortcuts.ts
+  - electron/services/acp-chat-service.ts
+  - electron/services/agents-api.ts
+  - electron/services/asr-api.ts
+  - electron/services/asr/asr-client.ts
+  - electron/services/asr/config-store.ts
+  - electron/services/asr/microphone-access.ts
+  - electron/services/channels-api.ts
+  - electron/services/chat-api.ts
+  - electron/services/computer-use-api.ts
+  - electron/services/diagnostics-api.ts
+  - electron/services/files-api.ts
+  - electron/services/gateway-api.ts
+  - electron/services/issue-report-api.ts
+  - electron/services/openclaw-api.ts
+  - electron/services/plugin-channel-activation.ts
+  - electron/services/providers-api.ts
+  - electron/services/providers/provider-runtime-sync.ts
+  - electron/services/providers/provider-validation.ts
+  - electron/services/providers/store-instance.ts
+  - electron/services/sessions-api.ts
+  - electron/services/settings-api.ts
+  - electron/shared/providers/model-capabilities.ts
+  - electron/shared/providers/types.ts
+  - electron/utils/agent-config.ts
+  - electron/utils/browser-oauth.ts
+  - electron/utils/channel-config.ts
+  - electron/utils/channel-status.ts
+  - electron/utils/cua-platform.ts
+  - electron/utils/cua-runtime.ts
+  - electron/utils/cua-sdk.ts
+  - electron/utils/dingtalk-dws.ts
+  - electron/utils/dingtalk-plugin-compat.ts
+  - electron/utils/gateway-health.ts
+  - electron/utils/json-bom-deserialize.ts
+  - electron/utils/json-bom-recovery.ts
+  - electron/utils/openclaw-auth.ts
+  - electron/utils/openclaw-compaction.ts
+  - electron/utils/plugin-install.ts
+  - electron/utils/skill-config.ts
+  - electron/utils/store.ts
+  - electron/utils/token-usage-core.ts
+  - electron/utils/tokendance-oauth.ts
+  - entitlements.mac.plist
+  - harness/reference/acp-attachment-access-control.md
+  - harness/reference/acp-chat.md
+  - harness/reference/acp-generated-media-and-diagnostics.md
+  - harness/reference/chat-workspace-and-navigation.md
+  - harness/reference/computer-use-cli-validation.md
+  - harness/reference/computer-use-skill.md
+  - harness/reference/computer-use.md
+  - harness/reference/cua-driver-cli-plan.md
+  - harness/reference/openclaw-config-delivery.md
+  - harness/reference/sidebar-session-attention.md
+  - harness/reference/voice-dictation.md
+  - harness/specs/rules/acp-chat-state-and-history.md
+  - harness/specs/rules/acp-compatibility-content-safety.md
+  - harness/specs/rules/active-config-guards.md
+  - harness/specs/rules/attachment-access-safety.md
+  - harness/specs/rules/channel-plugin-migration-guards.md
+  - harness/specs/rules/compaction-context-progress.md
+  - harness/specs/rules/gateway-heartbeat-safety.md
+  - harness/specs/rules/issue-report-export-safety.md
+  - harness/specs/rules/local-computer-use.md
+  - harness/specs/rules/microphone-permission-guidance.md
+  - harness/specs/rules/openclaw-config-delivery.md
+  - harness/specs/rules/provider-model-metadata-preservation.md
+  - harness/specs/rules/session-workspace-authority.md
+  - harness/specs/rules/sidebar-session-attention-authority.md
+  - harness/specs/rules/tokendance-oauth-provider.md
+  - harness/specs/scenarios/acp-chat-experience.md
+  - harness/specs/scenarios/chat-workspace-and-navigation.md
+  - harness/specs/scenarios/gateway-backend-communication.md
+  - harness/specs/scenarios/gateway-startup-diagnostics.md
+  - harness/specs/scenarios/plugin-lifecycle-management.md
+  - harness/specs/tasks/acp-image-generation-compatibility.md
+  - harness/specs/tasks/acp-session-plan-indicator.md
+  - harness/specs/tasks/activate-plugin-channel-after-save.md
+  - harness/specs/tasks/add-asr-chat-protocol.md
+  - harness/specs/tasks/add-tokendance-oauth-provider.md
+  - harness/specs/tasks/add-voice-dictation.md
+  - harness/specs/tasks/authorize-dingtalk-workspace-after-channel-save.md
+  - harness/specs/tasks/backport-midturn-precheck-noop.md
+  - harness/specs/tasks/builtin-computer-use-skill.md
+  - harness/specs/tasks/chat-workspace-context.md
+  - harness/specs/tasks/computer-use-key-vision-fix.md
+  - harness/specs/tasks/computer-use-opt-in.md
+  - harness/specs/tasks/concurrent-quit-stops.md
+  - harness/specs/tasks/cua-025-upgrade.md
+  - harness/specs/tasks/cua-asar-native-import.md
+  - harness/specs/tasks/cua-cli-telemetry.md
+  - harness/specs/tasks/cua-driver-cli.md
+  - harness/specs/tasks/custom-astra-completions-reasoning-effort.md
+  - harness/specs/tasks/custom-provider-context-window-defaults.md
+  - harness/specs/tasks/deepseek-flash-default-and-vision.md
+  - harness/specs/tasks/delete-unavailable-chat-workspace.md
+  - harness/specs/tasks/deliver-catalog-free-provider-runtime-config.md
+  - harness/specs/tasks/embed-subagent-sessions-in-parent-chat.md
+  - harness/specs/tasks/export-issue-report-bundle.md
+  - harness/specs/tasks/fix-acp-child-orphan-on-quit.md
+  - harness/specs/tasks/fix-acp-live-duration-after-session-switch.md
+  - harness/specs/tasks/fix-acp-multi-message-output-truncation.md
+  - harness/specs/tasks/fix-acp-repeated-restart-settlement.md
+  - harness/specs/tasks/fix-acp-restart-recovery-turn-duration.md
+  - harness/specs/tasks/fix-agent-deletion-session-catalog.md
+  - harness/specs/tasks/fix-chat-session-switch-flash.md
+  - harness/specs/tasks/fix-default-main-cwd-title.md
+  - harness/specs/tasks/fix-wecom-desktop-account-fallback.md
+  - harness/specs/tasks/hard-delete-session-jsonl.md
+  - harness/specs/tasks/hydrate-settled-acp-timeline.md
+  - harness/specs/tasks/image-generation-settings.md
+  - harness/specs/tasks/local-computer-use.md
+  - harness/specs/tasks/maintain-session-catalog-reconciliation.example.md
+  - harness/specs/tasks/make-gateway-heartbeat-observability-only.md
+  - harness/specs/tasks/managed-computer-use-skill.md
+  - harness/specs/tasks/merge-upstream-channel-activation.md
+  - harness/specs/tasks/microphone-permission-guidance.md
+  - harness/specs/tasks/model-aware-compaction-reserve-and-recovery.md
+  - harness/specs/tasks/model-management-consolidation.md
+  - harness/specs/tasks/optimize-channel-save-latency.md
+  - harness/specs/tasks/recover-compaction-tool-pressure.md
+  - harness/specs/tasks/recover-message-tool-file-attachments.md
+  - harness/specs/tasks/reference-local-file-attachments.md
+  - harness/specs/tasks/refresh-million-token-provider-defaults.md
+  - harness/specs/tasks/remove-custom-provider-request-timeout-default.md
+  - harness/specs/tasks/remove-pre-acp-chat.md
+  - harness/specs/tasks/remove-realtime-talk.md
+  - harness/specs/tasks/repair-acp-replay-integrity.md
+  - harness/specs/tasks/restore-gateway-heartbeat-recovery-after-four-misses.md
+  - harness/specs/tasks/restrict-tokendance-to-chinese-ui.md
+  - harness/specs/tasks/show-acp-compaction-lifecycle.md
+  - harness/specs/tasks/show-acp-context-usage.md
+  - harness/specs/tasks/sidebar-session-attention.md
+  - harness/specs/tasks/stream-loaded-subagent-session-live.md
+  - harness/specs/tasks/surface-acp-provider-terminal-errors.md
+  - harness/specs/tasks/surface-subagent-sessions-and-announcements.md
+  - harness/specs/tasks/three-minute-gateway-liveness-recovery.md
+  - harness/specs/tasks/upgrade-dingtalk-official-connector.md
+  - harness/specs/tasks/upgrade-openclaw-2026-7-1-2-plugins.md
+  - harness/specs/tasks/validate-feishu-credentials-before-save.md
+  - harness/src/cli.mjs
+  - harness/src/git.mjs
+  - harness/src/specs.mjs
+  - package.json
+  - patches/@wecom__wecom-openclaw-plugin@2026.8.17.patch
+  - patches/openclaw@2026.7.1-2.patch
+  - pnpm-lock.yaml
+  - pnpm-workspace.yaml
+  - resources/config/providers.json
+  - resources/skills/computer-use/.gitattributes
+  - resources/skills/computer-use/BROWSER.md
+  - resources/skills/computer-use/EMBEDDING.md
+  - resources/skills/computer-use/LICENSE.md
+  - resources/skills/computer-use/LINUX.md
+  - resources/skills/computer-use/MACOS.md
+  - resources/skills/computer-use/README.md
+  - resources/skills/computer-use/RECORDING.md
+  - resources/skills/computer-use/SKILL.md
+  - resources/skills/computer-use/UPSTREAM-SKILL.md
+  - resources/skills/computer-use/UPSTREAM.json
+  - resources/skills/computer-use/WINDOWS.md
+  - scripts/after-pack.cjs
+  - scripts/bundle-openclaw-plugins.mjs
+  - scripts/cua-driver-artifacts.mjs
+  - scripts/download-cua-driver.mjs
+  - scripts/run-init.mjs
+  - scripts/smoke-cua-asar.mjs
+  - shared/acp-chat/subagent-lineage.ts
+  - shared/acp-chat/types.ts
+  - shared/asr/errors.ts
+  - shared/asr/presets.ts
+  - shared/chat/session-title.ts
+  - shared/chat/types.ts
+  - shared/host-api/contract.ts
+  - shared/i18n/locales/en/agents.json
+  - shared/i18n/locales/en/channels.json
+  - shared/i18n/locales/en/chat.json
+  - shared/i18n/locales/en/common.json
+  - shared/i18n/locales/en/dashboard.json
+  - shared/i18n/locales/en/settings.json
+  - shared/i18n/locales/ja/agents.json
+  - shared/i18n/locales/ja/channels.json
+  - shared/i18n/locales/ja/chat.json
+  - shared/i18n/locales/ja/common.json
+  - shared/i18n/locales/ja/dashboard.json
+  - shared/i18n/locales/ja/settings.json
+  - shared/i18n/locales/ru/agents.json
+  - shared/i18n/locales/ru/channels.json
+  - shared/i18n/locales/ru/chat.json
+  - shared/i18n/locales/ru/common.json
+  - shared/i18n/locales/ru/dashboard.json
+  - shared/i18n/locales/ru/settings.json
+  - shared/i18n/locales/zh/agents.json
+  - shared/i18n/locales/zh/channels.json
+  - shared/i18n/locales/zh/chat.json
+  - shared/i18n/locales/zh/common.json
+  - shared/i18n/locales/zh/dashboard.json
+  - shared/i18n/locales/zh/settings.json
+  - shared/internal-session.ts
+  - shared/types/agent.ts
+  - shared/types/channel.ts
+  - src/App.tsx
+  - src/assets/model-icons/claude.png
+  - src/assets/model-icons/deepseek.png
+  - src/assets/model-icons/gemini.png
+  - src/assets/model-icons/kimi.png
+  - src/assets/model-icons/minimax.png
+  - src/assets/model-icons/openai.png
+  - src/assets/model-icons/qwen.png
+  - src/assets/model-icons/zai.png
+  - src/assets/providers/index.ts
+  - src/assets/providers/tokendance.svg
+  - src/components/channels/ChannelConfigModal.tsx
+  - src/components/common/ErrorBoundary.tsx
+  - src/components/common/ModelIcon.tsx
+  - src/components/common/StatusBadge.tsx
+  - src/components/file-preview/MonacoDiffViewer.tsx
+  - src/components/file-preview/MonacoViewer.tsx
+  - src/components/layout/Sidebar.tsx
+  - src/components/layout/session-buckets.ts
+  - src/components/settings/AsrSettings.tsx
+  - src/components/settings/ImageGenerationSettings.tsx
+  - src/components/settings/IssueReportExport.tsx
+  - src/components/settings/ProvidersSettings.tsx
+  - src/components/ui/dropdown-menu.tsx
+  - src/components/ui/select.tsx
+  - src/components/voice/MicrophonePermissionDialog.tsx
+  - src/components/voice/VoiceDictationButton.tsx
+  - src/extensions/index.ts
+  - src/extensions/loader.ts
+  - src/hooks/use-min-loading.ts
+  - src/hooks/use-stick-to-bottom-instant.ts
+  - src/hooks/useVoiceDictation.ts
+  - src/lib/acp/current-plan.ts
+  - src/lib/acp/image-generation-compat.ts
+  - src/lib/acp/openclaw-media-compat.ts
+  - src/lib/acp/reducer.ts
+  - src/lib/acp/subagent-lineage.ts
+  - src/lib/acp/timeline-types.ts
+  - src/lib/channel-status.ts
+  - src/lib/host-api.ts
+  - src/lib/model-icons.ts
+  - src/lib/model-options.ts
+  - src/lib/providers.ts
+  - src/lib/use-resolved-theme.ts
+  - src/lib/voice/recorder.ts
+  - src/lib/voice/wav.ts
+  - src/lib/workspace-context.ts
+  - src/pages/Agents/index.tsx
+  - src/pages/Channels/index.tsx
+  - src/pages/Chat/AcpAssistantTurn.tsx
+  - src/pages/Chat/AcpCompactionStatus.tsx
+  - src/pages/Chat/AcpErrorBanner.tsx
+  - src/pages/Chat/AcpMessageSegment.tsx
+  - src/pages/Chat/AcpSessionPlan.tsx
+  - src/pages/Chat/AcpSubagentSessions.tsx
+  - src/pages/Chat/AcpToolCallCard.tsx
+  - src/pages/Chat/AcpToolCallsGroup.tsx
+  - src/pages/Chat/ChatInput.tsx
+  - src/pages/Chat/index.tsx
+  - src/pages/ComputerUse/index.tsx
+  - src/pages/Settings/index.tsx
+  - src/stores/acp-chat-session.ts
+  - src/stores/agents.ts
+  - src/stores/chat.ts
+  - src/stores/chat/session-actions.ts
+  - src/stores/chat/session-catalog.ts
+  - src/stores/chat/session-key-utils.ts
+  - src/stores/chat/session-label-hydration.ts
+  - src/stores/chat/session-selection.ts
+  - src/stores/composer-drafts.ts
+  - src/stores/providers.ts
+  - src/stores/settings.ts
+  - src/styles/globals.css
+  - src/types/agent.ts
+  - tests/e2e/agent-deletion.spec.ts
+  - tests/e2e/channels-dingtalk-workspace-auth.spec.ts
+  - tests/e2e/channels-feishu-credential-validation.spec.ts
+  - tests/e2e/channels-health-diagnostics.spec.ts
+  - tests/e2e/channels-plugin-activation-status.spec.ts
+  - tests/e2e/chat-acp-attachments.spec.ts
+  - tests/e2e/chat-acp-inline-timeline.spec.ts
+  - tests/e2e/chat-acp-process-timeline.spec.ts
+  - tests/e2e/chat-assistant-markdown-plain.spec.ts
+  - tests/e2e/chat-file-changes.spec.ts
+  - tests/e2e/chat-model-picker.spec.ts
+  - tests/e2e/chat-new-session-date.spec.ts
+  - tests/e2e/chat-run-state-events.spec.ts
+  - tests/e2e/chat-scroll-pin-bottom.spec.ts
+  - tests/e2e/chat-sidebar-session-attention.spec.ts
+  - tests/e2e/chat-startup-acp-placeholder.spec.ts
+  - tests/e2e/chat-subagent-sessions.spec.ts
+  - tests/e2e/chat-workspace-context.spec.ts
+  - tests/e2e/computer-use-skill.spec.ts
+  - tests/e2e/computer-use.spec.ts
+  - tests/e2e/cron-run-live-status.spec.ts
+  - tests/e2e/developer-mode.spec.ts
+  - tests/e2e/fixtures/electron.ts
+  - tests/e2e/gateway-lifecycle.spec.ts
+  - tests/e2e/image-generation-settings.spec.ts
+  - tests/e2e/native-theme-select-popup.spec.ts
+  - tests/e2e/provider-lifecycle.spec.ts
+  - tests/e2e/session-delete-cleanup-warning.spec.ts
+  - tests/e2e/settings-issue-report.spec.ts
+  - tests/e2e/voice-dictation.spec.ts
+  - tests/e2e/voice-features.spec.ts
+  - tests/e2e/zoom-shortcuts.spec.ts
+  - tests/fixtures/cua-cli/fake-cli.mjs
+  - tests/fixtures/cua-cli/openclaw-integration.mjs
+  - tests/unit/acp-chat-components.test.tsx
+  - tests/unit/acp-chat-service.test.ts
+  - tests/unit/acp-chat-store.test.ts
+  - tests/unit/acp-current-plan.test.ts
+  - tests/unit/acp-image-generation-compat.test.ts
+  - tests/unit/acp-media-attachments.test.ts
+  - tests/unit/acp-reducer.test.ts
+  - tests/unit/acp-session-plan.test.tsx
+  - tests/unit/acp-subagent-lineage.test.ts
+  - tests/unit/acp-subagent-sessions.test.tsx
+  - tests/unit/after-pack-cleanup.test.ts
+  - tests/unit/agent-config.test.ts
+  - tests/unit/agents-store.test.ts
+  - tests/unit/asr-api.test.ts
+  - tests/unit/asr-client.test.ts
+  - tests/unit/asr-settings.test.tsx
+  - tests/unit/browser-oauth.test.ts
+  - tests/unit/builtin-computer-use-skill.test.ts
+  - tests/unit/channel-config.test.ts
+  - tests/unit/channel-status.test.ts
+  - tests/unit/channels-page.test.tsx
+  - tests/unit/chat-acp-inline-timeline.test.tsx
+  - tests/unit/chat-acp-page.test.tsx
+  - tests/unit/chat-artifact-panel-layout.test.tsx
+  - tests/unit/chat-history-reply-while-sending.test.tsx
+  - tests/unit/chat-input.test.tsx
+  - tests/unit/chat-leading-orphan-tools.test.tsx
+  - tests/unit/chat-load-sessions-startup.test.ts
+  - tests/unit/chat-question-directory.test.tsx
+  - tests/unit/chat-session-selection.test.ts
+  - tests/unit/chat-store-delete-session-workflow.test.ts
+  - tests/unit/chat-store-session-label-fetch.test.ts
+  - tests/unit/chat-tool-card-suppression.test.tsx
+  - tests/unit/compaction-activity.test.ts
+  - tests/unit/composer-drafts.test.ts
+  - tests/unit/computer-use-api.test.ts
+  - tests/unit/computer-use-settings.test.ts
+  - tests/unit/config-sync.test.ts
+  - tests/unit/cua-cli-contract.test.ts
+  - tests/unit/cua-cli-exec.test.ts
+  - tests/unit/cua-driver-artifacts.test.ts
+  - tests/unit/cua-runtime.test.ts
+  - tests/unit/cua-sdk.test.ts
+  - tests/unit/dingtalk-dws.test.ts
+  - tests/unit/dingtalk-plugin-compat.test.ts
+  - tests/unit/files-api-workspace.test.ts
+  - tests/unit/gateway-config-delivery.test.ts
+  - tests/unit/gateway-connection-monitor.test.ts
+  - tests/unit/gateway-manager-diagnostics.test.ts
+  - tests/unit/gateway-manager-heartbeat.test.ts
+  - tests/unit/gateway-manager-restart-recovery.test.ts
+  - tests/unit/gateway-process-launcher.test.ts
+  - tests/unit/gateway-recovery-budget.test.ts
+  - tests/unit/harness-runner.test.ts
+  - tests/unit/harness-specs.test.ts
+  - tests/unit/host-api-facade.test.ts
+  - tests/unit/host-services.test.ts
+  - tests/unit/i18n-locale-parity.test.ts
+  - tests/unit/image-generation-page.test.tsx
+  - tests/unit/issue-report-api.test.ts
+  - tests/unit/issue-report-export.test.tsx
+  - tests/unit/json-bom-deserialize.test.ts
+  - tests/unit/json-bom-recovery.test.ts
+  - tests/unit/main-quit-lifecycle.test.ts
+  - tests/unit/microphone-access.test.ts
+  - tests/unit/model-icons.test.tsx
+  - tests/unit/model-options.test.ts
+  - tests/unit/models-page.test.tsx
+  - tests/unit/native-theme.test.ts
+  - tests/unit/openclaw-acp-compaction-patch.test.ts
+  - tests/unit/openclaw-acp-stream-patch.test.ts
+  - tests/unit/openclaw-auth.test.ts
+  - tests/unit/openclaw-bundle-config.test.ts
+  - tests/unit/openclaw-compaction-tail-patch.test.ts
+  - tests/unit/openclaw-compaction.test.ts
+  - tests/unit/openclaw-restart-recovery-patch.test.ts
+  - tests/unit/plugin-channel-activation.test.ts
+  - tests/unit/plugin-install-index.test.ts
+  - tests/unit/plugin-install.test.ts
+  - tests/unit/provider-model-capabilities.test.ts
+  - tests/unit/provider-model-sync.test.ts
+  - tests/unit/provider-runtime-sync.test.ts
+  - tests/unit/provider-store-init.test.ts
+  - tests/unit/provider-validation.test.ts
+  - tests/unit/providers.test.ts
+  - tests/unit/session-buckets.test.ts
+  - tests/unit/session-catalog.test.ts
+  - tests/unit/session-delete-resolution.test.ts
+  - tests/unit/session-key-utils.test.ts
+  - tests/unit/session-title.test.ts
+  - tests/unit/sessions-api-workspace.test.ts
+  - tests/unit/settings-store.test.ts
+  - tests/unit/sidebar-session-buckets.test.ts
+  - tests/unit/token-usage.test.ts
+  - tests/unit/tokendance-oauth.test.ts
+  - tests/unit/tokendance-openclaw-recovery.test.ts
+  - tests/unit/use-stick-to-bottom-instant.test.tsx
+  - tests/unit/use-voice-dictation.test.tsx
+  - tests/unit/voice-dictation-button.test.tsx
+  - tests/unit/voice-recorder.test.ts
+  - tests/unit/voice-wav.test.ts
+  - tests/unit/wecom-plugin-account-fallback.test.ts
+  - tests/unit/workspace-context.test.ts
+  - tests/unit/zoom-shortcuts.test.ts
+  - vitest.config.ts
+expectedUserBehavior:
+  - Plugin channels activate through the upstream guarded Gateway lifecycle.
+  - Local Feishu application management remains available.
+  - DingTalk accounts migrate to the official connector.
+  - Multi-kind model and voice configuration retains its local runtime synchronization.
+  - Provider catalog sources and developer-only fallback retain local behavior.
+  - Native subagents remain in the catalog without appearing as startup fallback sessions.
+  - Internal workflow and legacy Office sessions remain hidden.
+  - The local dictation and conversation controls remain the only composer voice entry points.
+  - Denied or restricted microphone access opens the upstream settings guidance.
+  - ACP waits for Gateway readiness and retries only transient connection errors up to three times.
+  - Superseded initialization cannot reset a newer ACP connection.
+  - Session deletion preserves local orphan-store scanning and workflow cleanup.
+  - Trajectory pointer cleanup retains the existing local external-runtime-file behavior as a user-approved exception.
+  - Upstream zoom shortcuts and minimize/restore zoom preservation are restored.
+  - Computer Use is required and retains upstream lifecycle, permissions, and opt-in control.
+  - Local workflow, Feishu, and admin console integrations remain available alongside Computer Use.
+  - Computer Use driver download and native unpack checks are integrated into local packaging scripts.
+  - Local reload policy coexists with upstream liveness and compaction-aware recovery.
+  - Explicit stop cancels pending reload, recovery, and compaction timers and ignores late probe liveness.
+requiredProfiles:
+  - fast
+  - comms
+requiredTests:
+  - tests/unit/main-quit-lifecycle.test.ts
+  - tests/unit/provider-model-sync.test.ts
+  - tests/unit/subagent-session.test.ts
+  - tests/unit/chat-acp-page.test.tsx
+  - tests/unit/files-api-workspace.test.ts
+  - tests/unit/gateway-process-launcher.test.ts
+  - tests/unit/gateway-events.test.ts
+  - tests/unit/chat-question-directory.test.tsx
+  - tests/unit/voice-dictation-button.test.tsx
+  - tests/unit/cua-driver-artifacts.test.ts
+  - tests/e2e/computer-use.spec.ts
+  - tests/unit/image-generation-page.test.tsx
+  - tests/e2e/image-generation-settings.spec.ts
+  - tests/e2e/developer-mode.spec.ts
+  - tests/unit/harness-runner.test.ts
+  - tests/unit/harness-specs.test.ts
+  - tests/e2e/chat-model-picker.spec.ts
+  - tests/e2e/provider-lifecycle.spec.ts
+  - tests/unit/tokendance-oauth.test.ts
+  - tests/unit/browser-oauth.test.ts
+  - tests/unit/provider-validation.test.ts
+  - tests/e2e/session-delete-cleanup-warning.spec.ts
+  - tests/unit/chat-load-sessions-startup.test.ts
+  - tests/unit/chat-store-session-label-fetch.test.ts
+  - tests/unit/session-label-hydration.test.ts
+  - tests/unit/models-page.test.tsx
+  - tests/unit/chat-store-delete-session-workflow.test.ts
+  - tests/unit/chat-acp-inline-timeline.test.tsx
+  - tests/unit/use-workspace-availability.test.tsx
+  - tests/unit/settings-store.test.ts
+  - tests/e2e/chat-workspace-context.spec.ts
+  - tests/unit/issue-report-export.test.tsx
+  - tests/unit/issue-report-api.test.ts
+  - tests/e2e/settings-issue-report.spec.ts
+  - tests/unit/builtin-computer-use-skill.test.ts
+  - tests/unit/skill-config.test.ts
+  - tests/unit/agents-page.test.tsx
+  - tests/unit/channels-page.test.tsx
+  - tests/unit/plugin-install.test.ts
+  - tests/unit/after-pack-cleanup.test.ts
+  - tests/unit/agents-store.test.ts
+  - tests/unit/agent-config.test.ts
+  - tests/unit/openclaw-auth.test.ts
+  - tests/unit/gateway-config-delivery.test.ts
+  - tests/unit/channel-config.test.ts
+  - tests/unit/host-services.test.ts
+  - tests/unit/dingtalk-plugin-compat.test.ts
+  - tests/unit/provider-runtime-sync.test.ts
+  - tests/unit/openclaw-auth.test.ts
+  - tests/unit/providers.test.ts
+  - tests/unit/model-options.test.ts
+  - tests/unit/acp-chat-store.test.ts
+  - tests/unit/session-catalog.test.ts
+  - tests/unit/chat-input.test.tsx
+  - tests/e2e/voice-features.spec.ts
+  - tests/unit/acp-chat-service.test.ts
+  - tests/unit/session-delete-resolution.test.ts
+  - tests/unit/zoom-shortcuts.test.ts
+  - tests/e2e/zoom-shortcuts.spec.ts
+  - tests/unit/computer-use-api.test.ts
+  - tests/e2e/computer-use.spec.ts
+  - tests/unit/gateway-manager-heartbeat.test.ts
+  - tests/unit/gateway-manager-reload-policy-refresh.test.ts
+  - electron/gateway/recovery-controller.test.ts
+acceptance:
+  - The unused local ErrorBoundary component is removed as upstream while the actual App root boundary remains unchanged.
+  - Dependency versions and patches match the merged upstream plugin matrix; local proxy overrides and the harness workspace remain usable.
+  - Test coverage follows the approved local provider defaults, conversation-only overrides, voice controls, native child catalog retention, and current-session refresh behavior rather than reintroducing rejected upstream UI mechanisms.
+  - The local standalone Image Generation sidebar route remains developer-gated and uses the integrated upstream endpoint configuration component; existing local Settings and model capability slots are retained.
+  - Repeated deletion succeeds only when the session is confirmed absent across local stores; unreadable or corrupt indexes remain failures unless Gateway deletion already succeeded, in which case cleanup warnings preserve remaining data.
+  - Locally deleted legacy test files remain deleted; staged-file and plan filtering checks, agent cleanup, native child isolation, and deletion failure coverage are migrated to maintained suites and validation references point to them.
+  - The composer keeps local account-name labels and conversation-only model overrides while showing upstream ACP context usage; fresh runtime usage remains authoritative and switching to an unknown model does not reuse the agent default context window.
+  - TokenDance OAuth and API-key discovery are added to the local catalog with upstream language gating and attribution; Anthropic and Google receive upstream connection presets without changing local model defaults or capability slots.
+  - Workflow abort preserves snapshots before parent deletion; snapshot and child cleanup runs only after parent deletion succeeds, with cleanup warnings rather than false deletion failures.
+  - Single and bulk session deletion stop active workflows first, preserve cards and drafts until Main confirms success, and retain records on failure.
+  - Unavailable unreferenced recent workspace records are automatically pruned exactly as upstream, by explicit user decision; filesystem directories are not deleted.
+  - The About tab exposes upstream issue report export with redacted diagnostics and explicitly selected raw conversations; it does not upload automatically.
+  - The bundled computer-use skill replaces same-name local content exactly as upstream, without extra backups, by explicit user decision.
+  - Only global default conversation model changes recalculate the shared compaction reserve floor.
+  - Per-agent overrides, media slots, and startup synchronization preserve existing reserve floors.
+  - Agent summaries include upstream context metadata while retaining local capability slots.
+  - Legacy encrypted config reads and local last-good UI fallback remain supported.
+  - Durable credential reads retry transient failures without using stale cached credentials.
+  - File writes restore redacted credentials from disk and reject unresolved sentinels.
+  - Renderer preserves the host API boundary.
+  - Channel activation preserves upstream pending and warning results.
+  - Feishu application management and DingTalk workspace authorization coexist.
+  - Provider header and metadata fixes do not replace local capability slots.
+  - Direct transcript deletion retains its scope checks; trajectory pointer cleanup remains unchanged by explicit user decision.
+  - Comms replay and compare pass after merge conflicts are resolved.
+docs:
+  required: false
+---
+
+User-approved integration of upstream channel activation during the upstream merge.

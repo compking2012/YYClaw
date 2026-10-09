@@ -63,7 +63,8 @@
     "deleteDialog": {
         "title": "删除智能体",
         "message": "确认从 $t(common:appName) 删除 “{{name}}”？这会永久删除该智能体及其由 $t(common:appName) 管理的工作区、运行时和会话文件。",
-        "messageLast": "确认从 $t(common:appName) 删除 “{{name}}”？这是最后一个智能体，删除后列表会变为空。之后仍可重新添加第一个智能体。"
+        "messageLast": "确认从 $t(common:appName) 删除 “{{name}}”？这是最后一个智能体，删除后列表会变为空。之后仍可重新添加第一个智能体。",
+        "confirm": "永久删除"
     },
     "settingsDialog": {
         "title": "{{name}} 设置",

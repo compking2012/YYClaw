@@ -1,6 +1,6 @@
-import { act, render } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { UsageSettings } from '@/pages/Models/index';
+import { ModelsSettings, UsageSettings } from '@/pages/Models/index';
 
 const hostApiFetchMock = vi.fn();
 const trackUiEventMock = vi.fn();
@@ -36,7 +36,15 @@ vi.mock('@/lib/telemetry', () => ({
 }));
 
 vi.mock('@/components/settings/ProvidersSettings', () => ({
-  ProvidersSettings: () => null,
+  ProvidersSettings: () => <div data-testid="providers-settings-panel" />,
+}));
+
+vi.mock('@/components/settings/ImageGenerationSettings', () => ({
+  ImageGenerationSettings: () => <div data-testid="image-generation-settings-panel" />,
+}));
+
+vi.mock('@/components/settings/AsrSettings', () => ({
+  AsrSettings: () => <div data-testid="asr-settings-panel" />,
 }));
 
 vi.mock('@/components/common/FeedbackState', () => ({
@@ -71,6 +79,7 @@ describe('Models page auto refresh', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    settingsState.devModeUnlocked = false;
     gatewayState.status = { state: 'running', port: 18789, connectedAt: 1, pid: 1234 };
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
@@ -97,5 +106,31 @@ describe('Models page auto refresh', () => {
     });
 
     expect(hostApiFetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps provider management in the local Models settings tab', () => {
+    render(<ModelsSettings />);
+
+    expect(screen.getByTestId('models-tab')).toBeInTheDocument();
+    expect(screen.getByTestId('providers-settings-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('asr-settings-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('image-generation-settings-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usage-tab')).not.toBeInTheDocument();
+    expect(trackUiEventMock).toHaveBeenCalledWith('models.page_viewed');
+  });
+
+  it('keeps usage separate from provider and media management in developer mode', async () => {
+    settingsState.devModeUnlocked = true;
+    render(<UsageSettings />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('usage-tab')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Token Usage History' })).toBeInTheDocument();
+    expect(screen.queryByTestId('providers-settings-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('asr-settings-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('image-generation-settings-panel')).not.toBeInTheDocument();
   });
 });

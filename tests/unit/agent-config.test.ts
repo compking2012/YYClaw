@@ -421,6 +421,47 @@ describe('agent config lifecycle', () => {
     });
   });
 
+  it('updates the shared compaction floor only when the default conversation model changes', async () => {
+    await writeOpenClawJson({
+      models: { providers: {
+        openai: { models: [{ id: 'gpt-5.6-luna', contextWindow: 272_000 }] },
+        deepseek: { models: [{ id: 'deepseek-chat', contextWindow: 400_000 }] },
+      } },
+      agents: {
+        defaults: {
+          model: { primary: 'openai/gpt-5.6-luna' },
+          compaction: { mode: 'safeguard', reserveTokensFloor: 68_000 },
+        },
+        list: [{ id: 'main', default: true }, { id: 'coder' }],
+      },
+    });
+    const { updateAgentModel, updateDefaultModels } = await import('@electron/utils/agent-config');
+    const readFloor = async () => {
+      const config = await readOpenClawJson();
+      return (config.agents as { defaults: { compaction: { reserveTokensFloor: number } } })
+        .defaults.compaction.reserveTokensFloor;
+    };
+
+    const overridden = await updateAgentModel('coder', 'deepseek/deepseek-chat');
+    expect(overridden.agents.find((agent) => agent.id === 'coder')?.contextWindow).toBe(400_000);
+    expect(await readFloor()).toBe(68_000);
+    const inherited = await updateAgentModel('coder', null);
+    expect(inherited.agents.find((agent) => agent.id === 'coder')?.contextWindow).toBe(272_000);
+    expect(await readFloor()).toBe(68_000);
+    await updateAgentModel('main', 'deepseek/deepseek-chat');
+    expect(await readFloor()).toBe(68_000);
+    await updateAgentModel('coder', 'deepseek/deepseek-chat', 'imageModel');
+    expect(await readFloor()).toBe(68_000);
+    await updateDefaultModels({ imageModel: 'deepseek/deepseek-chat' });
+    expect(await readFloor()).toBe(68_000);
+    await updateDefaultModels({ model: 'deepseek/deepseek-chat' });
+    expect(await readFloor()).toBe(100_000);
+    await updateDefaultModels({ model: 'openai/gpt-5.6-luna' });
+    expect(await readFloor()).toBe(68_000);
+    await updateDefaultModels({ model: null });
+    expect(await readFloor()).toBe(50_000);
+  });
+
   it('updates skills on a single agent without affecting others', async () => {
     await writeOpenClawJson({
       agents: {
@@ -711,9 +752,12 @@ describe('agent config lifecycle', () => {
     await writeFile(join(test2WorkspaceDir, 'AGENTS.md'), '# test2', 'utf8');
 
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
-    const { deleteAgentConfig } = await import('@electron/utils/agent-config');
+    const {
+      deleteAgentConfig,
+      removeAgentWorkspaceDirectory,
+    } = await import('@electron/utils/agent-config');
 
-    const { snapshot } = await deleteAgentConfig('test2');
+    const { snapshot, removedEntry } = await deleteAgentConfig('test2');
 
     expect(snapshot.agents.map((agent) => agent.id)).toEqual(['main', 'test3']);
     expect(snapshot.channelOwners.feishu).toBe('main');
@@ -728,6 +772,10 @@ describe('agent config lifecycle', () => {
     // Workspace deletion is intentionally deferred by `deleteAgentConfig` to avoid
     // ENOENT errors during Gateway restart, so it should still exist here.
     await expect(access(test2WorkspaceDir)).resolves.toBeUndefined();
+
+    await expect(removeAgentWorkspaceDirectory(removedEntry))
+      .resolves.toBe(test2WorkspaceDir);
+    await expect(access(test2WorkspaceDir)).rejects.toThrow();
 
     infoSpy.mockRestore();
   });
@@ -827,9 +875,13 @@ describe('agent config lifecycle', () => {
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
-    const { deleteAgentConfig } = await import('@electron/utils/agent-config');
+    const {
+      deleteAgentConfig,
+      removeAgentWorkspaceDirectory,
+    } = await import('@electron/utils/agent-config');
 
-    await deleteAgentConfig('test2');
+    const { removedEntry } = await deleteAgentConfig('test2');
+    await expect(removeAgentWorkspaceDirectory(removedEntry)).resolves.toBeNull();
 
     await expect(access(customWorkspaceDir)).resolves.toBeUndefined();
 

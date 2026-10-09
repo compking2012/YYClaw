@@ -7,6 +7,7 @@ import type {
   ProviderAccount,
   ProviderConfig,
   ProviderTypeInfo,
+  ProviderValidationResult,
   ProviderVendorInfo,
   ProviderWithKeyInfo,
 } from '@/lib/providers';
@@ -53,7 +54,7 @@ interface ProviderState {
     accountId: string,
     apiKey: string,
     options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol']; modelId?: string }
-  ) => Promise<{ valid: boolean; error?: string }>;
+  ) => Promise<ProviderValidationResult>;
   getAccountApiKey: (accountId: string) => Promise<string | null>;
 
   // Legacy compatibility aliases
@@ -77,7 +78,7 @@ interface ProviderState {
     providerId: string,
     apiKey: string,
     options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol'] }
-  ) => Promise<{ valid: boolean; error?: string }>;
+  ) => Promise<ProviderValidationResult>;
   getApiKey: (providerId: string) => Promise<string | null>;
 }
 
@@ -242,6 +243,21 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   deleteProvider: async (providerId) => get().removeAccount(providerId),
 
   removeAccount: async (accountId) => {
+    const previous = {
+      accounts: get().accounts,
+      statuses: get().statuses,
+      defaultAccountId: get().defaultAccountId,
+    };
+
+    // Remove the card before Main finishes OpenClaw/keychain cleanup. Those
+    // operations can take a moment but should not make the UI feel blocked.
+    set((state) => ({
+      accounts: state.accounts.filter((account) => account.id !== accountId),
+      statuses: state.statuses.filter((status) => status.id !== accountId),
+      defaultAccountId: state.defaultAccountId === accountId ? null : state.defaultAccountId,
+      error: null,
+    }));
+
     try {
       const result = await hostApi.providers.deleteAccount(accountId);
 
@@ -249,8 +265,22 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
         throw new Error(result.error || 'Failed to delete provider account');
       }
 
-      await get().refreshProviderSnapshot();
+      // Reconcile silently so the optimistic removal is not replaced by a
+      // full-page loading state while Main chooses a replacement default.
+      try {
+        const snapshot = await fetchProviderSnapshot();
+        set({
+          statuses: snapshot.statuses ?? [],
+          accounts: snapshot.accounts ?? [],
+          vendors: snapshot.vendors ?? [],
+          defaultAccountId: snapshot.defaultAccountId ?? null,
+          loading: false,
+        });
+      } catch (refreshError) {
+        set({ error: String(refreshError), loading: false });
+      }
     } catch (error) {
+      set({ ...previous, loading: false, error: String(error) });
       console.error('Failed to delete account:', error);
       throw error;
     }
@@ -326,8 +356,12 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
           options,
       });
       return result?.valid === true
-        ? { valid: true }
-        : { valid: false, error: result?.error };
+        ? { valid: true, recoveryAction: result.recoveryAction }
+        : {
+          valid: false,
+          error: result?.error,
+          recoveryAction: result?.recoveryAction,
+        };
     } catch (error) {
       return { valid: false, error: String(error) };
     }

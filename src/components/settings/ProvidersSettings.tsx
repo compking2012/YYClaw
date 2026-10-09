@@ -38,7 +38,9 @@ import {
   getProviderDocsUrl,
   type ProviderType,
   type BuiltinProviderType,
+  type ProviderValidationResult,
   getProviderIconUrl,
+  isProviderAvailableForLanguage,
   normalizeProviderApiKeyInput,
   resolveProviderApiKeyForSave,
   resolveProviderModelForSave,
@@ -68,6 +70,7 @@ import { useAgentsStore } from '@/stores/agents';
 import { useSettingsModal } from '@/stores/settings-modal';
 import { hostApi } from '@/lib/host-api';
 import { subscribeHostEvent } from '@/lib/host-events';
+import type { OAuthSuccessEvent, OAuthErrorEvent } from '@shared/host-events/contract';
 import { KindParamsEditor } from '@/components/settings/KindParamsEditor';
 
 const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
@@ -233,6 +236,38 @@ function shouldShowUserAgentField(account: ProviderAccount): boolean {
 
 function shouldShowUserAgentFieldForNewProvider(providerType: ProviderType | null): boolean {
   return providerType === 'custom';
+}
+
+function getOAuthErrorMessage(message: string, t: (key: string, options?: Record<string, unknown>) => string): string {
+  if (message.startsWith('tokendanceOAuth.exchangeFailed:')) {
+    return t('aiProviders.oauth.tokenDanceExchangeFailed', {
+      status: message.slice('tokendanceOAuth.exchangeFailed:'.length),
+    });
+  }
+  const keyByCode: Record<string, string> = {
+    'tokendanceOAuth.cancelled': 'aiProviders.oauth.tokenDanceCancelled',
+    'tokendanceOAuth.callbackUnavailable': 'aiProviders.oauth.tokenDanceCallbackUnavailable',
+    'tokendanceOAuth.timedOut': 'aiProviders.oauth.tokenDanceTimedOut',
+    'tokendanceOAuth.missingKey': 'aiProviders.oauth.tokenDanceMissingKey',
+  };
+  const key = keyByCode[message];
+  return key ? t(key) : message;
+}
+
+function getProviderValidationError(
+  result: ProviderValidationResult,
+  t: (key: string) => string,
+): string {
+  switch (result.recoveryAction) {
+    case 'top_up_balance':
+      return t('aiProviders.recovery.topUpBalance');
+    case 'reauthorize_api_key':
+      return t('aiProviders.recovery.reauthorizeApiKey');
+    case 'api_key_quota':
+      return t('aiProviders.recovery.apiKeyQuota');
+    default:
+      return result.error || t('aiProviders.toast.invalidKey');
+  }
 }
 
 function getAuthModeLabel(
@@ -533,7 +568,7 @@ interface ProviderCardProps {
   onValidateKey: (
     key: string,
     options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol']; modelId?: string }
-  ) => Promise<{ valid: boolean; error?: string }>;
+  ) => Promise<ProviderValidationResult>;
   devModeUnlocked: boolean;
 }
 
@@ -650,7 +685,7 @@ function ProviderCard({
         });
         setValidating(false);
         if (!result.valid) {
-          toast.error(result.error || t('aiProviders.toast.invalidKey'));
+          toast.error(getProviderValidationError(result, t));
           setSaving(false);
           return;
         }
@@ -922,14 +957,9 @@ function ProviderCard({
                   {activeKinds.map((kind) => {
                     const originalIndex = providerKinds.indexOf(kind);
                     const isOnly = activeKinds.length === 1;
-                        let availableModels: string[] = [];
-                        if (Array.isArray(typeInfo?.modelIdPlaceholder)) {
-                          availableModels = placeholderToOptions(
-                            typeInfo.modelIdPlaceholder[originalIndex] as string | string[] | undefined,
-                          );
-                        } else {
-                          availableModels = placeholderToOptions(typeInfo?.modelIdPlaceholder as string | undefined);
-                        }
+                        const availableModels = Array.isArray(typeInfo?.modelIdPlaceholder)
+                          ? placeholderToOptions(typeInfo.modelIdPlaceholder[originalIndex] as string | string[] | undefined)
+                          : placeholderToOptions(typeInfo?.modelIdPlaceholder as string | undefined);
                         
                         let placeholderText = 'provider/model-id';
                         if (Array.isArray(typeInfo?.modelIdPlaceholder)) {
@@ -1322,7 +1352,7 @@ interface AddProviderDialogProps {
     type: string,
     apiKey: string,
     options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol']; modelId?: string }
-  ) => Promise<{ valid: boolean; error?: string }>;
+  ) => Promise<ProviderValidationResult>;
   devModeUnlocked: boolean;
 }
 
@@ -1448,7 +1478,7 @@ function AddProviderDialog({
       setOauthError(null);
     };
 
-    const handleSuccess = async (data: unknown) => {
+    const handleSuccess = async (data: OAuthSuccessEvent) => {
       setOauthFlowing(false);
       setOauthData(null);
       setManualCodeInput('');
@@ -1457,31 +1487,34 @@ function AddProviderDialog({
       const { onClose: close, t: translate } = latestRef.current;
       const payload = (data as { accountId?: string } | undefined) || undefined;
       const accountId = payload?.accountId || pendingOAuthRef.current?.accountId;
+      pendingOAuthRef.current = null;
+
+      // The Main process only emits success after credentials are persisted.
+      // Close immediately so runtime synchronization does not make a successful
+      // browser OAuth flow appear stuck in the UI.
+      close();
+      toast.success(translate('aiProviders.toast.added'));
 
       // device-oauth.ts already saved the provider config to the backend,
       // including the dynamically resolved baseUrl for the region (e.g. CN vs Global).
-      // If we call add() here with undefined baseUrl, it will overwrite and erase it!
-      // So we just fetch the latest list from the backend to update the UI.
-      try {
-        const store = useProviderStore.getState();
-        await store.refreshProviderSnapshot();
+      // Refresh and select it without delaying success feedback.
+      void (async () => {
+        try {
+          const store = useProviderStore.getState();
+          await store.refreshProviderSnapshot();
 
-        // OAuth sign-in should immediately become active default to avoid
-        // leaving runtime on an API-key-only provider/model.
-        if (accountId) {
-          await store.setDefaultAccount(accountId);
+          if (accountId) {
+            await store.setDefaultAccount(accountId);
+          }
+        } catch (err) {
+          console.error('Failed to refresh providers after OAuth:', err);
+          toast.error(translate('aiProviders.toast.failedDefault'));
         }
-      } catch (err) {
-        console.error('Failed to refresh providers after OAuth:', err);
-      }
-
-      pendingOAuthRef.current = null;
-      close();
-      toast.success(translate('aiProviders.toast.added'));
+      })();
     };
 
-    const handleError = (data: unknown) => {
-      setOauthError((data as { message: string }).message);
+    const handleError = (data: OAuthErrorEvent) => {
+      setOauthError(getOAuthErrorMessage(data.message, latestRef.current.t));
       setOauthData(null);
       pendingOAuthRef.current = null;
     };
@@ -1494,6 +1527,10 @@ function AddProviderDialog({
       offCode();
       offSuccess();
       offError();
+      if (pendingOAuthRef.current) {
+        pendingOAuthRef.current = null;
+        void hostApi.providers.cancelOAuth();
+      }
     };
   }, []);
 
@@ -1560,8 +1597,9 @@ function AddProviderDialog({
   };
 
   const availableTypes = PROVIDER_TYPE_INFO.filter((type) => {
-    // Skip providers that are temporarily hidden from the UI.
+    // Skip providers that are temporarily hidden or unavailable in this UI language.
     if (type.hidden) return false;
+    if (!isProviderAvailableForLanguage(type, i18n.resolvedLanguage || i18n.language)) return false;
 
     // MiniMax portal variants are mutually exclusive — hide BOTH variants
     // when either one already exists (account may have vendorId of either variant).
@@ -1573,12 +1611,9 @@ function AddProviderDialog({
     if (isZaiProviderType(type.id) && hasZai) return false;
 
     const vendor = vendorMap.get(type.id);
-    let allowedByVendor = false;
-    if (!vendor) {
-      allowedByVendor = !existingVendorIds.has(type.id) || type.id === 'custom';
-    } else {
-      allowedByVendor = vendor.supportsMultipleAccounts || !existingVendorIds.has(type.id);
-    }
+    const allowedByVendor = vendor
+      ? vendor.supportsMultipleAccounts || !existingVendorIds.has(type.id)
+      : !existingVendorIds.has(type.id) || type.id === 'custom';
     if (!allowedByVendor) return false;
 
     return true;
@@ -1617,7 +1652,7 @@ function AddProviderDialog({
           modelId: modelIds[0]?.trim() || undefined,
         });
         if (!result.valid) {
-          setValidationError(result.error || t('aiProviders.toast.invalidKey'));
+          setValidationError(getProviderValidationError(result, t));
           setSaving(false);
           return;
         }
@@ -1880,14 +1915,9 @@ function AddProviderDialog({
                   {activeKinds.map((kind) => {
                     const originalIndex = providerKinds.indexOf(kind);
                     const isOnly = activeKinds.length === 1;
-                        let availableModels: string[] = [];
-                        if (Array.isArray(typeInfo?.modelIdPlaceholder)) {
-                          availableModels = placeholderToOptions(
-                            typeInfo.modelIdPlaceholder[originalIndex] as string | string[] | undefined,
-                          );
-                        } else {
-                          availableModels = placeholderToOptions(typeInfo?.modelIdPlaceholder as string | undefined);
-                        }
+                        const availableModels = Array.isArray(typeInfo?.modelIdPlaceholder)
+                          ? placeholderToOptions(typeInfo.modelIdPlaceholder[originalIndex] as string | string[] | undefined)
+                          : placeholderToOptions(typeInfo?.modelIdPlaceholder as string | undefined);
                         
                         let placeholderText = 'provider/model-id';
                         if (Array.isArray(typeInfo?.modelIdPlaceholder)) {
@@ -2147,7 +2177,7 @@ function AddProviderDialog({
                               <p className="font-semibold text-[15px]">{t('aiProviders.oauth.authFailed')}</p>
                               <p className="text-[13px] opacity-80">{oauthError}</p>
                               <Button variant="outline" size="sm" onClick={handleCancelOAuth} className="mt-2 rounded-full px-6 h-9">
-                                Try Again
+                                {t('aiProviders.oauth.tryAgain')}
                               </Button>
                             </div>
                           ) : !oauthData ? (
@@ -2158,9 +2188,9 @@ function AddProviderDialog({
                           ) : oauthData.mode === 'manual' ? (
                             <div className="space-y-4 w-full">
                               <div className="space-y-2">
-                                <h3 className="font-semibold text-[16px] text-foreground">Complete OpenAI Login</h3>
-                                <p className="text-[13px] text-muted-foreground text-left bg-black/5 dark:bg-white/5 p-4 rounded-xl">
-                                  {oauthData.message || 'Open the authorization page, complete login, then paste the callback URL or code below.'}
+                                <h3 className="font-semibold text-base text-foreground">{t('aiProviders.oauth.completeBrowserLogin')}</h3>
+                                <p className="text-meta text-muted-foreground text-left bg-black/5 dark:bg-white/5 p-4 rounded-xl">
+                                  {oauthData.message || t('aiProviders.oauth.manualCallbackHelp')}
                                 </p>
                               </div>
 
@@ -2170,11 +2200,11 @@ function AddProviderDialog({
                                 onClick={() => hostApi.shell.openExternal(oauthData.authorizationUrl)}
                               >
                                 <ExternalLink className="h-4 w-4 mr-2" />
-                                Open Authorization Page
+                                {t('aiProviders.oauth.openAuthorizationPage')}
                               </Button>
 
                               <Input
-                                placeholder="Paste callback URL or code"
+                                placeholder={t('aiProviders.oauth.callbackPlaceholder')}
                                 value={manualCodeInput}
                                 onChange={(e) => setManualCodeInput(e.target.value)}
                                 className={inputClasses}
@@ -2185,11 +2215,11 @@ function AddProviderDialog({
                                 onClick={handleSubmitManualOAuthCode}
                                 disabled={!manualCodeInput.trim()}
                               >
-                                Submit Code
+                                {t('aiProviders.oauth.submitCode')}
                               </Button>
 
                               <Button variant="ghost" className="w-full rounded-full h-[42px] font-semibold text-muted-foreground" onClick={handleCancelOAuth}>
-                                Cancel
+                                {t('aiProviders.oauth.cancel')}
                               </Button>
                             </div>
                           ) : (
@@ -2235,7 +2265,7 @@ function AddProviderDialog({
                               </div>
 
                               <Button variant="ghost" className="w-full rounded-full h-[42px] font-semibold text-muted-foreground" onClick={handleCancelOAuth}>
-                                Cancel
+                                {t('aiProviders.oauth.cancel')}
                               </Button>
                             </div>
                           )}

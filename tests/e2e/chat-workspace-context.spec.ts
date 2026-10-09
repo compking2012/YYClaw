@@ -9,6 +9,7 @@ import {
 } from './fixtures/electron';
 
 const SESSION_KEY = 'agent:main:session-a';
+const DEFAULT_SESSION_KEY = 'agent:main:main';
 const SESSION_WORKSPACE = '/Users/e2e/workspace/ClawX';
 const SESSION_WORKSPACE_LABEL = 'ClawX';
 const GLOBAL_WORKSPACE = '/Users/e2e/workspace/GlobalProject';
@@ -100,6 +101,9 @@ type WorkspaceMockOptions = {
   sessionLabel?: string;
   sessionDerivedTitle?: string | null;
   sessionSummaryFirstUserText?: string | null;
+  sessionKey?: string;
+  sessionRowWorkspacePath?: string;
+  sessionSummaryWorkspacePath?: string;
 };
 
 async function installWorkspaceMocks(app: ElectronApplication, options: WorkspaceMockOptions = {}) {
@@ -114,6 +118,8 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
     GLOBAL_WORKSPACE,
     ...inheritedRecentWorkspacePaths.filter((path) => path !== GLOBAL_WORKSPACE),
   ].slice(0, 10);
+  const sessionKey = options.sessionKey ?? SESSION_KEY;
+  const summaryWorkspacePath = options.sessionSummaryWorkspacePath ?? SESSION_WORKSPACE;
   const settingsSnapshot = {
     language: 'en',
     setupComplete: true,
@@ -122,19 +128,20 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
     workspaceLabels: options.workspaceLabels ?? {},
   };
   const sessionRow = {
-    key: SESSION_KEY,
+    key: sessionKey,
     displayName: options.sessionLabel ?? 'Gateway session display name',
     updatedAt: nowMs,
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     ...(options.sessionLabel ? { label: options.sessionLabel } : {}),
     ...(typeof options.sessionDerivedTitle === 'string' ? { derivedTitle: options.sessionDerivedTitle } : {}),
+    ...(options.sessionRowWorkspacePath ? { workspacePath: options.sessionRowWorkspacePath } : {}),
   };
   const sessionSummaries = {
     summaries: [{
-      sessionKey: SESSION_KEY,
+      sessionKey,
       firstUserText: options.sessionSummaryFirstUserText ?? null,
       lastTimestamp: nowMs,
-      workspacePath: SESSION_WORKSPACE,
+      workspacePath: summaryWorkspacePath,
     }],
   };
   const acpLoadResult = { success: true, generation: 1 };
@@ -205,7 +212,7 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
         }],
         defaultAgentId: 'main',
       }),
-      [stableStringify(['sessions', 'summaries', { sessionKeys: [SESSION_KEY] }])]: sessionSummaries,
+      [stableStringify(['sessions', 'summaries', { sessionKeys: [sessionKey] }])]: sessionSummaries,
       [stableStringify(['/api/sessions/summaries', 'POST'])]: hostJson(sessionSummaries),
       [stableStringify(['files', 'resolveWorkspaceContext', {
         workspaceRoot: DEFAULT_WORKSPACE,
@@ -219,10 +226,10 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
         workspaceRoot: GLOBAL_WORKSPACE,
         executionCwd: GLOBAL_WORKSPACE,
       }])]: workspaceContextResult(GLOBAL_WORKSPACE),
-      [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: acpLoadResult,
-      [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: SESSION_WORKSPACE, cwd: SESSION_WORKSPACE }])]: acpLoadResult,
-      [stableStringify(['sessions', 'delete', { id: SESSION_KEY }])]: { success: true },
-      [stableStringify(['sessions', 'rename', { id: SESSION_KEY, title: 'Renamed conversation' }])]: { success: true },
+      [stableStringify(['chat', 'loadAcpSession', { sessionKey, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: acpLoadResult,
+      [stableStringify(['chat', 'loadAcpSession', { sessionKey, workspaceRoot: SESSION_WORKSPACE, cwd: SESSION_WORKSPACE }])]: acpLoadResult,
+      [stableStringify(['sessions', 'delete', { id: sessionKey }])]: { success: true },
+      [stableStringify(['sessions', 'rename', { id: sessionKey, title: 'Renamed conversation' }])]: { success: true },
     },
     recordHostInvocations: true,
   });
@@ -231,6 +238,44 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
 }
 
 test.describe('ClawX chat workspace context', () => {
+  test('keeps the canonical default session out of a stale Agent workspace', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installWorkspaceMocks(app, {
+        sessionKey: DEFAULT_SESSION_KEY,
+        sessionLabel: 'AAB',
+        sessionRowWorkspacePath: GLOBAL_WORKSPACE,
+        sessionSummaryWorkspacePath: GLOBAL_WORKSPACE,
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
+      }
+
+      const defaultGroup = page.getByTestId(workspaceSessionGroupTestId(DEFAULT_WORKSPACE));
+      await expect(defaultGroup).toBeVisible({ timeout: 30_000 });
+      await expect(defaultGroup.getByTestId(`sidebar-session-${DEFAULT_SESSION_KEY}`)).toContainText('AAB');
+      await expect(page.getByTestId(workspaceSessionGroupTestId(GLOBAL_WORKSPACE))).toHaveCount(0);
+      await expect(page.getByTestId('chat-workspace-selector')).toHaveAttribute('title', DEFAULT_WORKSPACE);
+
+      await expect.poll(async () => {
+        const invocations = await getRecordedHostInvocations(app);
+        return invocations.some((entry) => (
+          entry.module === 'chat'
+          && entry.action === 'loadAcpSession'
+          && entry.payload?.sessionKey === DEFAULT_SESSION_KEY
+          && entry.payload?.cwd === DEFAULT_WORKSPACE
+        ));
+      }).toBe(true);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('bound session shows read-only workspace and workspace tree uses the same cwd', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
@@ -461,6 +506,46 @@ test.describe('ClawX chat workspace context', () => {
     }
   });
 
+  test('prunes an unavailable recent workspace that is no longer referenced', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installWorkspaceMocks(app, {
+        chatWorkspacePath: DEFAULT_WORKSPACE,
+        recentWorkspacePaths: [GLOBAL_WORKSPACE, DEFAULT_WORKSPACE],
+        workspaceLabels: { [GLOBAL_WORKSPACE]: 'Deleted workspace' },
+        unavailableWorkspacePath: GLOBAL_WORKSPACE,
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
+      }
+
+      await expect.poll(async () => {
+        const invocations = await getRecordedHostInvocations(app);
+        return invocations.some((entry) => (
+          entry.module === 'settings'
+          && entry.action === 'setMany'
+          && JSON.stringify(entry.payload?.patch?.recentWorkspacePaths) === JSON.stringify([DEFAULT_WORKSPACE])
+          && JSON.stringify(entry.payload.patch.workspaceLabels) === JSON.stringify({})
+        ));
+      }).toBe(true);
+
+      await page.getByTestId('sidebar-new-chat').click();
+      const workspaceSelector = page.getByTestId('chat-workspace-selector');
+      await expect(workspaceSelector).not.toHaveAttribute('aria-disabled', 'true');
+      await workspaceSelector.click();
+      await expect(page.getByTestId(
+        `chat-workspace-option-${encodeURIComponent(GLOBAL_WORKSPACE)}`,
+      )).toHaveCount(0);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('UUID-date fallback title is replaced by the first user prompt', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const fallbackTitle = '72e4b28b (2026-07-22)';
@@ -513,6 +598,34 @@ test.describe('ClawX chat workspace context', () => {
       await expect(workspaceGroup).toBeVisible({ timeout: 30_000 });
       await expect(workspaceGroup).toContainText('Workspace chat');
       await expect(workspaceGroup).not.toContainText('[Working directory:');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('canonical main session replaces a truncated cwd title with the first user prompt', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const truncatedCwdTitle = `[Working directory: ${DEFAULT_WORKSPACE}]…`;
+
+    try {
+      await installWorkspaceMocks(app, {
+        sessionKey: DEFAULT_SESSION_KEY,
+        sessionDerivedTitle: truncatedCwdTitle,
+        sessionSummaryFirstUserText: `[Working directory: ${DEFAULT_WORKSPACE}]\n\n给我写一个脚本`,
+        sessionRowWorkspacePath: DEFAULT_WORKSPACE,
+        sessionSummaryWorkspacePath: DEFAULT_WORKSPACE,
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
+      }
+
+      const defaultGroup = page.getByTestId(workspaceSessionGroupTestId(DEFAULT_WORKSPACE));
+      await expect(defaultGroup).toContainText('给我写一个脚本', { timeout: 30_000 });
+      await expect(defaultGroup).not.toContainText('[Working directory:');
     } finally {
       await closeElectronApp(app);
     }

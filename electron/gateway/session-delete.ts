@@ -52,9 +52,10 @@ export async function tryGatewaySessionDelete(
 export async function deleteWorkflowChildSessions(
   gatewayManager: GatewayManager,
   workflowRunId: string,
-): Promise<void> {
+): Promise<string[]> {
+  const warnings: string[] = [];
   if (!gatewayManager || typeof gatewayManager.isConnected !== 'function' || !gatewayManager.isConnected()) {
-    return;
+    return warnings;
   }
   const marker = `wf:${workflowRunId}:`;
   try {
@@ -66,12 +67,15 @@ export async function deleteWorkflowChildSessions(
         await gatewayManager.rpc('sessions.delete', { key: session.key, deleteTranscript: true });
         logger.info(`[session:delete] deleted workflow child session "${session.key}" (run ${workflowRunId})`);
       } catch (error) {
+        warnings.push(`Could not delete workflow child ${session.key}: ${String(error)}`);
         logger.warn(`[session:delete] sessions.delete failed for child "${session.key}": ${String(error)}`);
       }
     }
   } catch (error) {
+    warnings.push(`Could not list workflow children for ${workflowRunId}: ${String(error)}`);
     logger.warn(`[session:delete] could not enumerate workflow child sessions for run ${workflowRunId}: ${String(error)}`);
   }
+  return warnings;
 }
 
 interface GatewayTaskRow {

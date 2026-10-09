@@ -9,6 +9,7 @@ import type { ChatSession } from './types';
 
 const CHANNEL_SESSION_SEGMENTS = new Set<string>(Object.keys(CHANNEL_NAMES));
 const NON_USER_SESSION_LABELS = new Set(['clawx', 'main']);
+const SUBAGENT_CONTEXT_PREFIX = '[Subagent Context]';
 
 function stripHeartbeatSentinel(value: string | undefined): string {
   return (value ?? '').replaceAll(OPENCLAW_HEARTBEAT_POLL_SENTINEL, '').trim();
@@ -30,6 +31,22 @@ export function isChannelSessionKey(sessionKey: string): boolean {
   const parts = sessionKey.split(':');
   if (parts.length < 3) return false;
   return CHANNEL_SESSION_SEGMENTS.has(parts[2] ?? '');
+}
+
+export function isNativeSubagentSessionKey(sessionKey: string): boolean {
+  const parts = sessionKey.split(':');
+  return parts.length === 4
+    && parts[0] === 'agent'
+    && Boolean(parts[1])
+    && parts[2] === 'subagent'
+    && Boolean(parts[3]);
+}
+
+export function formatSubagentSessionTitle(sessionKey: string, title: string): string {
+  if (!isNativeSubagentSessionKey(sessionKey) || !title.startsWith(SUBAGENT_CONTEXT_PREFIX)) {
+    return title;
+  }
+  return title.slice(SUBAGENT_CONTEXT_PREFIX.length).trimStart();
 }
 
 export function isClawXDesktopSessionKey(sessionKey: string): boolean {
@@ -69,14 +86,21 @@ export function findHiddenOpenClawHeartbeatSession(sessionKey: string, sessions:
   return session && isOpenClawHeartbeatOnlySession(session) ? session : null;
 }
 
-export function shouldIncludeSessionInSidebarList(session: ChatSession): boolean {
+export function shouldRetainSessionInCatalog(session: ChatSession): boolean {
   if (!session.key) return false;
-  // Hide renderer-local placeholders created by New Chat until the first message
-  // creates the backing ACP session (acknowledgeAcpSessionCreated clears the flag).
   if (session.createdLocally) return false;
   if (isOpenClawHeartbeatOnlySession(session)) return false;
   if (isChannelSessionKey(session.key)) {
     return !isPlaceholderChannelSession(session);
   }
   return true;
+}
+
+export function shouldIncludeSessionInSidebarList(session: ChatSession): boolean {
+  // Native children remain in the catalog for status, attention, and deletion joins.
+  return shouldRetainSessionInCatalog(session) && !isNativeSubagentSessionKey(session.key);
+}
+
+export function shouldIncludeSessionInWorkspaceDeletion(session: ChatSession): boolean {
+  return shouldRetainSessionInCatalog(session);
 }

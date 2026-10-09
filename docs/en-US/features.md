@@ -1,8 +1,21 @@
 # YYClaw Features
 
+The developer-gated standalone Image Generation sidebar page is retained. It shares the integrated upstream endpoint settings with the local developer settings; model management remains in the local Settings modal rather than moving image generation into an upstream Models tab.
+
+The local provider catalog adds TokenDance browser authorization and API-key setup with upstream Chinese-language discovery and request attribution. Anthropic and Google use upstream connection presets. Existing local model IDs, defaults, and multi-model capability slots remain unchanged; the remote/local catalog selection and developer fallback are retained.
+
 This document is the detailed companion to the Features section in the
 [README](../../README.md). It keeps the implementation caveats, limits, and
 configuration mechanics that are too granular for the README itself.
+
+
+### Upstream Integration
+
+The composer keeps local account names and conversation-only model selection. ACP context usage appears before Gateway status; fresh runtime totals remain authoritative. Compaction status and read-only native subagent drill-down coexist with the independent local workflow timeline. Switching with `@agent` starts a fresh target-agent conversation.
+
+Only changing the global default conversation model recalculates the compaction reserve floor (25% of explicit context metadata, otherwise 50,000 tokens). Per-agent overrides, media slots and startup synchronization do not recalculate it. Explicit compaction settings remain preserved.
+
+DingTalk uses the upstream official connector while retaining local multi-account support and optional workspace authorization. Computer Use follows the upstream local driver lifecycle and permissions. Settings → About exports redacted diagnostics and optionally selected raw conversation transcripts to a local ZIP; no automatic upload occurs.
 
 ## Zero Configuration Barrier
 

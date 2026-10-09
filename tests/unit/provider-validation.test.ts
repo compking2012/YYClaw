@@ -24,7 +24,7 @@ describe('validateApiKeyWithProvider', () => {
 
     expect(result).toMatchObject({ valid: true });
     expect(proxyAwareFetch).toHaveBeenCalledWith(
-      'https://api.minimaxi.com/anthropic/v1/models?limit=1',
+      'https://api.minimaxi.com/anthropic/v1/models?limit=1000',
       expect.objectContaining({
         headers: expect.objectContaining({
           'x-api-key': 'sk-cn-test',
@@ -32,6 +32,91 @@ describe('validateApiKeyWithProvider', () => {
         }),
       })
     );
+  });
+
+  it('rejects a Google model the key cannot reach', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          models: [
+            { name: 'models/gemini-3.5-flash' },
+            { name: 'models/gemini-3.1-pro-preview' },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('google', 'AIza-test', {
+      modelId: 'gemini-9.9-imaginary',
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('gemini-9.9-imaginary');
+    expect(result.error).toContain('gemini-3.5-flash');
+  });
+
+  it('accepts a Google model the listing reports, ignoring the resource-name prefix', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ models: [{ name: 'models/gemini-3.5-flash' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('google', 'AIza-test', {
+      modelId: 'gemini-3.5-flash',
+    });
+
+    expect(result).toMatchObject({ valid: true });
+    expect(proxyAwareFetch).toHaveBeenCalledWith(
+      'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000&key=AIza-test',
+      expect.anything(),
+    );
+  });
+
+  it('keeps a Google key valid when the listing returns no model names', async () => {
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('google', 'AIza-test', {
+      modelId: 'gemini-9.9-imaginary',
+    });
+
+    expect(result).toMatchObject({ valid: true });
+  });
+
+  it('does not police model ids on Anthropic-compatible relays', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: [{ id: 'MiniMax-M3' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('minimax-portal-cn', 'sk-cn-test', {
+      modelId: 'MiniMax-M3-unlisted-preview',
+    });
+
+    expect(result).toMatchObject({ valid: true });
+  });
+
+  it('rejects an Anthropic model the key cannot reach', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: [{ id: 'claude-opus-4-8' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('anthropic', 'sk-ant-test', {
+      modelId: 'claude-opus-99',
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('claude-opus-99');
   });
 
   it('still validates OpenAI-compatible providers with bearer auth', async () => {
@@ -48,6 +133,64 @@ describe('validateApiKeyWithProvider', () => {
         }),
       })
     );
+  });
+
+  it('adds ClawX attribution and returns documented TokenDance recovery actions', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: 'Balance insufficient' } }), {
+        status: 402,
+        headers: {
+          'Content-Type': 'application/json',
+          'TokenDance-Recovery-Action': 'top_up_balance',
+        },
+      }),
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('tokendance', 'td-test-key', {
+      modelId: 'qwen3.8-max',
+    });
+
+    expect(result).toMatchObject({
+      valid: false,
+      status: 402,
+      recoveryAction: 'top_up_balance',
+    });
+    expect(proxyAwareFetch).toHaveBeenCalledWith(
+      'https://tokendance.space/gateway/v1/chat/completions',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          model: 'qwen3.8-max',
+          messages: [{ role: 'user', content: 'hi' }],
+          max_tokens: 1,
+        }),
+        headers: expect.objectContaining({
+          Authorization: 'Bearer td-test-key',
+          'X-App-URL': 'https://clawx.com.cn',
+        }),
+      }),
+    );
+  });
+
+  it('ignores unknown TokenDance recovery actions', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: 'Provider error' } }), {
+        status: 402,
+        headers: {
+          'Content-Type': 'application/json',
+          'TokenDance-Recovery-Action': 'unexpected_action',
+        },
+      }),
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('tokendance', 'td-test-key', {
+      modelId: 'qwen3.8-max',
+    });
+
+    expect(result).toMatchObject({ valid: false, status: 402 });
+    expect(result.recoveryAction).toBeUndefined();
   });
 
   it('falls back to /responses for openai-responses when /models is unavailable', async () => {

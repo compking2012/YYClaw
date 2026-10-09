@@ -3,6 +3,10 @@ import { render, screen } from '@testing-library/react';
 import { Chat } from '@/pages/Chat';
 import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
 
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+}));
+
 const { acpState, agentsState, artifactPanelState, chatState, settingsState } = vi.hoisted(() => ({
   acpState: {
     timeline: {
@@ -108,10 +112,6 @@ vi.mock('@/hooks/use-stick-to-bottom-instant', () => ({
     scrollToBottom: vi.fn(),
     isAtBottom: true,
   })),
-}));
-
-vi.mock('@/hooks/use-min-loading', () => ({
-  useMinLoading: () => false,
 }));
 
 vi.mock('@/pages/Chat/ChatToolbar', () => ({ ChatToolbar: () => null }));

@@ -1,10 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AcpToolCallCard } from '@/pages/Chat/AcpToolCallCard';
+import { AcpToolCallsGroup } from '@/pages/Chat/AcpToolCallsGroup';
 import { AcpAttachmentPart } from '@/pages/Chat/AcpAttachmentPart';
 import { AcpTimeline, streamingMessageSegmentIds } from '@/pages/Chat/AcpTimeline';
 import { AcpTurnFileActivity } from '@/pages/Chat/AcpTurnFileActivity';
-import type { AcpTimelineSnapshot, AttachmentRenderPart, ToolCallItem } from '@/lib/acp/timeline-types';
+import type { AcpTimelineSnapshot, AttachmentRenderPart, CompactionItem, ToolCallItem } from '@/lib/acp/timeline-types';
 import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { useSettingsStore } from '@/stores/settings';
@@ -56,6 +57,14 @@ vi.mock('react-i18next', () => ({
       const labels: Record<string, string> = {
         'acp.thought': 'Thought',
         'acp.tool': 'Tool',
+        'acp.toolName.updatePlan': 'Update plan',
+        'acp.toolName.webFetch': 'Read web page',
+        'acp.toolName.browser': 'Control browser',
+        'acp.toolName.execCommand': 'Run command',
+        'acp.toolName.read': 'Read',
+        'acp.toolName.write': 'Write',
+        'acp.toolName.spawnSubagent': 'Spawn subagent',
+        'acp.toolName.memorySearch': 'Search memory',
         'acp.expandTool': 'Expand tool result',
         'acp.collapseTool': 'Collapse tool result',
         'acp.expandToolGroup': 'Expand tool calls',
@@ -70,9 +79,16 @@ vi.mock('react-i18next', () => ({
         'acp.cancelled': 'Cancelled',
         'acp.loadFailed': 'Load failed',
         'acp.promptFailed': 'Prompt failed',
+        'acp.tokenDanceRecovery.top_up_balance': 'Top up TokenDance and retry.',
         'acp.unsupportedContent': 'Unsupported content',
         'acp.turnDuration': 'Took {{duration}}',
         'acp.turnElapsed': '{{duration}} elapsed',
+        'acp.compaction.inProgress': 'Compacting context',
+        'acp.compaction.completed': 'Compacted history',
+        'acp.compaction.continuing': 'Context compacted and continuing',
+        'acp.compaction.failed': 'Context compaction failed',
+        'acp.compaction.cancelled': 'Context compaction cancelled',
+        'acp.compaction.reason': 'Reason: {{reason}}',
         'acp.dismiss': 'Dismiss',
         'acp.attachment.loading': 'Loading attachment',
         'acp.attachment.unavailable': 'Attachment unavailable',
@@ -170,6 +186,17 @@ function toolCallItem(overrides: Partial<ToolCallItem>): ToolCallItem {
     status: 'completed',
     outputParts: [{ kind: 'markdown', text: 'File contents loaded.' }],
     locations: [],
+    ...overrides,
+  };
+}
+
+function compactionItem(overrides: Partial<CompactionItem>): CompactionItem {
+  return {
+    kind: 'compaction',
+    id: 'compaction:compact-1',
+    compactionId: 'compact-1',
+    status: 'completed',
+    source: 'threshold',
     ...overrides,
   };
 }
@@ -679,6 +706,96 @@ describe('ACP chat timeline components', () => {
     });
   });
 
+  it('keeps assistant prose, tool cards, and file activity on the same turn width', () => {
+    const state = snapshot({
+      itemOrder: ['tool:write-file', 'msg-a:0'],
+      itemsById: {
+        'tool:write-file': toolCallItem({
+          id: 'tool:write-file',
+          toolCallId: 'write-file',
+          title: 'write: report',
+          input: { path: 'report.md', content: '# Report' },
+        }),
+        'msg-a:0': {
+          kind: 'message-segment',
+          id: 'msg-a:0',
+          role: 'assistant',
+          messageId: 'msg-a',
+          segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Here is the result.' }],
+        },
+      },
+    });
+    const turnId = 'assistant-turn:tool:write-file';
+    const activity = {
+      turnId,
+      toolCallId: 'write-file',
+      toolName: 'write' as const,
+      relativePath: 'report.md',
+      action: 'created' as const,
+      fragments: [{ oldText: '', newText: '# Report', sequence: 0 }],
+      sequence: 0,
+    };
+    const projection: AcpFileActivityProjection = {
+      activities: [activity],
+      turnSummariesByTurnId: {
+        [turnId]: [{
+          turnId,
+          relativePath: 'report.md',
+          action: 'created',
+          activities: [activity],
+          added: 1,
+          removed: 0,
+        }],
+      },
+      fileGroups: [{ relativePath: 'report.md', activities: [activity] }],
+      uniqueFileCount: 1,
+    };
+
+    render(<AcpTimeline snapshot={state} fileActivity={projection} workspaceRoot="/workspace" />);
+
+    const message = screen.getByTestId('acp-assistant-message');
+    const toolWrap = screen.getByTestId('acp-tool-call-card').parentElement;
+    const files = screen.getByTestId('acp-turn-file-activity');
+
+    expect(message.className).toContain('w-full');
+    expect(message.className).not.toContain('calc(100%-3rem)');
+    expect(toolWrap?.className).toContain('w-full');
+    expect(files.className).toContain('w-full');
+    expect(files.parentElement?.className).toContain('w-full');
+  });
+
+  it('does not mount an empty file-activity wrapper when the turn has no file summaries', () => {
+    const state = snapshot({
+      itemOrder: ['user-a:0', 'assistant-a:0'],
+      itemsById: {
+        'user-a:0': {
+          kind: 'message-segment', id: 'user-a:0', role: 'user', messageId: 'user-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Hello' }],
+        },
+        'assistant-a:0': {
+          kind: 'message-segment', id: 'assistant-a:0', role: 'assistant', messageId: 'assistant-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Hi there.' }],
+        },
+      },
+    });
+
+    render(
+      <AcpTimeline
+        snapshot={state}
+        workspaceRoot="/workspace"
+        turnTimingsByUserMessageId={{
+          'user-a': { source: 'transcript', status: 'complete', durationMs: 1_200 },
+        }}
+      />,
+    );
+
+    const message = screen.getByTestId('acp-assistant-message');
+    const duration = screen.getByTestId('acp-turn-duration');
+    expect(screen.queryByTestId('acp-turn-file-activity')).not.toBeInTheDocument();
+    expect(message.nextElementSibling).toBe(duration.parentElement);
+  });
+
   it('routes deleted path-only activity to Changes without rendering counts', () => {
     const state = snapshot({
       itemOrder: ['tool:delete-file'],
@@ -907,6 +1024,100 @@ describe('ACP chat timeline components', () => {
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('File contents loaded.');
     expect(screen.getByTestId('acp-plan-item')).toHaveTextContent('Update component tests');
     expect(screen.getByText('Second assistant segment.')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['in_progress', false, 'Compacting context'],
+    ['completed', false, 'Compacted history'],
+    ['completed', true, 'Context compacted and continuing'],
+    ['failed', false, 'Context compaction failed'],
+    ['cancelled', false, 'Context compaction cancelled'],
+  ] as const)('renders the %s compaction lifecycle state with willRetry=%s', (status, willRetry, label) => {
+    const item = compactionItem({ status, willRetry });
+    const state = snapshot({
+      itemOrder: [item.id],
+      itemsById: { [item.id]: item },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    const row = screen.getByTestId('acp-compaction-status');
+    expect(row).toHaveTextContent(label);
+    expect(row).toHaveClass('w-full');
+    if (status === 'in_progress') {
+      expect(row.querySelector('svg')).toHaveClass('animate-spin', 'motion-reduce:animate-none');
+    }
+  });
+
+  it('renders multiple compactions separately in timeline order without exposing metadata content', () => {
+    const first = {
+      ...compactionItem({ id: 'compaction:first', compactionId: 'first', status: 'completed' }),
+      summary: 'SECRET COMPACTION SUMMARY',
+    } as CompactionItem & { summary: string };
+    const second = {
+      ...compactionItem({ id: 'compaction:second', compactionId: 'second', status: 'failed' }),
+      content: 'SECRET COMPACTION CONTENT',
+    } as CompactionItem & { content: string };
+    const state = snapshot({
+      itemOrder: [first.id, second.id],
+      itemsById: { [first.id]: first, [second.id]: second },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    expect(screen.getAllByTestId('acp-compaction-status').map((row) => row.textContent)).toEqual([
+      'Compacted history',
+      'Context compaction failed',
+    ]);
+    expect(screen.queryByText('SECRET COMPACTION SUMMARY')).not.toBeInTheDocument();
+    expect(screen.queryByText('SECRET COMPACTION CONTENT')).not.toBeInTheDocument();
+  });
+
+  it('shows the bounded reason only for failed compactions', () => {
+    const failed = compactionItem({
+      id: 'compaction:failed',
+      compactionId: 'failed',
+      status: 'failed',
+      reasonCode: 'no_compactable_entries',
+      reason: 'no real conversation messages',
+    });
+    const completed = compactionItem({
+      id: 'compaction:completed',
+      compactionId: 'completed',
+      status: 'completed',
+      reasonCode: 'summary_failed',
+      reason: 'must stay hidden',
+    });
+    const state = snapshot({
+      itemOrder: [failed.id, completed.id],
+      itemsById: { [failed.id]: failed, [completed.id]: completed },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    expect(screen.getByTestId('acp-compaction-failure-reason')).toHaveTextContent(
+      'Reason: no real conversation messages',
+    );
+    expect(screen.queryByText('must stay hidden')).not.toBeInTheDocument();
+  });
+
+  it('uses status semantics for live compactions but not historical replay markers', () => {
+    const live = compactionItem({ id: 'compaction:live', compactionId: 'live', status: 'in_progress' });
+    const historical = compactionItem({
+      id: 'compaction:historical',
+      compactionId: 'historical',
+      status: 'completed',
+      historical: true,
+    });
+    const state = snapshot({
+      itemOrder: [live.id, historical.id],
+      itemsById: { [live.id]: live, [historical.id]: historical },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Compacting context');
+    expect(screen.getByText('Compacted history').parentElement).not.toHaveAttribute('role');
   });
 
   it('collapses multiple completed tool calls into one group after the turn settles', () => {
@@ -1141,6 +1352,89 @@ describe('ACP chat timeline components', () => {
     expect(screen.queryByTestId('acp-tool-call-card')).not.toBeInTheDocument();
     expect(screen.queryByText('File contents loaded.')).not.toBeInTheDocument();
     expect(screen.getByText('All done.')).toBeInTheDocument();
+  });
+
+  it('lets a historical update_plan expand its structured plan input when it has no output', () => {
+    render(<AcpToolCallCard item={toolCallItem({
+      title: 'update_plan: plan: [{"step":"A long task title that is truncated in the card header"}]',
+      input: { plan: [{ step: 'A long task title that is truncated in the card header', status: 'in_progress' }] },
+      historical: true,
+      status: 'completed',
+      outputParts: [],
+    })} />);
+
+    const card = screen.getByTestId('acp-tool-call-card');
+    expect(card).toHaveAttribute('data-expanded', 'false');
+    fireEvent.click(screen.getByTestId('acp-tool-toggle'));
+    expect(card).toHaveAttribute('data-expanded', 'true');
+    expect(screen.getByTestId('acp-tool-input-pre')).toHaveTextContent('A long task title that is truncated in the card header');
+  });
+
+  it('shows the complete historical tool input after expanding the card', () => {
+    render(<AcpToolCallCard item={toolCallItem({
+      title: 'exec: command: command -v tvly && tvly search ...',
+      input: {
+        command: 'command -v tvly && tvly search "US data center protests opposition residents recent approvals moratorium 2026"',
+        timeout: 120_000,
+      },
+      historical: true,
+      status: 'completed',
+      outputParts: [],
+    })} />);
+
+    const card = screen.getByTestId('acp-tool-call-card');
+    expect(card).toHaveAttribute('data-expanded', 'false');
+    fireEvent.click(screen.getByTestId('acp-tool-toggle'));
+    expect(JSON.parse(screen.getByTestId('acp-tool-input-pre').textContent ?? '')).toEqual({
+      command: 'command -v tvly && tvly search "US data center protests opposition residents recent approvals moratorium 2026"',
+      timeout: 120_000,
+    });
+  });
+
+  it.each([
+    ['update_plan: plan: [{"step":"Review"}]', undefined, 'Update plan: plan: [{"step":"Review"}]', 'list-checks'],
+    ['web_fetch: url: https://example.com', undefined, 'Read web page: url: https://example.com', 'globe'],
+    ['browser: action: click', undefined, 'Control browser: action: click', 'square-mouse-pointer'],
+    ['exec: command: ls -la', undefined, 'Run command: command: ls -la', 'monitor-play'],
+    ['read: path: package.json', undefined, 'Read: path: package.json', 'scan-text'],
+    ['write: path: report.md', undefined, 'Write: path: report.md', 'save'],
+    ['sessions_spawn: task: Review', undefined, 'Spawn subagent: task: Review', 'bot'],
+    ['memory_search: query: release plan', undefined, 'Search memory: query: release plan', 'database'],
+  ])('renders %s with its localized label and icon', (title, input, label, icon) => {
+    render(<AcpToolCallCard item={toolCallItem({ title, input, status: 'running', outputParts: [] })} />);
+
+    expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent(label);
+    expect(screen.getByTestId(`acp-tool-icon-${icon}`)).toBeInTheDocument();
+  });
+
+  it('keeps the wrench before the tool label and places the specialized icon after it for a single tool call', () => {
+    render(<AcpToolCallCard item={toolCallItem({
+      title: 'read: path: package.json',
+      status: 'running',
+      outputParts: [],
+    })} />);
+
+    const toolLabel = screen.getByText('Tool');
+    expect(toolLabel.previousElementSibling).toHaveClass('lucide-wrench');
+    expect(toolLabel.nextElementSibling).toHaveAttribute('data-testid', 'acp-tool-icon-scan-text');
+  });
+
+  it('does not shift the collapsed tool group arrow on hover', () => {
+    render(<AcpToolCallsGroup items={[
+      toolCallItem({ id: 'tool:one', toolCallId: 'one', historical: true }),
+      toolCallItem({ id: 'tool:two', toolCallId: 'two', historical: true }),
+    ]} />);
+
+    expect(screen.getByTestId('acp-tool-calls-group').querySelector('svg')).not.toHaveClass('group-hover:translate-x-0.5');
+  });
+
+  it.each([
+    ['exec: command:', undefined],
+  ])('keeps %s unchanged when it does not meet the special-case input condition', (title, input) => {
+    render(<AcpToolCallCard item={toolCallItem({ title, input, status: 'running', outputParts: [] })} />);
+
+    expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent(title);
+    expect(screen.queryByTestId('acp-tool-icon-monitor-play')).not.toBeInTheDocument();
   });
 
   it('starts auto-collapse when details are added to a completed no-detail tool call', () => {
@@ -2023,6 +2317,20 @@ describe('ACP chat timeline components', () => {
     ].map((node) => Array.from(container.querySelectorAll('*')).indexOf(node));
     expect(ordered).toEqual([...ordered].sort((a, b) => a - b));
     expect(screen.getAllByTestId('acp-attachment-icon')).toHaveLength(2);
+  });
+
+  it('shows localized TokenDance recovery guidance without exposing the transport marker', () => {
+    render(
+      <AcpTimeline
+        snapshot={snapshot({})}
+        error="402 Balance insufficient [TokenDance-Recovery-Action:top_up_balance]"
+        errorKind="prompt"
+      />,
+    );
+
+    expect(screen.getByTestId('acp-error-banner')).toHaveTextContent('402 Balance insufficient');
+    expect(screen.getByTestId('tokendance-recovery-guidance')).toHaveTextContent('Top up TokenDance and retry.');
+    expect(screen.getByTestId('acp-error-banner')).not.toHaveTextContent('TokenDance-Recovery-Action');
   });
 
   it('dismisses the session error banner', () => {

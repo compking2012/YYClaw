@@ -32,7 +32,9 @@
         "defaultUpdated": "Default account updated",
         "accountDeleted": "Account deleted",
         "channelDeleted": "Channel deleted",
-        "feishuAppDisabled": "The corresponding Feishu app was disabled. Please delete it in the Feishu console."
+        "feishuAppDisabled": "The corresponding Feishu app was disabled. Please delete it in the Feishu console.",
+        "dingtalkWorkspaceAuthReset": "DingTalk workspace authorization removed",
+        "dingtalkWorkspaceAuthResetFailed": "Could not remove DingTalk workspace authorization"
     },
     "account": {
         "add": "Add Account",
@@ -65,7 +67,11 @@
             "error": "Error"
         },
         "accountIdPrompt": "Enter a new account ID for this channel",
-        "accountIdExists": "Account ID {{accountId}} already exists"
+        "accountIdExists": "Account ID {{accountId}} already exists",
+        "authorizeWorkspace": "Authorize workspace",
+        "resetWorkspaceAuth": "Remove workspace authorization",
+        "resetWorkspaceAuthConfirm": "Remove the locally saved DingTalk workspace authorization? Configured DingTalk accounts share this authorization. Chat will continue to work, but calendar, docs, tasks, and other workspace features will require authorization again.",
+        "resetWorkspaceAuthConfirmAction": "Remove authorization"
     },
     "dialog": {
         "updateTitle": "Update {{name}}",
@@ -96,7 +102,38 @@
         "generateQRCode": "Generate QR Code",
         "updateAndReconnect": "Update & Reconnect",
         "saveAndConnect": "Save & Connect",
-        "envVar": "Environment Variable: {{var}}"
+        "envVar": "Environment Variable: {{var}}",
+        "dingtalkWorkspaceAuthTitle": "Authorize DingTalk workspace",
+        "dingtalkWorkspaceAuthDescription": "Your bot is connected. Authorize optional access to calendars, docs, tasks, and other DingTalk workspace features.",
+        "dingtalkWorkspaceAuthStarting": "Preparing secure DingTalk authorization...",
+        "dingtalkWorkspaceAuthCodeHint": "Confirm this code on the DingTalk authorization page:",
+        "dingtalkWorkspaceAuthOpen": "Open DingTalk Authorization",
+        "dingtalkWorkspaceAuthWaiting": "Waiting for authorization. You can safely skip this step and use chat only.",
+        "dingtalkWorkspaceAuthSkip": "Not Now",
+        "dingtalkWorkspaceAuthStart": "Authorize Now",
+        "dingtalkWorkspaceAuthRetry": "Try Again",
+        "dingtalkWorkspaceAuthSuccess": "DingTalk workspace authorization completed",
+        "dingtalkWorkspaceAuthErrors": {
+            "unavailable": "The DingTalk workspace tool is unavailable. You can continue with chat only.",
+            "authorization_expired": "The authorization code expired. Generate a new code and try again.",
+            "authorization_start_timeout": "DingTalk did not return an authorization code in time. Try again.",
+            "authorization_not_completed": "DingTalk authorization was not completed. Try again.",
+            "authorization_user_not_allowed": "This DingTalk user is outside the app's availability scope. Update the app scope in the developer console.",
+            "authorization_denied": "DingTalk authorization was cancelled or denied. Try again and approve the request.",
+            "authorization_invalid_client": "The DingTalk app credentials cannot be used for OAuth. Check the Client ID, Client Secret, and app configuration.",
+            "authorization_org_cli_disabled": "This organization has not enabled CLI data access. Ask the primary administrator to enable member access to personal data through CLI in the DingTalk developer console.",
+            "authorization_permission_denied": "The DingTalk app is missing required permissions or administrator approval.",
+            "authorization_network_error": "Could not reach DingTalk authorization services. Check your network or proxy and try again.",
+            "authorization_failed": "DingTalk workspace authorization failed. Try again or continue with chat only."
+        },
+        "validationErrors": {
+            "feishuAppIdRequired": "App ID is required.",
+            "feishuAppSecretRequired": "App Secret is required.",
+            "feishuAppSecretReenter": "Re-enter the App Secret to update this account. The stored secret is hidden while Gateway is running.",
+            "feishuAppSecretEqualsAppId": "App Secret is identical to App ID. Copy the App Secret from Feishu Developer Console → Credentials & Basic Info.",
+            "feishuRejected": "Feishu rejected the credentials: {{error}}. Check App ID / App Secret in the Developer Console.",
+            "feishuConnectionError": "Could not reach Feishu to verify the credentials: {{error}}"
+        }
     },
     "health": {
         "state": {
@@ -106,11 +143,21 @@
         "reasons": {
             "gateway_degraded": "Gateway heartbeat recently degraded.",
             "gateway_unresponsive": "Gateway control plane appears unresponsive.",
+            "gateway_verifying": "ClawX is verifying Gateway responsiveness.",
+            "external_gateway_unavailable": "An externally managed Gateway is unavailable.",
             "channels_status_timeout": "Channel runtime status probe timed out.",
             "rpc_timeout": "Recent Gateway RPC calls timed out.",
             "gateway_not_running": "Gateway is not running.",
             "gateway_error": "Gateway is in an error state.",
-            "runtime_error": "Channel runtime reported an error."
+            "runtime_error": "Channel runtime reported an error.",
+            "dingtalk_dws_missing": "Chat works. Calendar, docs, and other office skills need the bundled DingTalk workspace CLI (dws).",
+            "dingtalk_dws_auth_required": "Chat works. Calendar, docs, and other office skills need DingTalk workspace authorization."
+        },
+        "recovery": {
+            "verifying": "ClawX is verifying Gateway responsiveness.",
+            "restart-pending": "ClawX is waiting to restart its Gateway.",
+            "restart-executing": "ClawX is restarting its Gateway.",
+            "external-unavailable": "An externally managed Gateway is unavailable. ClawX is reconnecting; use Restart Gateway if needed."
         },
         "restartGateway": "Restart Gateway",
         "copyDiagnostics": "Copy Diagnostics",
@@ -194,7 +241,7 @@
             ]
         },
         "dingtalk": {
-            "description": "Connect DingTalk via OpenClaw channel plugin (Stream mode)",
+            "description": "Connect DingTalk with the official OpenClaw connector (Stream chat). Calendar, docs, and other office skills use the bundled dws CLI.",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
             "fields": {
                 "clientId": {
@@ -207,9 +254,10 @@
                 }
             },
             "instructions": [
-                "Install and enable the dingtalk plugin in OpenClaw",
+                "ClawX installs the official DingTalk connector and keeps your existing dingtalk channel identity",
                 "Create a DingTalk internal app and enable Stream mode",
-                "Fill in Client ID (AppKey) and Client Secret (AppSecret)"
+                "Fill in Client ID (AppKey) and Client Secret (AppSecret)",
+                "Chat works immediately; calendar, docs, and todos need DingTalk workspace authorization (dws)"
             ]
         },
         "feishu": {
@@ -252,7 +300,7 @@
             ]
         },
         "qqbot": {
-            "description": "Connect QQ Bot channel (built-in since OpenClaw 3.31)",
+            "description": "Connect QQ Bot channel",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/KPIJwlyiGiupMrkiS9ice39Zn2c",
             "fields": {
                 "appId": {
@@ -287,9 +335,9 @@
         "iconLabel": "App Icon (Optional)",
         "iconRequirement": "JPEG/PNG/SVG/BMP, < 2 MB, > 240*240 px, no rounded corners",
         "botMenu": {
-          "title": "Bot quick-command menu",
-          "menuLabel": "Quick Commands",
-          "description": "After creation, the bot is automatically configured with a \"Quick Commands\" menu. Tapping an item sends the corresponding command to OpenClaw:"
+            "title": "Bot quick-command menu",
+            "menuLabel": "Quick Commands",
+            "description": "After creation, the bot is automatically configured with a \"Quick Commands\" menu. Tapping an item sends the corresponding command to OpenClaw:"
         },
         "iconTooLarge": "Icon size cannot exceed 2MB",
         "selectExisting": "Select Existing App",

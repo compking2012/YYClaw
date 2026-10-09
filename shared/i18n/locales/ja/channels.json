@@ -32,7 +32,9 @@
         "defaultUpdated": "デフォルトアカウントを更新しました",
         "accountDeleted": "アカウントを削除しました",
         "channelDeleted": "チャンネルを削除しました",
-        "feishuAppDisabled": "対応するFeishuアプリを無効化しました。Feishu管理画面で削除してください。"
+        "feishuAppDisabled": "対応するFeishuアプリを無効化しました。Feishu管理画面で削除してください。",
+        "dingtalkWorkspaceAuthReset": "DingTalk ワークスペース認可を解除しました",
+        "dingtalkWorkspaceAuthResetFailed": "DingTalk ワークスペース認可を解除できませんでした"
     },
     "account": {
         "add": "アカウントを追加",
@@ -65,7 +67,11 @@
             "error": "異常"
         },
         "accountIdPrompt": "このチャンネルの新しいアカウント ID を入力してください",
-        "accountIdExists": "アカウント ID {{accountId}} はすでに存在します"
+        "accountIdExists": "アカウント ID {{accountId}} はすでに存在します",
+        "authorizeWorkspace": "ワークスペースを認可",
+        "resetWorkspaceAuth": "ワークスペース認可を解除",
+        "resetWorkspaceAuthConfirm": "この端末に保存された DingTalk ワークスペース認可を解除しますか？設定済みの DingTalk アカウントはこの認可を共有しています。解除後もチャットは利用できますが、カレンダー、ドキュメント、タスクなどは再認可が必要です。",
+        "resetWorkspaceAuthConfirmAction": "認可を解除"
     },
     "dialog": {
         "updateTitle": "{{name}} を更新",
@@ -96,7 +102,38 @@
         "generateQRCode": "QRコードを生成",
         "updateAndReconnect": "更新して再接続",
         "saveAndConnect": "保存して接続",
-        "envVar": "環境変数: {{var}}"
+        "envVar": "環境変数: {{var}}",
+        "dingtalkWorkspaceAuthTitle": "DingTalk ワークスペースを認可",
+        "dingtalkWorkspaceAuthDescription": "ボットは接続済みです。カレンダー、ドキュメント、タスクなどの DingTalk ワークスペース機能へのアクセスは任意で認可できます。",
+        "dingtalkWorkspaceAuthStarting": "安全な DingTalk 認可を準備しています…",
+        "dingtalkWorkspaceAuthCodeHint": "DingTalk の認可ページで次のコードを確認してください：",
+        "dingtalkWorkspaceAuthOpen": "DingTalk 認可を開く",
+        "dingtalkWorkspaceAuthWaiting": "認可を待っています。この手順をスキップしてチャットのみを利用することもできます。",
+        "dingtalkWorkspaceAuthSkip": "後で",
+        "dingtalkWorkspaceAuthStart": "今すぐ認可",
+        "dingtalkWorkspaceAuthRetry": "再試行",
+        "dingtalkWorkspaceAuthSuccess": "DingTalk ワークスペースの認可が完了しました",
+        "dingtalkWorkspaceAuthErrors": {
+            "unavailable": "DingTalk ワークスペースツールを利用できません。チャットのみで続行できます。",
+            "authorization_expired": "認可コードの有効期限が切れました。新しいコードを生成して再試行してください。",
+            "authorization_start_timeout": "DingTalk から認可コードを取得できませんでした。再試行してください。",
+            "authorization_not_completed": "DingTalk の認可が完了しませんでした。再試行してください。",
+            "authorization_user_not_allowed": "この DingTalk ユーザーはアプリの利用範囲外です。開発者コンソールで利用範囲を更新してください。",
+            "authorization_denied": "DingTalk の認可がキャンセルまたは拒否されました。再試行して認可してください。",
+            "authorization_invalid_client": "DingTalk アプリの認証情報を OAuth に使用できません。Client ID、Client Secret、アプリ設定を確認してください。",
+            "authorization_org_cli_disabled": "この組織では CLI データアクセスが有効になっていません。組織の主管理者が DingTalk 開発者コンソールで、メンバーによる CLI からの個人データアクセスを有効にしてください。",
+            "authorization_permission_denied": "DingTalk アプリに必要な権限または管理者の承認がありません。",
+            "authorization_network_error": "DingTalk 認可サービスに接続できません。ネットワークまたはプロキシを確認してください。",
+            "authorization_failed": "DingTalk ワークスペースの認可に失敗しました。再試行するか、チャットのみを利用してください。"
+        },
+        "validationErrors": {
+            "feishuAppIdRequired": "App ID を入力してください。",
+            "feishuAppSecretRequired": "App Secret を入力してください。",
+            "feishuAppSecretReenter": "このアカウントを更新するには App Secret を再入力してください。Gateway 実行中は保存済みのシークレットは表示されません。",
+            "feishuAppSecretEqualsAppId": "App Secret が App ID と同一です。Feishu 開発者コンソール → 認証情報と基本情報 から App Secret をコピーしてください。",
+            "feishuRejected": "Feishu が認証情報を拒否しました: {{error}}。開発者コンソールの App ID / App Secret を確認してください。",
+            "feishuConnectionError": "Feishu に接続して認証情報を確認できませんでした: {{error}}"
+        }
     },
     "health": {
         "state": {
@@ -106,11 +143,21 @@
         "reasons": {
             "gateway_degraded": "ゲートウェイのハートビートに劣化が見られます。",
             "gateway_unresponsive": "ゲートウェイの制御プレーンが無応答です。",
+            "gateway_verifying": "ClawX がゲートウェイの応答を確認しています。",
+            "external_gateway_unavailable": "外部管理のゲートウェイを利用できません。",
             "channels_status_timeout": "チャンネル状態の問い合わせがタイムアウトしました。",
             "rpc_timeout": "最近のゲートウェイ RPC がタイムアウトしました。",
             "gateway_not_running": "ゲートウェイは起動していません。",
             "gateway_error": "ゲートウェイはエラー状態です。",
-            "runtime_error": "チャンネルランタイムがエラーを返しました。"
+            "runtime_error": "チャンネルランタイムがエラーを返しました。",
+            "dingtalk_dws_missing": "チャットは利用できます。カレンダーやドキュメントなどのオフィススキルには、同梱の DingTalk workspace CLI（dws）が必要です。",
+            "dingtalk_dws_auth_required": "チャットは利用できます。カレンダーやドキュメントなどのオフィススキルには、DingTalk workspace の認可が必要です。"
+        },
+        "recovery": {
+            "verifying": "ClawX がゲートウェイの応答を確認しています。",
+            "restart-pending": "ClawX はゲートウェイの再起動を待機しています。",
+            "restart-executing": "ClawX はゲートウェイを再起動しています。",
+            "external-unavailable": "外部管理のゲートウェイを利用できません。ClawX は再接続中です。必要に応じて「ゲートウェイを再起動」を使用してください。"
         },
         "restartGateway": "ゲートウェイを再起動",
         "copyDiagnostics": "診断をコピー",
@@ -194,7 +241,7 @@
             ]
         },
         "dingtalk": {
-            "description": "OpenClaw のチャンネルプラグイン経由で DingTalk に接続します（Stream モード）",
+            "description": "公式 OpenClaw コネクタで DingTalk に接続します（Stream チャット）。カレンダーやドキュメントなどのオフィススキルは同梱の dws CLI を使います。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
             "fields": {
                 "clientId": {
@@ -207,9 +254,10 @@
                 }
             },
             "instructions": [
-                "まず OpenClaw に dingtalk プラグインをインストールして有効化します",
+                "ClawX は公式 DingTalk コネクタをインストールし、既存の dingtalk チャネル ID を維持します",
                 "DingTalk 開発者コンソールで社内アプリを作成し Stream モードを有効にします",
-                "Client ID (AppKey) と Client Secret (AppSecret) を入力します"
+                "Client ID (AppKey) と Client Secret (AppSecret) を入力します",
+                "チャットはすぐ使えます。カレンダー、ドキュメント、ToDo には DingTalk workspace 認可（dws）が必要です"
             ]
         },
         "feishu": {
@@ -252,7 +300,7 @@
             ]
         },
         "qqbot": {
-            "description": "QQ ボットチャンネルに接続します（OpenClaw 3.31 より内蔵）",
+            "description": "QQ ボットチャンネルに接続します",
             "fields": {
                 "appId": {
                     "label": "App ID",
@@ -287,9 +335,9 @@
         "iconLabel": "アプリアイコン (任意)",
         "iconRequirement": "JPEG/PNG/SVG/BMP 形式、2MB 以下、240x240 px 以上、角丸なし",
         "botMenu": {
-          "title": "ボットのクイックコマンドメニュー",
-          "menuLabel": "クイックコマンド",
-          "description": "作成後、ボットに「クイックコマンド」メニューが自動的に設定されます。項目をタップすると、対応するコマンドが OpenClaw に送信されます："
+            "title": "ボットのクイックコマンドメニュー",
+            "menuLabel": "クイックコマンド",
+            "description": "作成後、ボットに「クイックコマンド」メニューが自動的に設定されます。項目をタップすると、対応するコマンドが OpenClaw に送信されます："
         },
         "iconTooLarge": "アイコンのサイズは 2MB を超えることはできません",
         "selectExisting": "既存アプリを選択",

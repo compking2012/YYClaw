@@ -88,7 +88,7 @@ interface SettingsState {
   refreshVoiceCapabilities: () => Promise<void>;
   setChatWorkspacePath: (workspacePath: string) => void;
   setWorkspaceLabel: (workspacePath: string, label: string) => void;
-  removeWorkspace: (workspacePath: string) => Promise<void>;
+  removeWorkspace: (workspacePath: string, aliases?: readonly string[]) => Promise<void>;
   markSetupComplete: () => void;
   setLoggedIn: (value: boolean, userInfo?: unknown) => void;
   resetSettings: () => void;
@@ -277,10 +277,17 @@ export const useSettingsStore = create<SettingsState>()(
           return { workspaceLabels };
         });
       },
-      removeWorkspace: async (workspacePath) => {
-        const target = normalizeWorkspacePath(workspacePath);
-        if (!target) return;
-        const isTarget = (candidate: string) => normalizeWorkspacePath(candidate) === target;
+      removeWorkspace: async (workspacePath, aliases = []) => {
+        const targets = new Set(
+          [workspacePath, ...aliases]
+            .map((path) => normalizeWorkspacePath(path))
+            .filter((path): path is string => Boolean(path)),
+        );
+        if (targets.size === 0) return;
+        const isTarget = (candidate: string) => {
+          const normalized = normalizeWorkspacePath(candidate);
+          return normalized ? targets.has(normalized) : false;
+        };
         const state = useSettingsStore.getState();
         const resetsGlobalWorkspace = isTarget(state.chatWorkspacePath);
         const recentWorkspacePaths = state.recentWorkspacePaths.filter((entry) => !isTarget(entry));

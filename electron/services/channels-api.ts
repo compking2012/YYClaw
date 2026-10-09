@@ -9,10 +9,12 @@ import {
   deleteChannelAccountConfig,
   deleteChannelConfig,
   getChannelFormValues,
+  getDurableChannelConfig,
   listConfiguredChannelAccountsFromConfig,
   listConfiguredChannels,
   listConfiguredChannelsFromConfig,
   readOpenClawConfig,
+  resolveFeishuApiOrigin,
   saveChannelConfig,
   setChannelDefaultAccount,
   setChannelEnabled,
@@ -48,12 +50,24 @@ import {
   type PluginInstallResult,
 } from '../utils/plugin-install';
 import {
+  cancelDingTalkDwsOAuth,
+  getDingTalkDwsOAuthStatus,
+  getDingTalkDwsStatusNote,
+  resetDingTalkDwsOAuth,
+  startDingTalkDwsOAuth,
+  type DingTalkDwsOAuthCredentials,
+  type DingTalkDwsOAuthSnapshot,
+} from '../utils/dingtalk-dws';
+import {
+  applyPendingActivationStatus,
   computeChannelRuntimeStatus,
+  hasSummaryRuntimeError,
   pickChannelRuntimeStatus,
   type ChannelConnectionStatus,
   type ChannelRuntimeAccountSnapshot,
   type GatewayHealthState,
 } from '../utils/channel-status';
+import { ensurePluginChannelRuntimeActivated } from './plugin-channel-activation';
 import {
   OPENCLAW_WECHAT_CHANNEL_TYPE,
   UI_WECHAT_CHANNEL_TYPE,
@@ -87,9 +101,7 @@ import { buildGatewayHealthSummary } from '../utils/gateway-health';
 import { logger } from '../utils/logger';
 import type { GatewayManager, GatewayHealthSummary } from '../gateway/manager';
 import {
-  awaitChannelRuntimeConvergence,
   noteConfigWatcherRefresh,
-  scheduleGatewayProcessRestart,
 } from '../gateway/config-refresh-scheduler';
 import { isRecord } from './payload-utils';
 import { getSetting } from '../utils/store';
@@ -130,18 +142,20 @@ interface QQBotKnownUserRecord {
   lastSeenAt?: number;
 }
 
+interface GatewayChannelRuntimeAccount {
+  accountId?: string;
+  configured?: boolean;
+  connected?: boolean;
+  running?: boolean;
+  lastError?: string;
+  name?: string;
+  linked?: boolean;
+  probe?: { ok?: boolean; error?: string } | null;
+}
+
 interface GatewayChannelStatusPayload {
   channels?: Record<string, unknown>;
-  channelAccounts?: Record<string, Array<{
-    accountId?: string;
-    configured?: boolean;
-    connected?: boolean;
-    running?: boolean;
-    lastError?: string;
-    name?: string;
-    linked?: boolean;
-    probe?: { ok?: boolean } | null;
-  }>>;
+  channelAccounts?: Record<string, GatewayChannelRuntimeAccount[]>;
   channelDefaultAccountId?: Record<string, string>;
 }
 
@@ -164,11 +178,23 @@ interface ChannelAccountsView {
   defaultAccountId: string;
   status: ChannelConnectionStatus;
   statusReason?: string;
+  statusNote?: string;
   accounts: ChannelAccountView[];
 }
 
 let lastChannelsStatusOkAt: number | undefined;
 let lastChannelsStatusFailureAt: number | undefined;
+/**
+ * OpenClaw does not persist `channels.status` probe results: a plugin whose
+ * credentials were just rejected (probe=1 → lastError) reports a clean
+ * "running" account on the very next probe=0 call, so the Channels view would
+ * flash Error and settle on Connected for a bot that cannot receive anything.
+ * Remember probe failures per account, overlay them on cached snapshots, and
+ * re-probe at a bounded interval while a failure is remembered so a fixed
+ * channel recovers without a manual refresh.
+ */
+const CHANNEL_PROBE_FAILURE_RECHECK_MS = 30_000;
+const channelProbeFailures = new Map<string, { lastError: string; recordedAt: number }>();
 const CHANNEL_TARGET_CACHE_TTL_MS = 60_000;
 const CHANNEL_TARGET_CACHE_ENABLED = process.env.VITEST !== 'true';
 const channelTargetCache = new Map<string, { expiresAt: number; targets: ChannelTargetOptionView[] }>();
@@ -191,6 +217,38 @@ function resolveStoredChannelType(channelType: string): string {
 
 function buildQrLoginKey(channelType: string, accountId?: string): string {
   return `${toUiChannelType(channelType)}:${accountId?.trim() || '__new__'}`;
+}
+
+function toDingTalkWorkspaceAuthResult(snapshot: DingTalkDwsOAuthSnapshot) {
+  const knownErrorCodes = new Set([
+    'authorization_expired',
+    'authorization_failed',
+    'authorization_not_completed',
+    'authorization_start_timeout',
+  ]);
+  return {
+    success: snapshot.status !== 'error',
+    status: snapshot.status,
+    ...(snapshot.verificationUri ? { verificationUri: snapshot.verificationUri } : {}),
+    ...(snapshot.verificationUriComplete ? { verificationUriComplete: snapshot.verificationUriComplete } : {}),
+    ...(snapshot.userCode ? { userCode: snapshot.userCode } : {}),
+    ...(snapshot.expiresAt ? { expiresAt: snapshot.expiresAt } : {}),
+    ...(snapshot.error ? {
+      errorCode: knownErrorCodes.has(snapshot.error) ? snapshot.error : 'authorization_failed',
+    } : {}),
+  };
+}
+
+async function getDingTalkWorkspaceCredentials(accountId?: string): Promise<DingTalkDwsOAuthCredentials> {
+  // OAuth must use the durable file because config.get redacts secrets while
+  // Gateway is running. The secret stays in Main and is only passed via env.
+  const values = await getDurableChannelConfig('dingtalk', accountId);
+  const clientId = typeof values?.clientId === 'string' ? values.clientId.trim() : '';
+  const clientSecret = typeof values?.clientSecret === 'string' ? values.clientSecret.trim() : '';
+  if (!clientId || !clientSecret) {
+    throw new Error('DingTalk clientId and clientSecret are required before workspace authorization');
+  }
+  return { clientId, clientSecret };
 }
 
 async function isLegacyConfiguredAccountId(channelType: string, accountId: string): Promise<boolean> {
@@ -265,6 +323,148 @@ export function getChannelStatusDiagnostics(): {
   return { lastChannelsStatusOkAt, lastChannelsStatusFailureAt };
 }
 
+function channelProbeFailureKey(channelType: string, accountId: string): string {
+  return `${channelType}:${accountId}`;
+}
+
+function normalizeRuntimeAccountId(channelType: string, accountId: string): string {
+  // The official DingTalk connector normalizes the literal "default" account
+  // to its internal "__default__" ID. Keep that runtime detail out of the UI
+  // and merge it back into ClawX's persisted default account.
+  return toUiChannelType(channelType) === 'dingtalk' && accountId === '__default__'
+    ? 'default'
+    : accountId;
+}
+
+function resolveRuntimeAccountId(channelType: string, account: GatewayChannelRuntimeAccount): string {
+  const accountId = typeof account.accountId === 'string' && account.accountId.trim()
+    ? account.accountId.trim()
+    : 'default';
+  return normalizeRuntimeAccountId(channelType, accountId);
+}
+
+function resolveProbeFailure(
+  channelType: string,
+  account: GatewayChannelRuntimeAccount,
+): string | undefined {
+  // DingTalk's official probe fetches /contact/users/me after opening the
+  // Stream connection. That auxiliary request can return 403 when the app has
+  // no Contact.User.Read scope even though basic bot chat is already live.
+  // Treat the connector's explicit Stream state as authoritative in that case.
+  if (
+    toUiChannelType(channelType) === 'dingtalk'
+    && (account.connected === true || account.linked === true)
+  ) return undefined;
+  // Some connectors retain lastError after reconnecting. A successful live
+  // probe is authoritative and must clear a remembered transient failure.
+  if (account.probe?.ok === true) return undefined;
+  const lastError = typeof account.lastError === 'string' ? account.lastError.trim() : '';
+  if (lastError) return lastError;
+  if (account.probe && account.probe.ok === false) {
+    const probeError = typeof account.probe.error === 'string' ? account.probe.error.trim() : '';
+    return probeError || 'probe_failed';
+  }
+  return undefined;
+}
+
+/** Called with a probe=1 snapshot: record failures, clear recovered or vanished accounts. */
+function rememberChannelProbeFailures(status: GatewayChannelStatusPayload | null, now: number): void {
+  if (!status?.channelAccounts) return;
+  const seen = new Set<string>();
+  for (const [channelType, accounts] of Object.entries(status.channelAccounts)) {
+    for (const account of accounts) {
+      const key = channelProbeFailureKey(channelType, resolveRuntimeAccountId(channelType, account));
+      seen.add(key);
+      const failure = resolveProbeFailure(channelType, account);
+      if (failure) {
+        channelProbeFailures.set(key, { lastError: failure, recordedAt: now });
+      } else {
+        channelProbeFailures.delete(key);
+      }
+    }
+  }
+  for (const key of channelProbeFailures.keys()) {
+    if (!seen.has(key)) channelProbeFailures.delete(key);
+  }
+}
+
+/** Called with a probe=0 snapshot: keep remembered failures visible until a later probe clears them. */
+function overlayRememberedProbeFailures(status: GatewayChannelStatusPayload | null): void {
+  if (!status?.channelAccounts || channelProbeFailures.size === 0) return;
+  for (const [channelType, accounts] of Object.entries(status.channelAccounts)) {
+    for (const account of accounts) {
+      const key = channelProbeFailureKey(channelType, resolveRuntimeAccountId(channelType, account));
+      const remembered = channelProbeFailures.get(key);
+      if (!remembered) continue;
+      if (
+        toUiChannelType(channelType) === 'dingtalk'
+        && (account.connected === true || account.linked === true)
+      ) {
+        channelProbeFailures.delete(key);
+        continue;
+      }
+      if (typeof account.lastError === 'string' && account.lastError.trim()) continue;
+      account.lastError = remembered.lastError;
+      account.probe = { ok: false, error: remembered.lastError };
+      // A cached snapshot can still carry a stale connected flag. Keep the
+      // remembered failure and do not let that flag look like a recovery.
+      if (account.connected === true) {
+        account.connected = false;
+      }
+    }
+  }
+}
+
+function shouldRecheckRememberedProbeFailures(now: number): boolean {
+  for (const failure of channelProbeFailures.values()) {
+    if (now - failure.recordedAt >= CHANNEL_PROBE_FAILURE_RECHECK_MS) return true;
+  }
+  return false;
+}
+
+/** Advance the recheck clock so a failed upgrade does not probe on every poll. */
+function markRememberedProbeFailuresRechecked(now: number): void {
+  for (const [key, failure] of channelProbeFailures.entries()) {
+    if (now - failure.recordedAt >= CHANNEL_PROBE_FAILURE_RECHECK_MS) {
+      channelProbeFailures.set(key, { ...failure, recordedAt: now });
+    }
+  }
+}
+
+function isChannelAccountEnabledInConfig(
+  config: Awaited<ReturnType<typeof readOpenClawConfig>>,
+  storedChannelType: string,
+  accountId: string,
+): boolean {
+  const section = config.channels?.[storedChannelType];
+  if (!section || typeof section !== 'object') return false;
+  if (section.enabled === false) return false;
+  const accounts = section.accounts;
+  if (accounts && typeof accounts === 'object' && !Array.isArray(accounts)) {
+    const account = (accounts as Record<string, { enabled?: unknown }>)[accountId];
+    if (account && typeof account === 'object' && !Array.isArray(account)) {
+      return account.enabled !== false;
+    }
+  }
+  return true;
+}
+
+/** Credentials changed or the account is gone: the remembered probe result no longer applies. */
+export function forgetChannelProbeFailures(storedChannelType: string, accountId?: string): void {
+  if (accountId) {
+    channelProbeFailures.delete(channelProbeFailureKey(storedChannelType, accountId));
+    return;
+  }
+  const prefix = `${storedChannelType}:`;
+  for (const key of channelProbeFailures.keys()) {
+    if (key.startsWith(prefix)) channelProbeFailures.delete(key);
+  }
+}
+
+export function resetChannelProbeFailuresForTests(): void {
+  channelProbeFailures.clear();
+}
+
 export async function buildChannelAccountsView(
   ctx: ChannelsApiContext,
   options?: { probe?: boolean; skipRuntime?: boolean },
@@ -280,9 +480,14 @@ export async function buildChannelAccountsView(
   ]);
 
   let gatewayStatus: GatewayChannelStatusPayload | null = null;
+  const requestedProbe = options?.probe === true;
+  const recheckProbe = !skipRuntime && !requestedProbe && shouldRecheckRememberedProbeFailures(startedAt);
+  const probe = requestedProbe || recheckProbe;
+  if (recheckProbe) {
+    markRememberedProbeFailuresRechecked(startedAt);
+  }
   if (!skipRuntime) {
     try {
-      const probe = options?.probe === true;
       const rpcStartedAt = Date.now();
       gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>(
         'channels.status',
@@ -290,11 +495,15 @@ export async function buildChannelAccountsView(
         probe ? 5000 : 8000,
       );
       lastChannelsStatusOkAt = Date.now();
+      if (probe) {
+        rememberChannelProbeFailures(gatewayStatus, lastChannelsStatusOkAt);
+      } else {
+        overlayRememberedProbeFailures(gatewayStatus);
+      }
       logger.info(
-        `[channels.accounts] channels.status probe=${probe ? '1' : '0'} elapsedMs=${Date.now() - rpcStartedAt} snapshot=${buildGatewayStatusSnapshot(gatewayStatus)}`
+        `[channels.accounts] channels.status probe=${probe ? '1' : '0'}${recheckProbe ? ' (recheck)' : ''} elapsedMs=${Date.now() - rpcStartedAt} snapshot=${buildGatewayStatusSnapshot(gatewayStatus)}`
       );
     } catch {
-      const probe = options?.probe === true;
       lastChannelsStatusFailureAt = Date.now();
       logger.warn(
         `[channels.accounts] channels.status probe=${probe ? '1' : '0'} failed after ${Date.now() - startedAt}ms`
@@ -339,15 +548,19 @@ export async function buildChannelAccountsView(
       typeof channelSection?.defaultAccount === 'string' && channelSection.defaultAccount.trim()
         ? channelSection.defaultAccount
         : (sortedConfigAccountIds[0] || 'default');
+    const gatewayDefaultAccountId = gatewayStatus?.channelDefaultAccountId?.[rawChannelType];
     const defaultAccountId = configuredAccounts[rawChannelType]?.defaultAccountId
-      ?? gatewayStatus?.channelDefaultAccountId?.[rawChannelType]
+      ?? (gatewayDefaultAccountId
+        ? normalizeRuntimeAccountId(rawChannelType, gatewayDefaultAccountId)
+        : undefined)
       ?? fallbackDefault;
     const runtimeAccounts = gatewayStatus?.channelAccounts?.[rawChannelType] ?? [];
     const hasRuntimeConfigured = runtimeAccounts.some((account) => account.configured === true);
     if (!hasLocalConfig && !hasRuntimeConfigured) continue;
     const runtimeAccountIds = runtimeAccounts.reduce<string[]>((acc, account) => {
-      const accountId = typeof account.accountId === 'string' ? account.accountId.trim() : '';
-      if (!accountId) return acc;
+      const rawAccountId = typeof account.accountId === 'string' ? account.accountId.trim() : '';
+      if (!rawAccountId) return acc;
+      const accountId = normalizeRuntimeAccountId(rawChannelType, rawAccountId);
       if (!shouldIncludeRuntimeAccountId(accountId, configuredAccountIdSet, account)) return acc;
       acc.push(accountId);
       return acc;
@@ -355,19 +568,37 @@ export async function buildChannelAccountsView(
     const accountIds = Array.from(new Set([...channelAccountsFromConfig, ...runtimeAccountIds, defaultAccountId]));
 
     const accounts: ChannelAccountView[] = accountIds.map((accountId) => {
-      const runtime = runtimeAccounts.find((item) => item.accountId === accountId);
-      const runtimeSnapshot: ChannelRuntimeAccountSnapshot = runtime ?? {};
-      const status = computeChannelRuntimeStatus(runtimeSnapshot, {
+      const runtime = runtimeAccounts.find(
+        (item) => resolveRuntimeAccountId(rawChannelType, item) === accountId,
+      );
+      const runtimeHealthy = runtime?.connected === true
+        || runtime?.linked === true
+        || runtime?.probe?.ok === true;
+      const lastError = !runtimeHealthy && typeof runtime?.lastError === 'string'
+        ? runtime.lastError
+        : undefined;
+      const runtimeSnapshot: ChannelRuntimeAccountSnapshot = runtime
+        ? { ...runtime, lastError }
+        : {};
+      const configured = channelAccountsFromConfig.includes(accountId) || runtime?.configured === true;
+      const expectedLive = (configured || hasLocalConfig)
+        && isChannelAccountEnabledInConfig(openClawConfig, rawChannelType, accountId);
+      const baseStatus = computeChannelRuntimeStatus(runtimeSnapshot, {
         gatewayHealthState: effectiveGatewayHealthState,
+      });
+      const status = applyPendingActivationStatus(baseStatus, {
+        hasLocalConfig: expectedLive,
+        hasRuntimeAccount: Boolean(runtime),
+        hasRuntimeError: Boolean(lastError?.trim()) || hasSummaryRuntimeError(channelSummary),
       });
       return {
         accountId,
         name: runtime?.name || accountId,
-        configured: channelAccountsFromConfig.includes(accountId) || runtime?.configured === true,
+        configured,
         connected: runtime?.connected === true,
         running: runtime?.running === true,
         linked: runtime?.linked === true,
-        lastError: typeof runtime?.lastError === 'string' ? runtime.lastError : undefined,
+        lastError,
         status,
         statusReason: status === 'degraded'
           ? overlayStatusReason(gatewayHealth, 'gateway_degraded')
@@ -394,13 +625,21 @@ export async function buildChannelAccountsView(
     const baseGroupStatus = pickChannelRuntimeStatus(visibleAccountSnapshots, channelSummary, {
       gatewayHealthState: effectiveGatewayHealthState,
     });
-    const groupStatus = !gatewayStatus && !skipRuntime && ctx.gatewayManager.getStatus().state === 'running'
+    const resolvedGroupStatus = !gatewayStatus && !skipRuntime && ctx.gatewayManager.getStatus().state === 'running'
       ? 'degraded'
       : effectiveGatewayHealthState && !hasRuntimeError && baseGroupStatus === 'connected'
         ? 'degraded'
         : pickChannelRuntimeStatus(visibleAccountSnapshots, channelSummary, {
           gatewayHealthState: effectiveGatewayHealthState,
         });
+    const hasEnabledLocalConfig = channelAccountsFromConfig.some((accountId) => (
+      isChannelAccountEnabledInConfig(openClawConfig, rawChannelType, accountId)
+    )) || (hasLocalConfig && channelAccountsFromConfig.length === 0);
+    const groupStatus = applyPendingActivationStatus(resolvedGroupStatus, {
+      hasLocalConfig: hasEnabledLocalConfig,
+      hasRuntimeAccount: runtimeAccounts.length > 0,
+      hasRuntimeError,
+    });
 
     channels.push({
       channelType: uiChannelType,
@@ -411,13 +650,14 @@ export async function buildChannelAccountsView(
         : groupStatus === 'degraded' && effectiveGatewayHealthState
           ? overlayStatusReason(gatewayHealth, 'gateway_degraded')
           : undefined,
+      statusNote: uiChannelType === 'dingtalk' ? getDingTalkDwsStatusNote() : undefined,
       accounts,
     });
   }
 
   const sorted = channels.sort((left, right) => left.channelType.localeCompare(right.channelType));
   logger.info(
-    `[channels.accounts] response mode=${skipRuntime ? 'config' : 'runtime'} probe=${options?.probe === true ? '1' : '0'} elapsedMs=${Date.now() - startedAt} view=${sorted.map((item) => `${item.channelType}:${item.status}`).join(',')}`
+    `[channels.accounts] response mode=${skipRuntime ? 'config' : 'runtime'} probe=${probe ? '1' : '0'} elapsedMs=${Date.now() - startedAt} view=${sorted.map((item) => `${item.channelType}:${item.status}`).join(',')}`
   );
   return { channels: sorted, gatewayHealth };
 }
@@ -468,13 +708,6 @@ function mergeChannelAccountConfig(config: JsonRecord, channelType: string, acco
 
   const { accounts: _ignoredAccounts, ...baseConfig } = section;
   return accountOverride ? { ...baseConfig, ...accountOverride } : baseConfig;
-}
-
-function resolveFeishuApiOrigin(domain: unknown): string {
-  if (typeof domain === 'string' && domain.trim().toLowerCase() === 'lark') {
-    return 'https://open.larksuite.com';
-  }
-  return 'https://open.feishu.cn';
 }
 
 function normalizeFeishuTargetValue(raw: unknown): string | null {
@@ -939,33 +1172,6 @@ async function listChannelTargetOptions(params: {
   return targets;
 }
 
-function scheduleGatewayChannelRestart(ctx: ChannelsApiContext, reason: string): void {
-  // Channel enable/disable and deletion change plugin infrastructure (a plugin is
-  // installed/activated or its config removed); those only take effect on a full
-  // Gateway (re)start — a passive watcher note does not load/unload a plugin.
-  scheduleGatewayProcessRestart(ctx.gatewayManager, `Channel config changed (${reason})`, {
-    onlyIfRunning: true,
-  });
-}
-
-/**
- * Actively converge a saved channel-account config into the running Gateway:
- * config.apply hot-push → repoll channels.status → escalate to a restart only
- * when the account still isn't connected (e.g. a newly-installed plugin that the
- * Gateway loads only at startup). Safe to await; only throws if the Gateway stops.
- */
-async function convergeGatewayChannel(
-  ctx: ChannelsApiContext,
-  channelType: string,
-  accountId?: string,
-): Promise<void> {
-  await awaitChannelRuntimeConvergence(
-    ctx.gatewayManager,
-    resolveStoredChannelType(channelType),
-    accountId,
-  );
-}
-
 function scheduleGatewayChannelSaveRefresh(ctx: ChannelsApiContext, channelType: string, reason: string): void {
   const storedChannelType = resolveStoredChannelType(channelType);
   noteConfigWatcherRefresh(
@@ -1029,6 +1235,30 @@ const CHANNEL_PLUGIN_INSTALLERS: Record<
   [OPENCLAW_WECHAT_CHANNEL_TYPE]: ensureWeChatPluginInstalled,
 };
 
+function isPluginBackedChannel(storedChannelType: string): boolean {
+  return Object.hasOwn(CHANNEL_PLUGIN_INSTALLERS, storedChannelType);
+}
+
+function shouldRestartRunningGateway(ctx: ChannelsApiContext, storedChannelType: string): boolean {
+  return isPluginBackedChannel(storedChannelType)
+    && ctx.gatewayManager.getStatus().state === 'running';
+}
+
+function scheduleGatewayRestartForPluginChannel(
+  ctx: ChannelsApiContext,
+  storedChannelType: string,
+  reason: 'noChange' | 'peerLinkRepairFailed' = 'noChange',
+): void {
+  logger.info(
+    `[channels.saveConfig] scheduling Gateway restart to activate plugin channel=${storedChannelType} reason=${reason}`,
+  );
+  // The config and scoped binding are already committed. Let the host request
+  // return while the guarded lifecycle path performs stop/start/readiness.
+  // GatewayManager owns error logging, status propagation, and restart
+  // coalescing, so the Channels page can show the normal connecting state.
+  ctx.gatewayManager.debouncedRestart(0);
+}
+
 async function awaitWeChatQrLogin(
   ctx: ChannelsApiContext,
   sessionKey: string,
@@ -1055,9 +1285,16 @@ async function awaitWeChatQrLogin(
       baseUrl: result.baseUrl,
       userId: result.userId,
     });
+    const restartGateway = shouldRestartRunningGateway(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE);
     await saveChannelConfig(UI_WECHAT_CHANNEL_TYPE, { enabled: true }, normalizedAccountId);
     await ensureScopedChannelBinding(UI_WECHAT_CHANNEL_TYPE, normalizedAccountId);
-    await convergeGatewayChannel(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE, normalizedAccountId);
+    if (restartGateway) {
+      await ensurePluginChannelRuntimeActivated(
+        ctx.gatewayManager,
+        OPENCLAW_WECHAT_CHANNEL_TYPE,
+        normalizedAccountId,
+      );
+    }
 
     if (activeQrLogins.get(loginKey) !== sessionKey) return;
     emitChannelEvent(ctx, UI_WECHAT_CHANNEL_TYPE, 'success', {
@@ -1074,14 +1311,14 @@ async function awaitWeChatQrLogin(
   }
 }
 
-async function ensureChannelPluginInstalled(storedChannelType: string): Promise<{ peerLinkOk: boolean }> {
+async function ensureChannelPluginInstalled(storedChannelType: string): Promise<{ peerLinkOk: boolean; warning?: string }> {
   const install = CHANNEL_PLUGIN_INSTALLERS[storedChannelType];
   if (!install) return { peerLinkOk: true };
   const result = await install();
   if (!result.installed) {
     throw new Error(result.warning || `${toUiChannelType(storedChannelType)} plugin install failed`);
   }
-  return { peerLinkOk: result.peerLinkOk !== false };
+  return { peerLinkOk: result.peerLinkOk !== false, warning: result.warning };
 }
 
 async function readFeishuCandidateIcons(): Promise<Array<{ name: string; mimeType: string; base64: string }>> {
@@ -1180,7 +1417,8 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
     validateCredentials: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const config = isRecord(payload) && isRecord(payload.config) ? payload.config as Record<string, string> : {};
-      return { success: true, ...(await validateChannelCredentials(channelType, config)) };
+      const accountId = optionalString(payload, 'accountId');
+      return { success: true, ...(await validateChannelCredentials(channelType, config, { accountId })) };
     },
     saveConfig: async (payload) => {
       const channelType = requireString(payload, 'channelType');
@@ -1188,31 +1426,56 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const accountId = optionalString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       const storedChannelType = resolveStoredChannelType(channelType);
-      const [, existingValues] = await Promise.all([
+      const restartGateway = shouldRestartRunningGateway(ctx, storedChannelType);
+      const [installResult, existingValues] = await Promise.all([
         ensureChannelPluginInstalled(storedChannelType),
         getChannelFormValues(channelType, accountId),
       ]);
       if (isSameConfigValues(existingValues, config)) {
         await ensureScopedChannelBinding(channelType, accountId);
-        await convergeGatewayChannel(ctx, storedChannelType, accountId);
-        return { success: true, noChange: true };
+        if (restartGateway) {
+          scheduleGatewayRestartForPluginChannel(ctx, storedChannelType, 'noChange');
+        }
+        return {
+          success: true,
+          noChange: true,
+          ...(restartGateway ? { activationPending: true } : {}),
+          ...(installResult.warning ? { warning: installResult.warning } : {}),
+        };
       }
       await saveChannelConfig(channelType, config, accountId);
+      // New credentials invalidate any remembered probe failure for this account;
+      // the renderer's post-save probe=1 refresh records the fresh result.
+      forgetChannelProbeFailures(storedChannelType, accountId?.trim() || 'default');
       await ensureScopedChannelBinding(channelType, accountId);
-      await convergeGatewayChannel(ctx, storedChannelType, accountId);
-      return { success: true };
+      if (restartGateway && !installResult.peerLinkOk) {
+        scheduleGatewayRestartForPluginChannel(ctx, storedChannelType, 'peerLinkRepairFailed');
+        return {
+          success: true,
+          activationPending: true,
+          ...(installResult.warning ? { warning: installResult.warning } : {}),
+        };
+      }
+      // Already-live plugins stay on OpenClaw's config.set reload. First-enable
+      // and re-enable wait briefly, then force one ClawX-owned restart if the
+      // channel never appears in channels.status.
+      if (restartGateway) {
+        await ensurePluginChannelRuntimeActivated(
+          ctx.gatewayManager,
+          storedChannelType,
+          accountId?.trim() || 'default',
+        );
+      }
+      return {
+        success: true,
+        ...(restartGateway ? { activationPending: true } : {}),
+        ...(installResult.warning ? { warning: installResult.warning } : {}),
+      };
     },
     setEnabled: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const enabled = isRecord(payload) && payload.enabled === true;
       await setChannelEnabled(channelType, enabled);
-      if (enabled) {
-        // Enabling may activate a channel plugin that only loads at Gateway start;
-        // converge (config.apply → restart escalation) so it comes up connected.
-        await convergeGatewayChannel(ctx, channelType);
-      } else {
-        scheduleGatewayChannelRestart(ctx, `channel:setEnabled:${resolveStoredChannelType(channelType)}`);
-      }
       return { success: true };
     },
     formValues: async (payload) => {
@@ -1227,11 +1490,11 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       if (accountId) {
         await deleteChannelAccountConfig(channelType, accountId);
         await clearChannelBinding(storedChannelType, accountId);
-        scheduleGatewayChannelRestart(ctx, `channel:deleteAccount:${storedChannelType}`);
       } else {
         await deleteChannelConfig(channelType);
         await clearAllBindingsForChannel(storedChannelType);
       }
+      forgetChannelProbeFailures(storedChannelType, accountId);
       return { success: true };
     },
     startLogin: async (payload) => {
@@ -1364,6 +1627,44 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       } catch (error) {
         return { success: false, error: String(error) };
       }
+    },
+    dingtalkWorkspaceAuthStart: async (payload) => {
+      const channelType = requireString(payload, 'channelType');
+      if (resolveStoredChannelType(channelType) !== 'dingtalk') {
+        throw new Error('DingTalk workspace authorization only supports the dingtalk channel');
+      }
+      const accountId = optionalString(payload, 'accountId');
+      await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
+      const credentials = await getDingTalkWorkspaceCredentials(accountId);
+      return toDingTalkWorkspaceAuthResult(await startDingTalkDwsOAuth(credentials));
+    },
+    dingtalkWorkspaceAuthStatus: async (payload) => {
+      const channelType = requireString(payload, 'channelType');
+      if (resolveStoredChannelType(channelType) !== 'dingtalk') {
+        throw new Error('DingTalk workspace authorization only supports the dingtalk channel');
+      }
+      const accountId = optionalString(payload, 'accountId');
+      await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
+      const credentials = await getDingTalkWorkspaceCredentials(accountId);
+      return toDingTalkWorkspaceAuthResult(getDingTalkDwsOAuthStatus(credentials));
+    },
+    dingtalkWorkspaceAuthCancel: async (payload) => {
+      const channelType = requireString(payload, 'channelType');
+      if (resolveStoredChannelType(channelType) !== 'dingtalk') {
+        throw new Error('DingTalk workspace authorization only supports the dingtalk channel');
+      }
+      const accountId = optionalString(payload, 'accountId');
+      await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
+      return toDingTalkWorkspaceAuthResult(cancelDingTalkDwsOAuth());
+    },
+    dingtalkWorkspaceAuthReset: async (payload) => {
+      const channelType = requireString(payload, 'channelType');
+      if (resolveStoredChannelType(channelType) !== 'dingtalk') {
+        throw new Error('DingTalk workspace authorization only supports the dingtalk channel');
+      }
+      const accountId = optionalString(payload, 'accountId');
+      await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
+      return toDingTalkWorkspaceAuthResult(resetDingTalkDwsOAuth());
     },
   };
 }

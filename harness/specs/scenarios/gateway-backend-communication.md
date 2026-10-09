@@ -11,20 +11,36 @@ ownedPaths:
   - src/stores/session-attention.ts
   - src/stores/chat/session-status.ts
   - src/stores/chat/session-catalog.ts
+  - src/stores/chat/session-key-utils.ts
+  - src/components/layout/Sidebar.tsx
   - electron/main/ipc/**
   - electron/services/**
   - electron/gateway/**
   - electron/preload/**
   - electron/utils/**
+  - resources/skills/computer-use/**
+  - src/pages/ComputerUse/**
+  - src/hooks/useVoiceDictation.ts
+  - src/components/voice/**
+  - tests/e2e/computer-use*.spec.ts
+  - electron/shared/providers/**
+  - src/components/settings/ProvidersSettings.tsx
+  - src/lib/providers.ts
+  - shared/host-api/contract.ts
   - tests/unit/session-attention.test.ts
   - tests/unit/session-status.test.ts
   - tests/unit/session-catalog.test.ts
   - tests/unit/gateway-events.test.ts
   - tests/unit/gateway-event-dispatch.test.ts
-  - tests/unit/chat-session-management.test.ts
+  - tests/unit/chat-store-delete-session-workflow.test.ts
   - tests/unit/chat-store-session-label-fetch.test.ts
   - tests/unit/session-label-hydration.test.ts
   - tests/e2e/chat-sidebar-session-attention.spec.ts
+  - tests/unit/session-key-utils.test.ts
+  - tests/unit/openclaw-acp-stream-patch.test.ts
+  - patches/openclaw@2026.7.1-2.patch
+  - patches/@wecom__wecom-openclaw-plugin@2026.8.17.patch
+  - pnpm-lock.yaml
   - shared/web-browser.ts
   - electron/main/web-browser-policy.ts
   - electron/main/web-browser-session.ts
@@ -43,6 +59,8 @@ conditionalProfiles:
       - user-visible chat send/receive behavior changes
       - channels/agents/settings UI depends on new backend response shape
       - Web Browser guest, navigation, session, permission, or data policy changes
+      - Computer Use management wording, opt-in, managed Skill installation or selection, or exec/read image behavior changes
+      - Voice dictation microphone permission detection or system-settings guidance changes
 requiredRules:
   - openclaw-config-delivery
   - renderer-main-boundary
@@ -50,6 +68,7 @@ requiredRules:
   - api-client-transport-policy
   - host-api-fallback-policy
   - host-events-fallback-policy
+  - issue-report-export-safety
   - gateway-readiness-policy
   - gateway-heartbeat-safety
   - channel-plugin-migration-guards
@@ -58,8 +77,11 @@ requiredRules:
   - provider-default-invariant
   - provider-model-metadata-preservation
   - provider-model-selection-authority
+  - tokendance-oauth-provider
   - sidebar-session-attention-authority
   - web-browser-security-and-lifecycle
+  - local-computer-use
+  - microphone-permission-guidance
   - e2e-parallel-isolation
   - comms-regression
   - docs-sync
@@ -89,7 +111,7 @@ Renderer code must not create direct Gateway WebSocket connections. Gateway fram
 
 Typed generic Gateway RPC requests are validated by `electron/services/gateway-api.ts` and delegated directly to `GatewayManager.rpc`, including an optional positive finite timeout. This path has no Renderer Chat history/send specialization, polling queue, coalescing, or backpressure layer. ACP `session/load`, `session/prompt`, and `session/cancel` own ordinary Chat history and composer behavior independently.
 
-Channel/plugin migration behavior is also part of this scenario when ClawX rewrites OpenClaw config before Gateway launch. Upgrades must preserve single-owner channel registration for migrated plugin-backed channels such as Feishu/Lark.
+Channel/plugin migration behavior is also part of this scenario when ClawX rewrites OpenClaw config before Gateway launch. Upgrades must preserve single-owner channel registration for migrated plugin-backed channels such as Feishu/Lark. A desktop Chat session has no channel account context; a bundled WeCom business tool may fall back only when exactly one WeCom account is configured and must reject an ambiguous multi-account selection.
 
 ClawX's prelaunch config sanitizer also owns desktop tool policy. It must keep `web_search` in both the agent-level and Gateway-level deny lists without replacing existing deny entries or disabling managed browser automation and `web_fetch`. It must also deny the agent-facing `gateway`, `nodes`, `create_goal`, `get_goal`, and `update_goal` tools at both layers while preserving application-owned Gateway RPCs. Messaging, session orchestration, and agent discovery tools remain available unless another explicit policy denies them.
 
@@ -97,6 +119,14 @@ Scheduled-task history is Main-owned backend data. Current OpenClaw versions mus
 
 The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.
 
-Gateway session-catalog subscription, normalization, ordered list/event replay, attention transitions, and reconnect recovery are documented in `harness/reference/sidebar-session-attention.md`. Electron test-process isolation and global-resource scheduling are documented in `harness/reference/e2e-parallelism.md`.
+Local Computer Use is also Main-owned and defaults off. Its Developer Mode-gated sidebar page retains typed host-api management for persistent opt-in and read-only macOS permission status. Only an explicit enabled permission action may prompt; startup and activation never prompt. Main retains `EmbeddedCuaDriverHost`, native SDK/ASAR loading, serialized lifecycle changes, and embedded daemon supervision. It atomically publishes the private `{ v: 2, generation, driverVersion, binaryPath, socketPath }` descriptor at `CLAWX_CUA_CONNECTION_FILE`; disabling stops the daemon and removes the descriptor, without plugin-policy reconciliation. Model operations use existing OpenClaw `exec` with the descriptor's absolute bundled binary and explicit socket, and image-capable `read` for workspace-scoped screenshot files. There is no custom `computer` tool, OpenClaw plugin, MCP proxy, CLI action wrapper, node host, pairing, or `node.invoke`. Native window/AX/menu/verification and other pinned CLI capabilities are available on supported hosts, alongside primary-display capture/input, rather than a ClawX action subset. See `harness/specs/tasks/cua-025-upgrade.md` for current upgrade acceptance; the earlier `cua-driver-cli` task superseded MCP requirements and retains historical 0.21.0 evidence.
 
-Gateway WebSocket heartbeat misses are diagnostic availability signals for the first three consecutive misses and must not interrupt long-running work during that window. A pong or any incoming Gateway message resets the sequence. On the fourth consecutive miss, Main may request the guarded Gateway restart path when auto-recovery is enabled and lifecycle state is still running; the heartbeat callback must not directly terminate the socket or process. Authoritative process-exit and socket-close signals retain their existing automatic lifecycle paths.
+CUA SDK, native driver, and official Skill are pinned together to 0.25.0, tag `cua-driver-rs-v0.25.0`, commit `45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f`. Main daemon options and macOS/Windows Gateway CLI child environments both set `CUA_DRIVER_RS_TELEMETRY_ENABLED=false`; the SDK allowlist supports this since 0.22.0. Preserve the Windows console-to-GUI PE patch: upstream telemetry still uses `cmd /c ver`, so the upgrade is not an automatic no-window fix. The old 0.21.0 constructor rejection is superseded history; real constructor acceptance and rebuilt Windows behavior require separate validation.
+
+The bundled `computer-use` Skill retains `/computer-use`, with MIT-licensed offline documents and a short ClawX entrypoint. ClawX owns the entire same-name installation under `harness/specs/tasks/managed-computer-use-skill.md`: every startup compares paths/content with the current bundle, replaces differences including user edits and extra files/directories, and skips matching content without historical installation hashes. Fresh and replacement installs stage the complete bundle outside discovery and retain publication rollback/cleanup. Replace a target symlink itself without following or deleting its external referent. Custom variants must use another name; other-named Skills and settings remain untouched. Official CUA 0.25.0 bytes and provenance/license verification are unchanged. The four-locale Skill E2E seeds local edits/extras and a separate custom Skill only in isolated test homes, then checks full restoration, extra removal, custom-Skill preservation and selection. Selection neither enables the service nor grants permissions. CLI workflows require explicit named sessions, result-aware verification despite zero-exit errors, fresh image files, and rediscovery after generation changes without blind input replay. The pinned `cli-explicit` source path differs from upstream's broad disposable-CLI wording; source and synthetic tests do not prove live session continuity or browser cleanup. Shell approvals, sandbox/read restrictions, and image settings remain unchanged: Skill guidance is not a hard sandbox, global action lock, or native cancellation guarantee. See `harness/reference/computer-use.md` and `harness/reference/computer-use-skill.md` for lifecycle, image privacy, provenance, distribution, and validation limits.
+
+Gateway session-catalog subscription, normalization, ordered list/event replay, attention transitions, and reconnect recovery are documented in `harness/reference/sidebar-session-attention.md`. The first prompt sent to a newly created non-default Agent must title its `agent:<id>:main` conversation; synthetic transport display names such as `ACP` must not replace that label, and transcript-summary hydration must restore it after reload. Deleting an Agent is also a session-catalog lifecycle boundary: after Main confirms the destructive config/filesystem operation, Renderer must immediately forget every canonical `agent:<deletedId>:` row, retain an in-memory tombstone that blocks stale list rows and delayed events, and repair selection without waiting for a Gateway restart. An authoritative Agent snapshot containing the same ID clears the tombstone to support recreation, but an Agent-list request that predates a confirmed mutation must not publish or reconcile afterward. An already-absent session index or entry is an idempotent conversation-delete success, while malformed indexes and unsafe transcript paths remain failures. Electron test-process isolation and global-resource scheduling are documented in `harness/reference/e2e-parallelism.md`.
+
+Native subagent sidebar hiding is presentation-only. An exact four-part `agent:<agentId>:subagent:<childId>` row stays in the shared Gateway catalog for exact-key attention, run status, routing, workspace cleanup, and exact non-cascading deletion, but it is excluded from sidebar groups and every implicit fallback candidate set. Main queries bounded ACP `session/list` through the typed Host API; ACP `session/list` is the sole lineage membership and title authority for the selected session's direct family, while a completed structured `sessions_spawn` result is only an invalidation signal. Latest exact-key Gateway catalog presence gates current child visibility and actionability plus direct-parent return-target availability. Presence never creates lineage membership or titles. For available children, Gateway `status` and `hasActiveRun` remain the sole run-state authority through the shared run projection, with exact-key `observedBusy` only as the existing unknown-state fallback and explicit terminal state overriding that fallback. ACP prompt and local sending state are not child run-status authorities. Ordinary Chat remains ACP-owned: a loaded ACP session may retain a passive Main-owned `sessions.messages` subscription so a later no-pending `announce:v1` run for that exact session can be emitted as recorded ACP updates. The adapter subscribes before fetching replay and buffers exact-session Chat and Agent events until its replay baseline is established. The same bridge may carry an ordinary no-pending run only for the exact loaded canonical native subagent, whose `sessions_spawn` run was started outside the ACP connection; it carries assistant, commentary thought, and tool lifecycle updates while preserving replay-seeded cumulative text baselines across tool boundaries. Renderer and Main do not read Gateway history or transcript text as an alternate Chat transport.
+
+Gateway WebSocket heartbeat misses are diagnostic availability signals only and must never directly interrupt the socket or process. A pong, any incoming Gateway frame, or a successful Gateway RPC is trusted liveness evidence and resets the 180 seconds silence deadline. After one uninterrupted deadline, Main runs exactly one 5000ms `system-presence` verification. A successful probe records liveness and cancels recovery. A failed probe may request guarded restart only for a ClawX-owned process; for an externally managed Gateway, Main may reconnect its own transport and expose unavailable diagnostics but never stop, shut down, or restart the Gateway automatically. This path does not track chat, tool, cron, or other workloads. Process exit, ordinary socket close, code 1012, and explicit user restart retain their separate lifecycle behavior.

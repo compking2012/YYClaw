@@ -82,7 +82,7 @@ requiredRules:
 requiredTests:
   - pnpm harness validate --spec harness/specs/tasks/chat-workspace-context.md
   - pnpm run typecheck
-  - pnpm exec vitest run tests/unit/workspace-context.test.ts tests/unit/session-title.test.ts tests/unit/host-services.test.ts tests/unit/chat-store-session-label-fetch.test.ts tests/unit/sidebar-session-buckets.test.ts tests/unit/sessions-api-workspace.test.ts tests/unit/session-buckets.test.ts tests/unit/chat-acp-page.test.tsx tests/unit/workspace-browser-body.test.tsx tests/unit/acp-session-access-registry.test.ts tests/unit/acp-chat-service.test.ts tests/unit/chat-session-management.test.ts
+  - pnpm exec vitest run tests/unit/workspace-context.test.ts tests/unit/session-title.test.ts tests/unit/host-services.test.ts tests/unit/chat-store-session-label-fetch.test.ts tests/unit/sidebar-session-buckets.test.ts tests/unit/sessions-api-workspace.test.ts tests/unit/session-buckets.test.ts tests/unit/chat-acp-page.test.tsx tests/unit/workspace-browser-body.test.tsx tests/unit/acp-session-access-registry.test.ts tests/unit/acp-chat-service.test.ts tests/unit/chat-store-delete-session-workflow.test.ts
   - pnpm run build:vite
   - pnpm exec playwright test tests/e2e/chat-workspace-context.spec.ts
   - pnpm run comms:replay

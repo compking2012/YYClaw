@@ -19,7 +19,8 @@
  *      @mariozechner/clipboard).
  */
 
-const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync } = require('fs');
+const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync, readFileSync, writeFileSync, chmodSync } = require('fs');
+const { execFileSync } = require('child_process');
 const { join, dirname, basename, relative } = require('path');
 const { ELECTRON_MAIN_RUNTIME_PACKAGES } = require('./openclaw-bundle-config.mjs');
 const { patchNsisExtractTemplate } = require('./patch-nsis-extract.mjs');
@@ -42,6 +43,106 @@ const ARCH_MAP = { 0: 'ia32', 1: 'x64', 2: 'armv7l', 3: 'arm64', 4: 'universal' 
 
 function resolveArch(archEnum) {
   return ARCH_MAP[archEnum] || 'x64';
+}
+
+const DWS_PLATFORM_ARCHIVES = {
+  'darwin-x64': 'dws-darwin-amd64.tar.gz',
+  'darwin-arm64': 'dws-darwin-arm64.tar.gz',
+  'linux-x64': 'dws-linux-amd64.tar.gz',
+  'linux-arm64': 'dws-linux-arm64.tar.gz',
+  'win32-x64': 'dws-windows-amd64.zip',
+  'win32-arm64': 'dws-windows-arm64.zip',
+};
+
+function findDwsBinary(root) {
+  const stack = [root];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    let entries;
+    try { entries = readdirSync(current, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      const entryPath = join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(entryPath);
+        continue;
+      }
+      if (entry.name === 'dws' || entry.name === 'dws.exe') {
+        return entryPath;
+      }
+    }
+  }
+  return null;
+}
+
+function extractDingTalkDwsVendor(packageDir, platform, arch) {
+  const archiveName = DWS_PLATFORM_ARCHIVES[`${platform}-${arch}`];
+  if (!archiveName) {
+    console.warn(`[after-pack] ⚠️  No DingTalk dws archive for ${platform}-${arch}`);
+    return false;
+  }
+  const archivePath = join(packageDir, 'assets', archiveName);
+  const vendorDir = join(packageDir, 'vendor');
+  const vendorBin = join(vendorDir, platform === 'win32' ? 'dws.exe' : 'dws');
+  if (existsSync(vendorBin)) return true;
+  if (!existsSync(archivePath)) {
+    console.warn(`[after-pack] ⚠️  Missing DingTalk dws archive: ${archivePath}`);
+    return false;
+  }
+
+  const tmpDir = join(packageDir, '.dws-extract-tmp');
+  try {
+    rmSync(tmpDir, { recursive: true, force: true });
+    mkdirSync(tmpDir, { recursive: true });
+    if (archivePath.endsWith('.tar.gz')) {
+      execFileSync('tar', ['-xzf', archivePath, '-C', tmpDir], { stdio: 'ignore' });
+    } else if (platform === 'win32') {
+      execFileSync('powershell.exe', [
+        '-NoLogo',
+        '-NoProfile',
+        '-Command',
+        `Expand-Archive -Path '${archivePath.replace(/'/g, "''")}' -DestinationPath '${tmpDir.replace(/'/g, "''")}' -Force`,
+      ], { stdio: 'ignore' });
+    } else {
+      execFileSync('unzip', ['-q', archivePath, '-d', tmpDir], { stdio: 'ignore' });
+    }
+    const found = findDwsBinary(tmpDir);
+    if (!found) {
+      console.warn('[after-pack] ⚠️  DingTalk dws archive did not contain a binary');
+      return false;
+    }
+    mkdirSync(vendorDir, { recursive: true });
+    cpSync(found, vendorBin);
+    if (platform !== 'win32') {
+      chmodSync(vendorBin, 0o755);
+    }
+    console.log(`[after-pack] ✅ Extracted DingTalk dws binary to ${vendorBin}`);
+    return true;
+  } catch (error) {
+    console.warn(`[after-pack] ⚠️  Failed to extract DingTalk dws binary: ${error.message}`);
+    return false;
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+function readJsonSafe(filePath) {
+  try {
+    return JSON.parse(readFileSync(normWin(filePath), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function listPackageDeps(pkgJson) {
+  return Object.keys({
+    ...(pkgJson?.dependencies && typeof pkgJson.dependencies === 'object' ? pkgJson.dependencies : {}),
+    ...(pkgJson?.optionalDependencies && typeof pkgJson.optionalDependencies === 'object' ? pkgJson.optionalDependencies : {}),
+  }).sort((a, b) => a.localeCompare(b));
+}
+
+function readInstalledPackageVersion(packageDir) {
+  const pkg = readJsonSafe(join(packageDir, 'package.json'));
+  return typeof pkg?.version === 'string' ? pkg.version.trim() : null;
 }
 
 // ── General cleanup ──────────────────────────────────────────────────────────
@@ -203,6 +304,106 @@ function cleanupNativePlatformPackages(nodeModulesDir, platform, arch) {
 
   return removed;
 }
+
+function cleanupNodeModulesRuntimeJunk(nodeModulesDir, platform, arch) {
+  let removed = 0;
+
+  const nodeWavDir = join(nodeModulesDir, 'node-wav');
+  for (const name of ['x.json', 'x.js', 'x.js~', 'file.wav']) {
+    try {
+      const target = join(nodeWavDir, name);
+      if (existsSync(target)) {
+        rmSync(target, { recursive: true, force: true });
+        removed++;
+      }
+    } catch { /* */ }
+  }
+
+  const treeSitterBashDir = join(nodeModulesDir, 'tree-sitter-bash');
+  const treeSitterSrc = join(treeSitterBashDir, 'src');
+  for (const name of ['parser.c', 'scanner.c', 'grammar.json', 'tree_sitter']) {
+    try {
+      const target = join(treeSitterSrc, name);
+      if (existsSync(target)) {
+        rmSync(target, { recursive: true, force: true });
+        removed++;
+      }
+    } catch { /* */ }
+  }
+
+  const prebuildsDir = join(treeSitterBashDir, 'prebuilds');
+  if (existsSync(prebuildsDir)) {
+    for (const entry of readdirSync(prebuildsDir)) {
+      const [entryPlatform, ...entryArchParts] = entry.split('-');
+      const entryArch = baseArch(entryArchParts.join('-'));
+      if (entryPlatform === platform && (arch === 'universal' || entryArch === arch || entryArch === 'universal')) continue;
+      try {
+        rmSync(join(prebuildsDir, entry), { recursive: true, force: true });
+        removed++;
+      } catch { /* */ }
+    }
+  }
+
+  return removed;
+}
+
+function assertCuaPackagedRuntime(resourcesDir, platform, arch) {
+  const target = `${platform}-${arch}`;
+  const packageNames = {
+    'darwin-x64': 'cua-driver-darwin-x64',
+    'darwin-arm64': 'cua-driver-darwin-arm64',
+    'win32-x64': 'cua-driver-win32-x64-msvc',
+  };
+  const packageName = packageNames[target];
+  if (!packageName) return;
+
+  const executable = join(resourcesDir, 'bin', platform === 'win32' ? 'cua-driver.exe' : 'cua-driver');
+  if (!existsSync(normWin(executable))) {
+    throw new Error(`[after-pack] Missing bundled CUA executable for ${target}: ${executable}`);
+  }
+  if (platform !== 'win32' && (statSync(normWin(executable)).mode & 0o111) === 0) {
+    throw new Error(`[after-pack] Bundled CUA executable is not executable for ${target}: ${executable}`);
+  }
+
+  const nativeDir = join(
+    resourcesDir,
+    'app.asar.unpacked',
+    'node_modules',
+    '@trycua',
+    packageName,
+  );
+  const nativeEntries = existsSync(normWin(nativeDir)) ? readdirSync(normWin(nativeDir)) : [];
+  const libraryExtension = platform === 'win32' ? '.dll' : '.dylib';
+  if (
+    !nativeEntries.some((name) => name.endsWith('.node'))
+    || !nativeEntries.some((name) => name.endsWith(libraryExtension))
+  ) {
+    throw new Error(`[after-pack] Missing unpacked CUA native SDK for ${target}: ${nativeDir}`);
+  }
+}
+
+function cleanupKnownRuntimeJunk(rootDir, platform, arch) {
+  let removed = 0;
+  const stack = [rootDir];
+
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    let entries;
+    try { entries = readdirSync(normWin(dir), { withFileTypes: true }); } catch { continue; }
+
+    if (basename(dir) === 'node_modules') {
+      removed += cleanupNodeModulesRuntimeJunk(dir, platform, arch);
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      stack.push(join(dir, entry.name));
+    }
+  }
+
+  return removed;
+}
+
 
 // ── Broken module patcher ─────────────────────────────────────────────────────
 // Some bundled packages have transpiled CJS that sets `module.exports = exports.default`
@@ -651,6 +852,22 @@ exports.default = async function afterPack(context) {
   }
   verifyPackagedNpmPluginMirrors(pluginsDestRoot);
 
+  // 1.1b Bundle the official DingTalk workspace CLI (`dws`) so calendar/doc
+  //      skills can execute from the packaged Gateway PATH.
+  const dwsDestDir = join(resourcesDir, 'dingtalk-dws');
+  const dwsOk = bundlePlugin(nodeModulesRoot, 'dingtalk-workspace-cli', dwsDestDir);
+  if (dwsOk) {
+    cleanupUnnecessaryFiles(dwsDestDir);
+    if (extractDingTalkDwsVendor(dwsDestDir, platform, arch)) {
+      // The vendor binary is self-contained. Shipping all six platform
+      // archives adds roughly 26 MB to every platform build for no benefit.
+      rmSync(join(dwsDestDir, 'assets'), { recursive: true, force: true });
+      console.log(`[after-pack] ✅ Bundled DingTalk workspace CLI to ${dwsDestDir}`);
+    } else {
+      rmSync(dwsDestDir, { recursive: true, force: true });
+    }
+  }
+
   // 1.2 Copy built-in extension node_modules that electron-builder skipped.
   //     OpenClaw 3.31+ ships built-in extensions (discord, qqbot, etc.) under
   //     dist/extensions/<ext>/node_modules/. These are skipped by extraResources
@@ -736,6 +953,7 @@ exports.default = async function afterPack(context) {
   // which extracts those files to app.asar.unpacked/.  We patch them here so
   // Electron's transparent asar fs layer serves the fixed version at runtime.
   const asarUnpackedDir = join(resourcesDir, 'app.asar.unpacked');
+  assertCuaPackagedRuntime(resourcesDir, platform, arch);
   if (existsSync(asarUnpackedDir)) {
     const { readFileSync: readFS, writeFileSync: writeFS } = require('fs');
     let asarLruCount = 0;
@@ -901,39 +1119,8 @@ function verifyPackagedClawXPluginMirrors(resourcesDir) {
 // Exposed for unit tests (tests/unit/after-pack-cleanup.test.ts). Not used at
 // runtime — the main afterPack hook calls these helpers inline.
 
-function cleanupNodeModulesRuntimeJunk(nodeModulesDir, platform, arch) {
-  let removed = 0;
-  let entries;
-  try { entries = readdirSync(nodeModulesDir); } catch { return 0; }
-
-  // Walk each package's `prebuilds/<platform>-<arch>` directory and drop
-  // subdirectories that don't match the target platform/arch. For universal
-  // builds we keep every sub-arch of the target platform.
-  for (const entry of entries) {
-    const prebuildsDir = join(nodeModulesDir, entry, 'prebuilds');
-    if (!existsSync(prebuildsDir)) continue;
-    let sub;
-    try { sub = readdirSync(prebuildsDir); } catch { continue; }
-    for (const dir of sub) {
-      const m = dir.match(/^([a-z0-9]+)-([a-z0-9]+)$/i);
-      if (!m) continue;
-      const pkgPlatform = PLATFORM_ALIASES[m[1]] || m[1];
-      const pkgArch = baseArch(m[2]);
-      const isMatch =
-        pkgPlatform === platform &&
-        (pkgArch === arch || pkgArch === 'universal' || arch === 'universal');
-      if (!isMatch) {
-        try {
-          rmSync(join(prebuildsDir, dir), { recursive: true, force: true });
-          removed++;
-        } catch { /* */ }
-      }
-    }
-  }
-  return removed;
-}
-
 exports.__test = {
+  assertCuaPackagedRuntime,
   cleanupNativePlatformPackages,
   cleanupNodeModulesRuntimeJunk,
   verifyPackagedNpmPluginMirrors,

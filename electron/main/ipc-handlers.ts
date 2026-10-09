@@ -33,6 +33,7 @@ import { browserOAuthManager } from '../utils/browser-oauth';
 import { getProviderConfig } from '../utils/provider-registry';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
+import { applyNativeThemeSetting } from './native-theme';
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
 import { getProviderService } from '../services/providers/provider-service';
 import {
@@ -83,6 +84,7 @@ import { createWorkspaceApi } from '../services/workspace-api';
 import { createPromptOptimizationApi } from '../services/prompt-optimization-api';
 import { createWorkflowApi } from '../services/workflow-api';
 import { showOpenDialogWithParent, showMessageBoxWithParent } from '../utils/dialog-parent';
+import { createAsrApi } from '../services/asr-api';
 import { createWebBrowserApi } from '../services/web-browser-api';
 import type { WebBrowserGuestRegistry } from './web-browser-policy';
 import {
@@ -156,6 +158,7 @@ export function registerIpcHandlers(
 
   // File preview handlers (sandboxed read/write/list for inline viewer)
   registerFilePreviewHandlers();
+
 }
 
 function registerTypedHostHandlers(
@@ -206,6 +209,7 @@ function registerTypedHostHandlers(
     promptOptimization: createPromptOptimizationApi(),
     workflow: createWorkflowApi({ gatewayManager }),
     legacy: createLegacyApi({ gatewayManager, clawHubService, mainWindow }),
+    asr: createAsrApi(),
   });
   registerHostInvokeHandler(hostApiRegistry);
 }
@@ -1168,6 +1172,9 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     if (key === 'language') {
       await createMenu(typeof value === 'string' ? value : undefined);
     }
+    if (key === 'theme') {
+      await applyNativeThemeSetting(value);
+    }
 
     return { success: true };
   });
@@ -1194,6 +1201,9 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     if (entries.some(([key]) => key === 'language')) {
       await createMenu(typeof patch.language === 'string' ? patch.language : undefined);
     }
+    if (entries.some(([key]) => key === 'theme')) {
+      await applyNativeThemeSetting(patch.theme);
+    }
 
     return { success: true };
   });
@@ -1204,6 +1214,7 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     await handleProxySettingsChange();
     await syncLaunchAtStartupSettingFromStore();
     await createMenu(settings.language);
+    await applyNativeThemeSetting(settings.theme);
     return { success: true, settings };
   });
 }

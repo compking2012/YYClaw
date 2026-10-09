@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Chat } from '@/pages/Chat';
 
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+}));
+
 vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
@@ -17,6 +21,9 @@ vi.mock('@/stores/gateway', () => ({
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
+    chat: {
+      getAcpSessionFamily: vi.fn(async () => ({ success: true, current: null, children: [] })),
+    },
     files: {
       resolveWorkspaceContext: vi.fn(async ({ workspaceRoot, executionCwd }) => ({ ok: true, workspaceRoot, executionCwd })),
     },
@@ -100,10 +107,6 @@ vi.mock('@/hooks/use-stick-to-bottom-instant', () => ({
     scrollToBottom: vi.fn(),
     isAtBottom: true,
   }),
-}));
-
-vi.mock('@/hooks/use-min-loading', () => ({
-  useMinLoading: (value: boolean) => value,
 }));
 
 vi.mock('@/pages/Chat/ChatInput', () => ({

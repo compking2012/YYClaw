@@ -4,16 +4,23 @@ import {
   PROVIDER_TYPES,
   PROVIDER_TYPE_INFO,
   getProviderDocsUrl,
+  getProviderIconUrl,
+  isProviderAvailableForLanguage,
   resolveProviderApiKeyForSave,
   resolveProviderModelForSave,
+  shouldInvertInDark,
   shouldShowProviderModelId,
 } from '@/lib/providers';
 import {
   BUILTIN_PROVIDER_TYPES,
   getProviderConfig,
+  getProviderDefaultModel,
   getProviderEnvVar,
   getProviderEnvVars,
 } from '@electron/utils/provider-registry';
+import { getProviderDefaultModel as getCatalogDefaultModel } from '@electron/shared/providers/registry';
+import bundledProviders from '../../resources/config/providers.json';
+import { OPENCLAW_API_PROTOCOLS } from '@electron/shared/providers/types';
 
 describe('provider metadata', () => {
   it('includes ark in the frontend provider registry', () => {
@@ -34,6 +41,45 @@ describe('provider metadata', () => {
         }),
       ])
     );
+  });
+
+  it('includes TokenDance OAuth with ClawX request attribution', () => {
+    expect(PROVIDER_TYPES).toContain('tokendance');
+    expect(BUILTIN_PROVIDER_TYPES).toContain('tokendance');
+    expect(PROVIDER_TYPE_INFO).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'tokendance',
+        name: 'TokenDance',
+        isOAuth: true,
+        supportsApiKey: true,
+        defaultBaseUrl: 'https://tokendance.space/gateway/v1',
+        defaultModelId: 'qwen3.8-max',
+        availableInLanguages: ['zh'],
+      }),
+    ]));
+    expect(getProviderIconUrl('tokendance')).toMatch(/^data:image\/svg\+xml;base64,/);
+    expect(shouldInvertInDark('tokendance')).toBe(false);
+    expect(getProviderEnvVar('tokendance')).toBe('TOKENDANCE_API_KEY');
+    expect(getProviderConfig('tokendance')).toEqual({
+      baseUrl: 'https://tokendance.space/gateway/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'TOKENDANCE_API_KEY',
+      headers: { 'X-App-URL': 'https://clawx.com.cn' },
+    });
+  });
+
+  it('limits TokenDance discovery to Chinese interface locales', () => {
+    const tokenDance = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'tokendance');
+    const openAi = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openai');
+
+    expect(tokenDance).toBeDefined();
+    expect(isProviderAvailableForLanguage(tokenDance!, 'zh')).toBe(true);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'zh-CN')).toBe(true);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'en')).toBe(false);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'ja')).toBe(false);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'ru')).toBe(false);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'unsupported')).toBe(false);
+    expect(isProviderAvailableForLanguage(openAi!, 'en')).toBe(true);
   });
 
   it('includes ark in the backend provider registry', () => {
@@ -60,22 +106,22 @@ describe('provider metadata', () => {
           id: 'zai',
           name: 'Z.AI (CN)',
           defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-          defaultModelId: 'glm-5.2',
+          defaultModelId: 'glm-5.3-flash',
           showBaseUrl: true,
           showModelId: true,
           codePlanPresetBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
-          codePlanPresetModelId: 'glm-5.2',
+          codePlanPresetModelId: 'glm-5.3-flash',
           codePlanDocsUrl: 'https://docs.bigmodel.cn/cn/coding-plan/quick-start',
         }),
         expect.objectContaining({
           id: 'zai-global',
           name: 'Z.AI (Global)',
           defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
-          defaultModelId: 'glm-5.2',
+          defaultModelId: 'glm-5.3-flash',
           showBaseUrl: true,
           showModelId: true,
           codePlanPresetBaseUrl: 'https://api.z.ai/api/coding/paas/v4',
-          codePlanPresetModelId: 'glm-5.2',
+          codePlanPresetModelId: 'glm-5.3-flash',
           codePlanDocsUrl: 'https://docs.z.ai/devpack/quick-start',
         }),
       ]),
@@ -110,9 +156,54 @@ describe('provider metadata', () => {
     );
   });
 
+  it('ships matching default models in the renderer and Main registries', () => {
+    for (const provider of PROVIDER_TYPE_INFO) {
+      if (provider.id === 'custom') continue;
+      expect(
+        { id: provider.id, defaultModelId: getProviderDefaultModel(provider.id) },
+        `renderer/Main default model drift for ${provider.id}`,
+      ).toEqual({ id: provider.id, defaultModelId: Array.isArray(provider.defaultModelId) ? provider.defaultModelId[0] : provider.defaultModelId });
+      expect(getCatalogDefaultModel(provider.id)).toEqual(provider.defaultModelId);
+    }
+  });
+
+  it('preserves local backend model metadata instead of replacing it with upstream models', () => {
+    for (const provider of bundledProviders) {
+      if ('backendModels' in provider && provider.backendModels) {
+        expect(getProviderConfig(provider.id)?.models).toEqual(provider.backendModels);
+      }
+    }
+    expect(getProviderConfig('moonshot')?.models).toContainEqual(expect.objectContaining({
+      id: 'kimi-k2.6', contextWindow: 256_000, input: ['text'],
+    }));
+  });
+
+  it('gives the approved provider integrations their backend connection presets', () => {
+    for (const type of ['anthropic', 'google', 'tokendance']) {
+      const config = getProviderConfig(type);
+      expect(config?.baseUrl, `${type} has no providerConfig.baseUrl`).toBeTruthy();
+      expect(OPENCLAW_API_PROTOCOLS, `${type} declares an api OpenClaw rejects`).toContain(
+        config?.api,
+      );
+    }
+  });
+
+  it('registers Anthropic and Google against their official endpoints', () => {
+    expect(getProviderConfig('anthropic')).toEqual({
+      baseUrl: 'https://api.anthropic.com/v1',
+      api: 'anthropic-messages',
+      apiKeyEnv: 'ANTHROPIC_API_KEY',
+    });
+    expect(getProviderConfig('google')).toEqual({
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      api: 'google-generative-ai',
+      apiKeyEnv: 'GEMINI_API_KEY',
+    });
+  });
+
   it('keeps builtin provider sources in sync', () => {
     expect(BUILTIN_PROVIDER_TYPES).toEqual(
-      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'zai', 'zai-global', 'modelstudio', 'ollama'])
+      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'tokendance', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'zai', 'zai-global', 'modelstudio', 'ollama'])
     );
   });
 

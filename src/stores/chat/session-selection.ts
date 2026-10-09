@@ -1,4 +1,4 @@
-import { isClawXDesktopSessionKey } from './session-key-utils';
+import { isClawXDesktopSessionKey, isNativeSubagentSessionKey } from './session-key-utils';
 import { isSidebarHiddenSessionKey } from '../../../shared/internal-session';
 import type { ChatSession } from './types';
 
@@ -27,19 +27,20 @@ export function pickStartupSessionFallback(
   currentSessionKey: string,
   sessions: ChatSession[],
 ): string | null {
-  if (sessions.length === 0) return null;
+  const fallbackCandidates = sessions.filter((session) => isSelectable(session) && !isNativeSubagentSessionKey(session.key));
+  if (fallbackCandidates.length === 0) return null;
 
   const agentId = getAgentIdFromSessionKey(currentSessionKey);
   const agentMainKey = `agent:${agentId}:main`;
-  const agentMain = sessions.find((session) => session.key === agentMainKey);
+  const agentMain = fallbackCandidates.find((session) => session.key === agentMainKey);
   if (agentMain) return agentMain.key;
 
   const agentNonCron = sortByUpdatedAtDesc(
-    sessions.filter((session) => session.key.startsWith(`agent:${agentId}:`) && isSelectable(session)),
+    fallbackCandidates.filter((session) => session.key.startsWith(`agent:${agentId}:`) && isSelectable(session)),
   );
   if (agentNonCron.length > 0) return agentNonCron[0]!.key;
 
-  const nonCron = sortByUpdatedAtDesc(sessions.filter((session) => isSelectable(session)));
+  const nonCron = sortByUpdatedAtDesc(fallbackCandidates.filter((session) => isSelectable(session)));
   if (nonCron.length > 0) return nonCron[0]!.key;
 
   return null;

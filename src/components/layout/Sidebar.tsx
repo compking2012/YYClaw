@@ -19,6 +19,7 @@ import {
   X,
   Workflow,
   ImagePlus,
+  Monitor,
   ChevronsUpDown,
   ChevronsDownUp,
   Folder,
@@ -38,7 +39,10 @@ import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { groupSessionsByWorkspace } from './session-buckets';
-import { shouldIncludeSessionInSidebarList } from '@/stores/chat/session-key-utils';
+import {
+  shouldIncludeSessionInSidebarList,
+  shouldIncludeSessionInWorkspaceDeletion,
+} from '@/stores/chat/session-key-utils';
 import { CHANNEL_NAMES } from '@shared/types/channel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -165,7 +169,6 @@ export function Sidebar() {
   const sessionAttentionByKey = useSessionAttentionStore((s) => s.bySessionKey);
   const markRead = useSessionAttentionStore((s) => s.markRead);
   const handleNewChat = useNewChatAction();
-
   const gatewayStatus = useGatewayStore((s) => s.status);
   const isGatewayRunning = gatewayStatus.state === 'running';
   const isGatewayReady = isGatewayRunning && gatewayStatus.gatewayReady !== false;
@@ -393,12 +396,17 @@ export function Sidebar() {
     () => Object.fromEntries((agents ?? []).map((agent) => [agent.id, agent.name])),
     [agents],
   );
-  const sidebarSessions = useMemo(
-    () => sessions.filter((session) => shouldIncludeSessionInSidebarList(session)),
+  const defaultAgentWorkspace = useMemo(
+    () => agents.find((agent) => agent.isDefault)?.workspace
+      ?? agents.find((agent) => agent.id === 'main')?.workspace,
+    [agents],
+  );
+  const workspaceCatalogSessions = useMemo(
+    () => sessions.filter((session) => shouldIncludeSessionInWorkspaceDeletion(session)),
     [sessions],
   );
-  const workspaceSessionGroups = groupSessionsByWorkspace(
-    sidebarSessions,
+  const workspaceCatalogGroups = groupSessionsByWorkspace(
+    workspaceCatalogSessions,
     sessionLastActivity,
     t('chat:workspace.defaultLabel'),
     chatWorkspacePath,
@@ -408,18 +416,30 @@ export function Sidebar() {
       chatWorkspacePath,
       ...sessions.map((session) => session.workspacePath).filter((path): path is string => !!path),
     ],
+    defaultAgentWorkspace,
   );
+  const workspaceSessionGroups = workspaceCatalogGroups.map((group) => ({
+    ...group,
+    sessions: group.sessions.filter(({ session }) => shouldIncludeSessionInSidebarList(session)),
+  }));
   const workspaceAvailability = useWorkspaceAvailability(
     workspaceSessionGroups.map((group) => group.workspacePath),
   );
-  const allWorkspaceGroupsCollapsed = workspaceSessionGroups.length > 0
-    && workspaceSessionGroups.every((group) => collapsedWorkspaceGroups[getWorkspaceGroupStateKey(group.workspacePath)] ?? false);
+  const displayedWorkspaceSessionGroups = workspaceSessionGroups.filter((group) => (
+    group.sessions.length > 0
+    || (
+      workspaceAvailability[group.workspacePath] === 'unavailable'
+      && !isDefaultWorkspacePath(group.workspacePath)
+    )
+  ));
+  const allWorkspaceGroupsCollapsed = displayedWorkspaceSessionGroups.length > 0
+    && displayedWorkspaceSessionGroups.every((group) => collapsedWorkspaceGroups[getWorkspaceGroupStateKey(group.workspacePath)] ?? false);
 
   const toggleAllWorkspaceGroups = () => {
     const nextCollapsed = !allWorkspaceGroupsCollapsed;
     setCollapsedWorkspaceGroups((current) => {
       const next = { ...current };
-      for (const group of workspaceSessionGroups) {
+      for (const group of displayedWorkspaceSessionGroups) {
         next[getWorkspaceGroupStateKey(group.workspacePath)] = nextCollapsed;
       }
       return next;
@@ -458,6 +478,12 @@ export function Sidebar() {
           },
         ]
       : []),
+    ...(devModeUnlocked ? [{
+      to: '/computer-use',
+      icon: <Monitor className="h-4 w-4" strokeWidth={2} />,
+      label: t('computerUse.title'),
+      testId: 'sidebar-nav-computer-use',
+    }] : []),
   ];
 
   const navItems = [
@@ -546,7 +572,7 @@ export function Sidebar() {
       </nav>
 
       {/* Session list — below Settings, only when expanded */}
-      {!sidebarCollapsed && sidebarSessions.length > 0 && (
+      {!sidebarCollapsed && displayedWorkspaceSessionGroups.length > 0 && (
         <div className="mt-4 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
           <div className="mb-1 flex items-center justify-between gap-2 pl-2.5">
             <span className="text-tiny font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
@@ -571,7 +597,7 @@ export function Sidebar() {
           </div>
 
           <div className="space-y-1.5">
-            {workspaceSessionGroups.map((workspaceGroup) => {
+            {displayedWorkspaceSessionGroups.map((workspaceGroup) => {
               const workspaceStateKey = getWorkspaceGroupStateKey(workspaceGroup.workspacePath);
               const collapsed = collapsedWorkspaceGroups[workspaceStateKey] ?? false;
               const visibleCount = workspaceVisibleSessionCounts[workspaceStateKey] ?? INITIAL_WORKSPACE_SESSION_LIMIT;
@@ -680,7 +706,9 @@ export function Sidebar() {
                             setWorkspaceToDelete({
                               path: workspaceGroup.workspacePath,
                               label: workspaceGroup.label,
-                              sessionKeys: workspaceGroup.sessions.map(({ session }) => session.key),
+                              sessionKeys: workspaceCatalogGroups
+                                .find((group) => group.workspacePath === workspaceGroup.workspacePath)
+                                ?.sessions.map(({ session }) => session.key) ?? [],
                             });
                             setWorkspaceDeleteDialogOpen(true);
                           }}
@@ -982,7 +1010,12 @@ export function Sidebar() {
         onConfirm={async () => {
           const targetSession = sessionToDelete;
           if (!targetSession) return;
-          await deleteSession(targetSession.key);
+          const result = await deleteSession(targetSession.key);
+          if (!result.success) {
+            toast.error(result.error);
+            return;
+          }
+          if (result.warnings?.length) toast.warning(t('chat:sessionList.deleteSessionCleanupWarning'));
           if (currentSessionKey === targetSession.key) navigate('/');
           setDeleteDialogOpen(false);
         }}
@@ -1003,6 +1036,7 @@ export function Sidebar() {
           if (!target) return;
           const currentWasTargeted = target.sessionKeys.includes(currentSessionKey);
           const result = await deleteSessions(target.sessionKeys);
+          if (result.warnings?.length) toast.warning(t('chat:sessionList.deleteSessionCleanupWarning'));
           if (result.failedKeys.length === 0) {
             try {
               await removeWorkspace(target.path);

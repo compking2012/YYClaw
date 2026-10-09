@@ -14,6 +14,8 @@ export interface AgentSummary {
   modelDisplay: string;
   modelRef?: string | null;
   overrideModelRef?: string | null;
+  /** Effective token limit after provider transport ceilings are applied. */
+  contextWindow?: number;
   inheritedModel: boolean;
   /** Per-slot auto-select toggles (resolved defaults ⊕ per-agent override). */
   autoSelectModel?: Partial<Record<AgentModelSlot, boolean>>;

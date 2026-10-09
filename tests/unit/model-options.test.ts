@@ -87,12 +87,16 @@ describe('model option helpers', () => {
       {
         modelRef: 'custom-alpha123/model-alpha',
         label: 'Alpha',
+        modelId: 'model-alpha',
+        providerName: 'Alpha',
         runtimeProviderKey: 'custom-alpha123',
         accountId: 'alpha1234',
       },
       {
         modelRef: 'custom-beta5678/provider/model-beta',
         label: 'Beta',
+        modelId: 'provider/model-beta',
+        providerName: 'Beta',
         runtimeProviderKey: 'custom-beta5678',
         accountId: 'beta5678',
       },
@@ -137,12 +141,16 @@ describe('model option helpers', () => {
       {
         modelRef: `${runtimeKey}/gpt-5.4`,
         label: 'Model Hub · gpt-5.4',
+        modelId: 'gpt-5.4',
+        providerName: 'Model Hub',
         runtimeProviderKey: runtimeKey,
         accountId,
       },
       {
         modelRef: `${runtimeKey}/claude-sonnet-4`,
         label: 'Model Hub · claude-sonnet-4',
+        modelId: 'claude-sonnet-4',
+        providerName: 'Model Hub',
         runtimeProviderKey: runtimeKey,
         accountId,
       },
@@ -174,6 +182,8 @@ describe('model option helpers', () => {
       {
         modelRef: 'openai/gpt-5.6',
         label: 'OpenAI',
+        modelId: 'gpt-5.6',
+        providerName: 'OpenAI',
         runtimeProviderKey: 'openai',
         accountId: id,
       },
@@ -209,12 +219,16 @@ describe('model option helpers', () => {
       {
         modelRef: 'custom-enterpri/gpt-5.4',
         label: 'Enterprise · gpt-5.4',
+        modelId: 'gpt-5.4',
+        providerName: 'Enterprise',
         runtimeProviderKey: 'custom-enterpri',
         accountId: 'custom-enterpri',
       },
       {
         modelRef: 'custom-enterpri/gpt-5.5',
         label: 'Enterprise · gpt-5.5',
+        modelId: 'gpt-5.5',
+        providerName: 'Enterprise',
         runtimeProviderKey: 'custom-enterpri',
         accountId: 'custom-enterpri',
       },
@@ -255,6 +269,8 @@ describe('model option helpers', () => {
       {
         modelRef: 'openai/gpt-5.5',
         label: 'GPT-5.5',
+        modelId: 'gpt-5.5',
+        providerName: 'GPT-5.5',
         runtimeProviderKey: 'openai',
         accountId: 'gpt55-c88ce7d8',
       },

@@ -5,6 +5,7 @@ export const PROVIDER_TYPES = [
   'openai',
   'google',
   'openrouter',
+  'tokendance',
   'ark',
   'moonshot',
   'moonshot-global',
@@ -24,6 +25,7 @@ export const BUILTIN_PROVIDER_TYPES = [
   'openai',
   'google',
   'openrouter',
+  'tokendance',
   'ark',
   'moonshot',
   'moonshot-global',
@@ -139,6 +141,8 @@ export interface ProviderWithKeyInfo extends ProviderConfig {
 }
 
 export interface ProviderTypeInfo {
+  hideOAuthUi?: boolean;
+  availableInLanguages?: readonly import('../../../shared/language').LanguageCode[];
   id: ProviderType;
   name: string;
   icon: string;

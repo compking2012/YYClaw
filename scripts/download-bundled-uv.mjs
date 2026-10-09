@@ -1,42 +1,12 @@
 #!/usr/bin/env zx
 
 import 'zx/globals';
+import { downloadRelease } from './download-release.mjs';
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const UV_VERSION = '0.10.0';
 const BASE_URL = `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}`;
 const OUTPUT_BASE = path.join(ROOT_DIR, 'resources', 'bin');
-
-// Use proxy from environment (e.g. HTTPS_PROXY=http://127.0.0.1:7890) so fetch works behind proxy.
-// Prefer http(s) URLs; undici ProxyAgent does not support socks5.
-function getProxy() {
-  const candidates = [
-    process.env.HTTPS_PROXY,
-    process.env.https_proxy,
-    process.env.HTTP_PROXY,
-    process.env.http_proxy,
-    process.env.all_proxy,
-    process.env.ALL_PROXY,
-  ].filter(Boolean);
-  const proxy = candidates.find((p) => p.startsWith('http:') || p.startsWith('https:'));
-  return proxy || null;
-}
-
-async function downloadWithProxy(url) {
-  const proxy = getProxy();
-  if (proxy) {
-    const { fetch, ProxyAgent } = await import('undici');
-    const agent = new ProxyAgent(proxy);
-    const response = await fetch(url, { dispatcher: agent });
-    if (!response.ok) throw new Error(`Failed to download: ${response.statusText}`);
-    const buffer = await response.arrayBuffer();
-    return Buffer.from(buffer);
-  }
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to download: ${response.statusText}`);
-  const buffer = await response.arrayBuffer();
-  return Buffer.from(buffer);
-}
 
 // Mapping Node platforms/archs to uv release naming
 const TARGETS = {
@@ -98,15 +68,14 @@ async function setupTarget(id) {
   echo(chalk.blue`\n📦 Setting up uv for ${id}...`);
 
   // Cleanup & Prep
-  await fs.remove(targetDir);
+  await fs.remove(destBin);
   await fs.remove(tempDir);
   await fs.ensureDir(targetDir);
   await fs.ensureDir(tempDir);
 
   try {
     echo`⬇️ Downloading: ${downloadUrl}`;
-    if (getProxy()) echo(chalk.gray`   (using proxy ${getProxy()})`);
-    const buffer = await downloadWithProxy(downloadUrl);
+    const buffer = await downloadRelease(downloadUrl);
     await fs.writeFile(archivePath, buffer);
 
     // Extract

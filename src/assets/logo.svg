@@ -1,8 +1,8 @@
 <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="lobster-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ffb300"/>
-      <stop offset="100%" stop-color="#f57c00"/>
+      <stop offset="0%" stop-color="#B69AFF"/>
+      <stop offset="100%" stop-color="#7950D9"/>
     </linearGradient>
   </defs>
   <!-- Body -->
@@ -12,11 +12,15 @@
   <!-- Right Claw -->
   <path d="M100 45 C115 40 120 50 115 60 C110 70 100 65 95 55 C92 48 95 45 100 45Z" fill="url(#lobster-gradient)"/>
   <!-- Antenna -->
-  <path d="M45 15 Q35 5 30 8" stroke="#ffb300" stroke-width="3" stroke-linecap="round"/>
-  <path d="M75 15 Q85 5 90 8" stroke="#ffb300" stroke-width="3" stroke-linecap="round"/>
+  <path d="M45 15 Q35 5 30 8" stroke="#B69AFF" stroke-width="3" stroke-linecap="round"/>
+  <path d="M75 15 Q85 5 90 8" stroke="#B69AFF" stroke-width="3" stroke-linecap="round"/>
   <!-- Eyes -->
-  <circle cx="45" cy="35" r="6" fill="#050810"/>
-  <circle cx="75" cy="35" r="6" fill="#050810"/>
-  <circle cx="46" cy="34" r="2.5" fill="#00e5cc"/>
-  <circle cx="76" cy="34" r="2.5" fill="#00e5cc"/>
+  <g transform="translate(45 35)">
+    <circle r="7" fill="#281642"/>
+    <path d="M-3.2-3Q-2-.3 0 .5Q2-.3 3.2-3M0 .5v3.4" fill="none" stroke="#7EF4D5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g transform="translate(75 35)">
+    <circle r="7" fill="#281642"/>
+    <path d="M-3.2-3Q-2-.3 0 .5Q2-.3 3.2-3M0 .5v3.4" fill="none" stroke="#7EF4D5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
 </svg>

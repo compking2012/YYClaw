@@ -19,6 +19,54 @@ single unified client abstraction whose transport policy is owned by the Electro
 main process. This document describes the layers, the communication paths, the
 data flow, and the runtime contracts that keep those boundaries enforceable.
 
+## Target Architecture: Unified Local–Cloud Workbench
+
+The [product PRD](PRODUCT.md#product-vision-and-scope) extends the desktop
+foundation toward a shared Agent runtime across desktop, mobile/tablet consoles,
+and Headless Linux servers. This section defines **target requirements**, not
+implemented remote-host or synchronization contracts. The remaining sections
+describe the existing Electron architecture and its enforced boundaries.
+
+- **Platform adapters:** Desktop exposes authorized local execution capabilities;
+  mobile exposes chat, capture/upload, monitoring, dispatch, and notifications
+  without unrestricted Shell/system access; servers expose persistent execution,
+  Cron, channel monitoring, and user/workspace isolation without a GUI.
+- **Shared runtime and schemas:** Agent configurations, memory schemas, skill
+  libraries, workflow definitions, task identities, events, and snapshots must be
+  compatible across eligible nodes. Synchronization covers only authorized data;
+  local private memories and system credentials are excluded.
+- **Placement policy:** Privacy and required local capabilities are hard
+  constraints. Authorized scheduled/monitoring/batch tasks estimated above 30
+  minutes prefer cloud hosts. Lightweight inference/OCR prefers local compute;
+  complex reasoning and generation may prefer cloud inference when allowed.
+  Execution location and model-provider location are separate decisions: a local
+  Agent calling a cloud model is not a device-only privacy boundary.
+- **Checkpoint migration:** Event logs plus state snapshots support transfer at
+  safe checkpoints, compatible runtime/capability validation, and single-owner
+  execution. Recovery must account for external side effects without duplicating
+  them. Planned sleep/shutdown can attempt eligible handoffs; sudden device loss
+  requires recovery from the last durable checkpoint. Sensitive/local-bound tasks
+  never migrate merely to satisfy a duration preference.
+- **Data isolation:** Sensitive files, private memories, and system credentials
+  remain local. Non-sensitive task configuration, logs, and workspace data may
+  synchronize with explicit authorization and scoped file access. Snapshots and
+  logs require the same classification controls as source data. A cloud host has
+  no default access to a desktop's files or permissions.
+- **Multimodal pipeline:** Screen/image perception, voice, PDF/Office parsing,
+  and video frames feed typed workflow inputs; text, charts, images, speech, and
+  video scripts are output artifacts. Local OCR/transcription and cloud
+  understanding/generation share the placement/privacy policy.
+- **Deterministic orchestration:** XState defines control flow, explicit reasoning
+  nodes invoke models, and retries, approvals, recovery, and audit are engine
+  responsibilities. Concurrent Agents retain separate models, skills, channels,
+  permissions, and physically isolated workspaces.
+
+Future remote-host support must preserve the Renderer → Host API → Main-owned
+backend boundary; it must not add renderer-side Gateway connections or protocol
+switching. Self-hosting the catalog/marketplace through `farmApiBaseUrl` is not a
+cloud Agent deployment mechanism. Protocol design and implementation remain
+separate tasks governed by the communication harness.
+
 ## Layer Diagram
 
 ```

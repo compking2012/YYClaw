@@ -1,5 +1,15 @@
 # YYClaw Features
 
+## Product Vision and Target Scope
+
+YYClaw aims to be an **open-source, vendor-neutral, cross-platform AI workbench** with controlled privacy and cost, reliable execution, extensibility, and auditability. Its unified Agent runtime connects a full-feature desktop, mobile/tablet console, and persistent user-owned Linux server. Six pillars guide the product: MIT openness, consistent permission-tiered experiences, local–cloud cooperation, native multimodality, deterministic audited automation, and global plus Chinese ecosystem coverage.
+
+Core scenarios cover developers' code/operations, creators' private assets and scheduled publishing, small teams' IM/customer workflows, and researchers' private analysis and batch literature processing. Target capabilities include screen/voice/document/video perception, text/chart/image/speech/video-script outputs, XState workflows with retries/approvals/recovery, isolated Agents, traceable Cron, cloud/local models, MCP, and international tools alongside Feishu/Lark, DingTalk, and WeCom.
+
+**These are product goals, not shipped-feature guarantees.** Mobile, remote-host management, synchronization, placement, and migration are target requirements. Sensitive tasks and local system operations stay local; eligible long tasks may run on authorized cloud hosts. A local Agent calling a cloud model is not device-only processing. See the [full PRD](../PRODUCT.md) and [delivery status](../FEATURELIST.md); below is the current desktop feature guide.
+
+Candidate slogan: *One Workbench, All Devices, Any Model.*
+
 The developer-gated standalone Image Generation sidebar page is retained. It shares the integrated upstream endpoint settings with the local developer settings; model management remains in the local Settings modal rather than moving image generation into an upstream Models tab.
 
 The local provider catalog adds TokenDance browser authorization and API-key setup with upstream Chinese-language discovery and request attribution. Anthropic and Google use upstream connection presets. Existing local model IDs, defaults, and multi-model capability slots remain unchanged; the remote/local catalog selection and developer fallback are retained.

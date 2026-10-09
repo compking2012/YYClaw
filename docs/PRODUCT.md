@@ -1,4 +1,28 @@
-# Product Description — YYClaw Desktop Client
+# Product Description — YYClaw AI Workbench
+
+## Product Vision and Scope
+
+YYClaw aims to become a globally leading **open-source, cross-platform AI
+workbench**: developers and professional users should be able to obtain reliable,
+extensible, auditable general-purpose AI execution on any device, with control
+over privacy and cost.
+
+The target positioning is **open-source neutrality, full-platform coverage, and
+local–cloud convergence**, built on a unified Agent runtime. It combines
+multimodal interaction, multiple communication channels, deterministic workflow
+orchestration, and unified multi-Agent management. Tasks requiring local system
+permissions or private data stay on the device; continuous monitoring and
+long-running batch tasks can run on a user-owned cloud host or private server.
+
+**Scope distinction:** This PRD describes the product destination as well as the
+current desktop release. Mobile clients, cloud-host management, cross-device
+synchronization, intelligent placement, and local–cloud migration below are
+**target requirements**, not claims that these capabilities already ship. The
+Feature Map and Core Features describe the existing desktop surfaces; delivery
+status is tracked in [FEATURELIST.md](FEATURELIST.md). Platform version ranges
+below are target coverage, not a verified compatibility matrix.
+
+**Candidate slogan:** *One Workbench, All Devices, Any Model.*
 
 ## What Is This?
 
@@ -27,34 +51,148 @@ observe their token usage and runtime health.
 
 ## Positioning
 
-YYClaw competes in the **general-purpose office / work agent** category — the same
-space as **WorkBuddy**, **TraeWork**, **Qwen Office (千问办公)**,
-**Claude Cowork**, and **ChatGPT Work**. The target user story is identical: an AI
-teammate that does real work across documents, messages, schedules, and tools,
-rather than a chatbot that answers questions.
+YYClaw is a general-purpose AI execution workbench rather than only a chatbot or
+an office assistant. Its desktop client is the current delivery vehicle, not the
+limit of the product vision.
 
-The differentiator is delivery and ownership, not ambition. Products in that
-category are typically vendor-hosted, built on a closed core, and bound to the
-vendor's own models. YYClaw is **an open-source solution built on the open-source
-OpenClaw runtime**, delivered as a desktop application the operator runs and owns.
+### Core Value Propositions
 
-| Dimension | Typical hosted office agent | YYClaw |
-|-----------|------------------------------|--------|
-| Delivery | Vendor-hosted service | Desktop app supervising a local Gateway subprocess |
-| Core runtime | Closed, vendor-built | Open-source OpenClaw, embedded and supervised |
-| Data residency | Vendor cloud | Operator's disk; credentials in the OS keychain |
-| Model choice | Vendor's own models | Any configured provider, including OpenAI-compatible gateways |
-| Extensibility | Vendor-curated plugin catalog | Local-first skills, extension layer, channel plugins |
-| Private deployment | Enterprise-tier or unavailable | `farmApiBaseUrl` points the provider catalog and skill marketplace at a self-hosted server |
-| Licensing | Per-seat subscription | MIT |
+1. **Open-source and vendor-neutral:** MIT licensing, customizable and auditable
+   execution, and private deployment without binding users to a model vendor or
+   cloud provider. Target compatibility covers mainstream cloud models and local
+   models, avoiding data lock-in and opaque execution.
+2. **Consistent experience with tiered capabilities:** One runtime foundation
+   across desktop, mobile/tablet, and server, with common interaction patterns,
+   data structures, and configuration. Capabilities are reduced according to each
+   operating system's permission rules, rather than bypassing them.
+3. **Local–cloud convergence:** Sensitive tasks stay local, while long-lived
+   automation runs on user-owned servers. Shared runtime contracts, placement,
+   checkpoint recovery, and migration balance privacy, compute cost, and uptime.
+4. **Native multimodality:** Screen vision, voice, and deep document understanding
+   feed the execution pipeline; text, charts, images, and speech are first-class
+   outputs rather than merely attachments to a text conversation.
+5. **Deterministic, production-oriented automation:** Code defines workflow
+   control flow; models run only explicitly marked reasoning nodes. Bounded
+   execution, retries, human approval, and end-to-end audit trails address loops,
+   unpredictability, and opaque failures. Deterministic orchestration does not
+   imply identical model outputs or reversible external side effects.
+6. **Global and local ecosystem coverage:** Support international messaging,
+   tooling, and model services alongside deep integration with Chinese office and
+   communication ecosystems, with native internationalization.
 
-Products in that category vary, and several are strong. The positioning claim is
-deliberately narrow: YYClaw offers that class of capability **without requiring the
-user's work to leave their machine, and without locking them to one vendor's
-model**.
+### Target Architecture Capabilities
 
-Every pillar below is downstream of this stance — in particular *local-first &
-private* and *extensible*, which are the concrete expression of it.
+#### Platform Tiers
+
+| Tier | Target coverage | Capability boundary |
+|------|-----------------|---------------------|
+| Desktop — full-feature flagship | Windows 10/11; macOS 11+; mainstream Linux, including Ubuntu 20.04+, Debian, and Fedora | Local file access, Shell execution, screen capture, process management, local models, and peripherals, subject to OS permissions and explicit authorization; primary interaction and execution surface |
+| Mobile/tablet — portable console | iOS, iPadOS, Android, HarmonyOS | Chat, task monitoring, remote dispatch, notifications, lightweight inference, voice, camera, and file upload; no unrestricted Shell or deep system-level file operations; remote execution console |
+| Server/cloud host — persistent worker | Standard Linux cloud hosts, private servers, containers | Headless 24/7 execution, channel monitoring, Cron scheduling, remote administration from desktop/mobile, and multi-user/workspace isolation |
+
+The shared foundation uses common Agent configuration, memory schemas, skill
+libraries, and workflow definitions. Authorized, non-sensitive data should remain
+consistent through a synchronization layer so tasks can be viewed and managed
+across devices. Shared schemas do **not** require syncing private memories or
+credentials.
+
+#### Local–Cloud Execution Engine
+
+- **Local mode:** The Agent runs on the desktop and can use authorized local
+  files, system capabilities, peripherals, and on-device models. Sensitive-data
+  processing, local operations, and short interactive tasks stay local. A truly
+  device-only task must also use local inference and tools; choosing a cloud model
+  would otherwise send its supplied input to that provider.
+- **Cloud-host mode:** The same runtime runs persistently on a user-owned cloud
+  host/private server for long tasks, scheduled automation, channel monitoring,
+  and high-concurrency batches.
+- **Placement:** Users may select an execution node manually within enforced
+  privacy and capability constraints. The target automatic policy is:
+
+| Dimension | Placement requirement |
+|-----------|-----------------------|
+| Permissions | Tasks needing local files, system operations, or peripherals are bound to the local device |
+| Duration | Scheduled, monitoring, and batch tasks estimated to exceed 30 minutes prefer an authorized cloud host |
+| Compute | Lightweight inference, format conversion, and basic OCR prefer local models; complex reasoning, long context, and high-quality multimodal generation prefer cloud compute when permitted |
+| Privacy | Sensitive tasks execute only locally; uploading original sensitive data is prohibited, including to cloud inference providers |
+
+Privacy and required capabilities take precedence over duration and compute
+preferences. If no eligible cloud host exists, the task must not silently upload
+data or claim successful offloading.
+
+- **Migration and recovery:** One-click local–cloud migration should resume from
+  event logs and state snapshots without restarting the whole task. Before
+  planned sleep or shutdown, eligible long-running work should hand off to an
+  authorized cloud host; after wake, the desktop synchronizes results and state.
+  Local-only tasks cannot migrate, and abrupt power loss cannot depend on a
+  pre-shutdown handoff. Migration requires compatible capabilities and a safe
+  checkpoint; external side effects must not be duplicated during replay.
+- **Local data layer:** Sensitive files, system credentials, and private memories
+  remain on the device and never synchronize to cloud hosts.
+- **Cloud data layer:** Task configuration, execution logs, and non-sensitive
+  workspace data synchronize selectively. Logs and snapshots are also subject to
+  classification and authorization; cloud hosts cannot access local device data
+  by default. File synchronization requires explicit user-scoped authorization.
+
+#### End-to-End Multimodal Interaction
+
+- **Input perception:** Screen understanding, screenshots/images, real-time voice,
+  deep PDF/Office layout and chart parsing, and video-frame extraction and
+  understanding.
+- **Output generation:** Structured text, data charts, image generation, speech
+  playback, and video scripts, selecting the appropriate result format per task.
+- **Cooperative processing:** Lightweight OCR and local transcription prefer
+  on-device models; complex semantic understanding and high-quality generation
+  may use cloud models only within privacy constraints.
+
+#### Deterministic Workflows and Multi-Agent Management
+
+The target engine uses **XState** for code-defined control flow with explicitly
+marked model reasoning nodes. It supports failure retries, human approvals,
+checkpoint recovery, and audit tracing. Each Agent has its own model, skills,
+permission boundary, bound channels, and physically isolated workspace; multiple
+Agents can execute different tasks concurrently. Cron supports complex recurring
+schedules with traceable execution history. Existing desktop workflow UI remains
+developer-gated until its release criteria are met.
+
+#### Neutral Licensing and Ecosystem Compatibility
+
+The compatibility goal includes OpenAI, Anthropic, Google, DeepSeek, Mistral, and
+other mainstream providers; local runtimes such as Ollama and Llama.cpp; and the
+MCP tool ecosystem. Global integrations target Slack, Discord, Telegram,
+WhatsApp, GitHub, Notion, Jira, and Google Workspace, alongside Feishu/Lark,
+DingTalk, and WeCom. These are compatibility objectives, not a claim that every
+provider, model capability, or connector is already supported. Native multilingual
+interfaces serve a global open-source community.
+
+### Target Users and Core Scenarios
+
+| User group | Core scenarios | Local–cloud/device journey |
+|------------|----------------|---------------------------|
+| Individual developers and independent operators | Code assistance, operations automation, multi-platform message monitoring | Desktop development/debugging; mobile alert monitoring; 24/7 operations on cloud hosts |
+| Professional creators and content workers | Private asset processing, automated publishing, creative assistance | Sensitive assets processed locally; scheduled batch publishing in the cloud; mobile review and adjustment |
+| Small teams and startups | Team IM automation, collaborative workflows, customer-message monitoring | Shared private server deployment; desktop configuration; mobile messages and approvals; user/workspace isolation |
+| Researchers and educators | Batch literature processing, experimental data analysis, writing assistance | Sensitive experiments computed locally; literature retrieval and batch jobs on servers; cross-device progress tracking |
+
+### Differentiation Anchors
+
+This matrix expresses **target positioning against simplified product
+archetypes**, not verified claims about named competitors. Individual products
+can differ or evolve; YYClaw's target columns are not a shipped-feature checklist.
+
+| Dimension | YYClaw target | Closed-source office Agent archetype | Traditional open-source CLI Agent archetype | Single-platform desktop Agent archetype |
+|-----------|---------------|-------------------------------------|-------------------------------------------------|-----------------------------------------|
+| Openness | MIT, fully open-source | Closed, opaque core | Open-source | Partially open or closed |
+| Platforms | Desktop + mobile + server | Primarily web/desktop | Desktop/server CLI | One desktop OS |
+| Execution modes | Unified local–cloud scheduling and migration | Separate cloud/local offerings | Local or server deployment | Local, single device |
+| Models | Vendor-neutral cloud and local models | Vendor-bound models | Multiple models | Sometimes vendor-bound |
+| Interaction | Native multimodal, polished GUI | Text with attachments | Command line | Basic GUI chat |
+| Reliability | Deterministic workflows and end-to-end audit | Model-driven opaque execution | Script-led execution with variable controls | Conversation-led execution with variable controls |
+| Ecosystems | Global + Chinese local integrations | Often global-first | Often global-first | Often one-region focus |
+
+The current desktop implementation retains its local-first foundation. Setting
+`farmApiBaseUrl` to a self-hosted provider catalog/skill marketplace does **not**
+deploy a remote Agent host or implement local–cloud migration.
 
 ## Product Pillars
 

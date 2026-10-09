@@ -1,5 +1,15 @@
 # YYClaw Architecture
 
+## Target Local–Cloud Architecture
+
+The [PRD](../PRODUCT.md) targets a unified runtime across permission-controlled desktop execution, mobile/tablet consoles without unrestricted Shell, and Headless Linux workers with user/workspace isolation. **This is target design, not shipped cloud management.** Common Agent configuration, memory schemas, skills, and workflows synchronize only authorized non-sensitive data.
+
+Local permissions and sensitive-data locality override placement preferences. Eligible scheduled/monitoring/batch tasks estimated above 30 minutes prefer authorized cloud hosts; lightweight inference/OCR/transcription prefers local models, while complex reasoning/generation may use cloud models when privacy permits. Execution location and inference location are separate checks.
+
+Migration requires compatible nodes, event logs, safe snapshots, single-owner execution, and protection against duplicate side effects. Planned sleep/shutdown may hand off eligible tasks; wake synchronizes results; abrupt loss relies on durable checkpoints. Sensitive files, credentials, and private memories never synchronize; logs/snapshots also require classification and scoped authorization. XState owns control flow, retries, approvals, recovery, and audit; Agent workspaces remain isolated.
+
+Future remote support must preserve Host API/Main boundaries. `farmApiBaseUrl` catalog hosting is not cloud Agent deployment. See [target design details](../ARCHITECTURE.md#target-architecture-unified-localcloud-workbench); below is the current desktop architecture.
+
 This document provides the detailed version of the Architecture section in the README.
 
 YYClaw uses a **dual-process architecture with a unified Host API layer**. The renderer calls one client abstraction, while protocol selection and process lifecycle are managed by Electron Main:

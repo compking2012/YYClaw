@@ -43,6 +43,24 @@ Mode enabled · **Requires setup** = needs external configuration to function.
 | 15 | Gateway Lifecycle & Reliability | Background | GA | Supervision, health, port-conflict resolution |
 | 16 | Theming & Localization | Global | GA | Light/dark/system; `en` / `zh` / `ja` / `ru` |
 
+## PRD Target Capabilities — Not Shipped Claims
+
+The [product positioning](PRODUCT.md#product-vision-and-scope) and
+[target architecture](ARCHITECTURE.md#target-architecture-unified-localcloud-workbench)
+define the destination below. These rows are requirements to track, not newly
+implemented features or committed release dates; the shipped table above remains
+unchanged.
+
+| Target | Delivery distinction / acceptance boundary |
+|--------|-------------------------------------------|
+| Mobile/tablet console | Target iOS/iPadOS/Android/HarmonyOS chat, voice/camera/upload, monitoring, dispatch, and notifications; no unrestricted local Shell |
+| Cloud-host/Headless runtime management | User-owned Linux hosts/containers, persistent tasks, remote management, multi-user/workspace isolation; not equivalent to self-hosting the catalog |
+| Cross-device synchronization | Common Agent/memory/skill/workflow schemas; only explicitly authorized non-sensitive data synchronizes |
+| Intelligent placement | Enforce local permissions and sensitive-data locality before duration/compute preferences; >30-minute eligible automation prefers authorized hosts |
+| Migration and checkpoint recovery | Safe event-log/snapshot handoff, single execution owner, no duplicate side effects; sleep/wake synchronization for eligible tasks |
+| Full multimodal pipeline | Extend existing chat/voice/image capabilities toward screen perception, deep document/chart parsing, video frames, and structured multimedia outputs |
+| Production workflow and ecosystem coverage | Extend developer-gated XState workflows toward complete retry/approval/recovery/audit guarantees and broader global/Chinese integrations |
+
 ## Known Open Items
 
 Carried over from the working notes in [`../TODO.md`](../TODO.md). These are not yet

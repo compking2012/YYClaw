@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, cp, access } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { homedir } from 'node:os';
 import { z } from 'zod';
@@ -6,6 +6,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { runStep } from '../runner.mjs';
 import { git } from './workspaces.mjs';
+import { loadCodexConnection, prepareCodexConnection } from './codex-config.mjs';
 
 const execute = promisify(execFile);
 
@@ -20,28 +21,28 @@ export class CodexAdapter {
     this.executable = options.executable ?? 'codex';
     this.model = options.model;
     this.authHome = options.authHome ?? process.env.CODEX_HOME ?? path.join(homedir(), '.codex');
+    this.runStep = options.runStep ?? runStep;
   }
 
   async preflight() {
     const help = await execute(this.executable, ['exec', '--help'], { timeout: 15000 });
-    for (const flag of ['--json', '--output-schema', '--sandbox', '--ignore-user-config', '--ignore-rules']) if (!help.stdout.includes(flag)) throw new Error(`Codex version lacks required capability ${flag}`);
-    await access(path.join(this.authHome, 'auth.json'));
+    for (const flag of ['--json', '--output-schema', '--sandbox', '--ignore-rules']) if (!help.stdout.includes(flag)) throw new Error(`Codex version lacks required capability ${flag}`);
+    await loadCodexConnection(this.authHome);
   }
 
   async execute({ prompt, schema, workspace, artifactDir, readOnly = false, signal, timeoutMs, onSpawn, onExit }) {
     await mkdir(artifactDir, { recursive: true });
     const codexHome = path.join(workspace.home, '.codex');
-    await mkdir(codexHome, { recursive: true, mode: 0o700 });
+    const connectionEnv = await prepareCodexConnection(this.authHome, codexHome);
     await mkdir(path.join(workspace.home, 'tmp'), { recursive: true });
-    await cp(path.join(this.authHome, 'auth.json'), path.join(codexHome, 'auth.json'));
     const schemaPath = path.join(artifactDir, 'output-schema.json');
     const outputPath = path.join(artifactDir, 'output.json');
     await writeFile(schemaPath, JSON.stringify(z.toJSONSchema(schema)));
-    const args = ['exec', '--ignore-user-config', '--ignore-rules', '--sandbox', readOnly ? 'read-only' : 'workspace-write', '--json', '--output-schema', schemaPath, '--output-last-message', outputPath, '-C', workspace.path];
+    const args = ['exec', '--ignore-rules', '--sandbox', readOnly ? 'read-only' : 'workspace-write', '--json', '--output-schema', schemaPath, '--output-last-message', outputPath, '-C', workspace.path];
     if (this.model) args.push('--model', this.model);
     args.push('-');
-    const result = await runStep({ name: readOnly ? 'Independent Codex review' : 'Codex implementation', command: this.executable, args }, {
-      cwd: workspace.path, env: isolatedEnvironment(workspace.home, { CODEX_HOME: codexHome }), signal, timeoutMs,
+    const result = await this.runStep({ name: readOnly ? 'Independent Codex review' : 'Codex implementation', command: this.executable, args }, {
+      cwd: workspace.path, env: isolatedEnvironment(workspace.home, { ...connectionEnv, CODEX_HOME: codexHome }), signal, timeoutMs,
       logPath: path.join(artifactDir, 'events.jsonl'),
       input: prompt, onSpawn, onExit,
     });

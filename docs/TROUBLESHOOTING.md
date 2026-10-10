@@ -6,6 +6,8 @@ This is a development-only companion to the PRD, feature breakdown, and architec
 
 ## Environment and Development
 
+- **Autopilot with cc-switch**: Planning, coding and review inherit the local Codex model/provider connection from `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`), including authentication and proxy/certificate variables. Keep cc-switch running when the provider uses its local endpoint. `--model` changes the model only. A private filtered config/auth copy is deleted with the task HOME; user hooks, MCP servers, plugins, trust settings and publishing credentials are not inherited. Missing providers or required keys fail explicitly. Older adapters used `--ignore-user-config` and could unexpectedly select the default OpenAI provider; a timeout from that route did not mean the configured cc-switch connection was failing. Inspect configuration locally without posting credentials or complete config/auth files in logs.
+
 - **Bundled download timeouts**: uv and agent-browser downloads retry failed requests,
   then fall back to system curl. If GitHub is unreachable, set `HTTPS_PROXY` to
   your actual HTTP proxy address before `pnpm run init`. Fetch does not accept SOCKS

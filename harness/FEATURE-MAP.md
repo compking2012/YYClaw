@@ -39,7 +39,7 @@ Existing scenario/task links identify related implementation slices, not proof t
 | F31 | Multilingual consistent UI | DONE | [acp-chat-experience](specs/scenarios/acp-chat-experience.md) | No bounded task indexed | Maintain the documented scope; new work needs a bounded task. |
 | F32 | Setup, observability and desktop lifecycle | DONE | [gateway-startup-diagnostics](specs/scenarios/gateway-startup-diagnostics.md) | [improve-gateway-startup-logging](specs/tasks/improve-gateway-startup-logging.md) | Maintain the documented scope; new work needs a bounded task. |
 
-| F33 | Repository autonomous development and per-task PR cleanup | PARTIAL | [autonomous-development](specs/scenarios/autonomous-development.md) | [implement-autonomous-development](specs/tasks/implement-autonomous-development.md) | Real Codex/GitHub and cross-platform sandbox qualification; reserved Claude adapter |
+| F33 | Repository autonomous development and per-task PR cleanup | PARTIAL | [autonomous-development](specs/scenarios/autonomous-development.md) | [implement-autonomous-development](specs/tasks/implement-autonomous-development.md), [fix-autopilot-codex-provider](specs/tasks/fix-autopilot-codex-provider.md) | Real Codex/GitHub and cross-platform sandbox qualification; reserved Claude adapter |
 
 ## Decomposition Rules
 

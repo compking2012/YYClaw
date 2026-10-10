@@ -201,4 +201,6 @@ On packaged Windows builds, the bundled `openclaw` CLI/TUI runs via the shipped
 
 The repository harness provides bounded automatic planning, isolated Codex implementation, independent test acceptance, per-task draft PRs, and immediate cleanup of owned workspaces. CI repairs recreate temporary workspaces; merge and release remain manual. Start with `pnpm harness autopilot plan --feature <id> --goal "<goal>"`, then `pnpm harness autopilot run --plan <plan-file>`. A clean committed repository, authenticated Codex and GitHub CLI, and test dependencies are required. External services need dedicated sandbox credentials; missing conditions block acceptance. Defaults are 8 tasks, 2 workers, 3 repairs and 6 hours. See the development harness guide for exact safety and deployment limitations.
 
+Autopilot uses the local Codex model/provider connection, including cc-switch, while keeping task credentials and configuration isolated. Keep the configured local proxy running; `--model` overrides the model without changing the provider.
+
 [Harness](../../harness/README.md)

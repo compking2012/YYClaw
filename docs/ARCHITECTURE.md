@@ -787,6 +787,8 @@ every change:
 
 `harness/src/autopilot/` is a Node-only development subsystem. Zod contracts freeze plans and acceptance; an independent XState scheduler coordinates Codex planning/coding/review, registered test execution, Git worktrees, a credential-separated GitHub publisher, topological PR stacks and current-SHA CI repairs. It does not import the Electron workflow singleton or start the product Gateway.
 
+The Codex adapter parses the local CLI configuration with a TOML parser and projects only the active model/provider connection into a private task-local Codex HOME. This preserves cc-switch endpoints, model authentication and necessary proxy/certificate variables without importing user hooks, MCP servers, plugins, trust or unsafe policies. Explicit sandbox/rule restrictions remain controller-owned. `--model` overrides only model selection; invalid provider configuration fails rather than defaulting to another route. These files are temporary secrets, not durable evidence.
+
 Durable run/task/attempt evidence lives outside owned coding containers under `artifacts/autopilot/`. Publication confirmation precedes archive verification and process/worktree cleanup; cleanup precedes CI polling. Failures and cancellation preserve recovery evidence. PID/start identity, ownership tokens, symlink checks, remote SHA checks and archive hashes prevent deleting foreign or unbacked data. All repair workspaces are reconstructed and removed. See [implementation reference](../harness/reference/autonomous-development.md) for contracts, limitations and environment requirements.
 
 ## Reference: Ports & Endpoints

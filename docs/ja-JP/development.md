@@ -146,4 +146,6 @@ macOS で Linux の `.deb` ターゲットをビルドするには GNU tar と G
 
 リポジトリの harness は、有界なタスク分解、隔離された Codex 実装、独立したテスト検証、タスクごとの Draft PR、および公開直後の作業領域クリーンアップを提供します。CI 修正では一時作業領域を再作成し、マージとリリースは手動です。`pnpm harness autopilot plan --feature <id> --goal "<goal>"` の後に `pnpm harness autopilot run --plan <plan-file>` を実行します。変更がコミット済みのクリーンなリポジトリ、認証済み Codex/GitHub CLI、テスト依存関係が必要です。外部サービスには専用サンドボックス認証情報が必要で、不足時は検証を停止します。既定値は 8 タスク、2 並列ワーカー、3 修正ラウンド、6 時間です。安全条件と配備制限は開発 harness ガイドを参照してください。
 
+Autopilot は cc-switch を含むローカル Codex のモデル・プロバイダー接続を使用し、タスクの認証情報と設定は隔離します。設定されたローカルプロキシを起動したままにしてください。`--model` はモデルのみを上書きし、プロバイダーは変更しません。
+
 [Harness](../../harness/README.md)

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Versioned JSON snapshot store — one file per run under a base directory.
  *

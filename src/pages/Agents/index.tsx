@@ -245,8 +245,13 @@ export function Agents() {
     lastGatewayStateRef.current = gatewayStatus.state;
 
     if (previousGatewayState !== 'running' && gatewayStatus.state === 'running') {
-
-      void fetchChannelAccounts();
+      let mounted = true;
+      void Promise.resolve().then(() => {
+        if (mounted) return fetchChannelAccounts();
+      });
+      return () => {
+        mounted = false;
+      };
     }
   }, [fetchChannelAccounts, gatewayStatus.state]);
 

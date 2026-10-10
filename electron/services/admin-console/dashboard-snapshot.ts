@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getOpenClawConfigDir } from '../../utils/paths';

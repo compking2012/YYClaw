@@ -117,26 +117,8 @@ export function trackMetric(event: string, properties: Record<string, unknown> =
     logger.info(`[metric] ${event}`, properties);
 }
 
-export function captureTelemetryEvent(event: string, properties: Record<string, unknown> = {}): void {
-    // [修改] 强制短路，不处理任何遥测网络上传
+export function captureTelemetryEvent(_event: string, _properties: Record<string, unknown> = {}): void {
     return;
-
-    if (!posthogClient || !distinctId) {
-        return;
-    }
-
-    try {
-        posthogClient?.capture({
-            distinctId,
-            event,
-            properties: {
-                ...getCommonProperties(),
-                ...properties,
-            },
-        });
-    } catch (error) {
-        logger.debug(`Failed to capture telemetry event "${event}":`, error);
-    }
 }
 
 /**

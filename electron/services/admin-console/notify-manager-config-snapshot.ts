@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { adminConsoleClient } from './centrifuge-client';
 
 /**

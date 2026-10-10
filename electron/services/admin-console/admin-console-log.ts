@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { isDevModeUnlocked } from '../../utils/dev-mode';
 import { logger } from '../../utils/logger';
 

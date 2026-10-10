@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Centrifuge, SubscriptionState, type ConnectedContext, type Subscription } from 'centrifuge';
 import WebSocket from 'ws';
 import { existsSync, watch, type FSWatcher } from 'node:fs';
@@ -901,6 +900,7 @@ export class CentrifugeClient {
     if (!this.gatewayManager) {
       throw new Error('Gateway manager is not configured for admin console RPC');
     }
+    const gatewayManager = this.gatewayManager;
 
     if (method === 'skills.configs.list') {
       return await getAllSkillConfigs();
@@ -926,7 +926,7 @@ export class CentrifugeClient {
         skillName: slug,
         overwriteSameName: !!clawhubParams.overwriteSameName,
         withFilesystemGuard: async (operation) => (
-          withGatewayHotSkillFilesystem(this.gatewayManager, operation)
+          withGatewayHotSkillFilesystem(gatewayManager, operation)
         ),
         install: async () => this.clawHubService!.install(params as any),
         afterCommit: async () => {

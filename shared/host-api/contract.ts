@@ -15,6 +15,8 @@ import type { MarketplaceSkill, QuickAccessSkill, Skill } from '../types/skill';
 import type { WebBrowserNavigatePayload } from '../web-browser';
 export type JsonRecord = Record<string, unknown>;
 export type HostSuccess = { success: boolean; error?: string };
+export type FeishuLoginResult = HostSuccess & { userInfo?: JsonRecord };
+export type GatewayPortConflict = { port: number; externalPids: string[] };
 export type OptionalHostSuccess = { success?: boolean; error?: string };
 export type LegacyFetchPayload = {
   path: string;
@@ -1175,6 +1177,9 @@ export type AsrTranscribeResult = { text: string };
 
 export type HostApiContract = {
   app: {
+    quit: () => void;
+    feishuConfig: () => { appId: string };
+    feishuLogin: (payload: { tmpCode: string }) => FeishuLoginResult;
     openClawDoctor: (payload: OpenClawDoctorPayload) => Omit<OpenClawDoctorResult, 'mode'>;
     sessionMaintenance: () => SessionMaintenanceConfig;
     saveSessionMaintenance: (payload: SessionMaintenancePayload) => SessionMaintenanceConfig;
@@ -1239,6 +1244,8 @@ export type HostApiContract = {
     requestPermissions: () => ComputerUseStatus;
   };
   gateway: {
+    pendingPortConflict: () => GatewayPortConflict | null;
+    resolvePortConflict: (payload: { forceKill: boolean }) => void;
     status: () => GatewayStatus;
     start: () => HostSuccess;
     stop: () => HostSuccess;

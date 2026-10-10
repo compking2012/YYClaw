@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { GatewayManager } from '../../../gateway/manager';
 import { awaitAgentRuntimeConvergence } from '../../../gateway/config-refresh-scheduler';
 import { logger } from '../../../utils/logger';

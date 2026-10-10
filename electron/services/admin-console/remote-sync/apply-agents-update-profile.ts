@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { GatewayManager } from '../../../gateway/manager';
 import { logger } from '../../../utils/logger';
 import { updateAgentListProfile } from '../../../utils/agent-config';

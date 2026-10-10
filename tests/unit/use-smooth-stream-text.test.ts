@@ -1,8 +1,50 @@
-import { describe, it, expect } from 'vitest';
+import { act, renderHook } from '@testing-library/react';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   advanceRevealed,
   resolveRevealedOnTextChange,
+  useSmoothStreamText,
 } from '@/hooks/use-smooth-stream-text';
+
+describe('smooth stream hook lifecycle', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('preserves disabled text, replacement updates and cleanup', () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let frameId = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frameId += 1;
+      frames.set(frameId, callback);
+      return frameId;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (identifier: number) => frames.delete(identifier));
+    const advanceFrame = (timestamp: number) => act(() => {
+      const pending = [...frames.values()];
+      frames.clear();
+      for (const callback of pending) callback(timestamp);
+    });
+    const { result, rerender, unmount } = renderHook(
+      ({ text, enabled }) => useSmoothStreamText(text, enabled),
+      { initialProps: { text: 'Initial text', enabled: false } },
+    );
+    expect(result.current).toBe('Initial text');
+    rerender({ text: 'Disabled replacement', enabled: false });
+    expect(result.current).toBe('Disabled replacement');
+    advanceFrame(16);
+    rerender({ text: 'Disabled replacement', enabled: true });
+    expect(result.current).toBe('Disabled replacement');
+    rerender({ text: 'Different content', enabled: true });
+    advanceFrame(32);
+    expect(result.current).toBe('Different content');
+    rerender({ text: 'Different content with an appended tail', enabled: true });
+    expect(result.current).toBe('Different content');
+    advanceFrame(48);
+    advanceFrame(64);
+    expect(result.current.length).toBeGreaterThan('Different content'.length);
+    unmount();
+    expect(frames.size).toBe(0);
+  });
+});
 
 describe('advanceRevealed', () => {
   it('makes no progress when already caught up', () => {

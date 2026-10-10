@@ -8,7 +8,6 @@ vi.mock('openclaw/plugin-sdk/media-runtime', () => ({
   resizeToJpeg: vi.fn(async () => Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x6a, 0x70])),
 }));
 
-// eslint-disable-next-line import/first
 import { resizeToJpeg } from 'openclaw/plugin-sdk/media-runtime';
 
 const resizeToJpegMock = vi.mocked(resizeToJpeg);

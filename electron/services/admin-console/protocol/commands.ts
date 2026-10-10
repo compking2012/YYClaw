@@ -1,4 +1,3 @@
-// @ts-nocheck
 export type AdminConsoleCommandName =
   | 'get_config'
   | 'get_stats_all'

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { app, safeStorage } from 'electron';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -547,7 +546,7 @@ async function applyFeishuBotMenu(appId: string, appSecret: string, openId: stri
     body: JSON.stringify(payload)
   });
   const rawBody = await res.text();
-  let json: { code?: number; msg?: string } | null = null;
+  let json: { code?: number; msg?: string } | null;
   try {
     json = JSON.parse(rawBody);
   } catch {
@@ -822,7 +821,7 @@ export async function disableFeishuApp(appId: string): Promise<{ disabled: boole
 /** Best-effort restore of an app's name/avatar to a previous snapshot. Never throws. */
 async function restoreBaseInfo(appId: string, userAccessToken: string, appName: string, avatarUrl: string): Promise<void> {
   try {
-    const patchBody: { i18nes: { i18n_key: string; name: string }[]; avatar_url?: string } = {
+    const patchBody: { i18ns: { i18n_key: string; name: string }[]; avatar_url?: string } = {
       i18ns: [{ i18n_key: 'zh_cn', name: appName }]
     };
     if (avatarUrl) patchBody.avatar_url = avatarUrl;
@@ -1344,4 +1343,3 @@ export async function deleteFeishuUserApp(appId: string) {
     url: `https://open.feishu.cn/app/${appId}/baseinfo?lang=zh_cn`
   };
 }
-

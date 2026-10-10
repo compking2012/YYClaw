@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Registers the built-in workflows (and their deterministic tools) into an
  * engine instance. Kept separate from the engine so tests can register a subset.

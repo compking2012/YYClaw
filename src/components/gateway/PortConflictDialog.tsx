@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { toast } from 'sonner';
+import { hostApi } from '@/lib/host-api';
 
 interface PortConflictData {
   port: number;
@@ -16,9 +17,9 @@ export function PortConflictDialog() {
     // Initial fetch in case a conflict is already pending when the UI loads
     const fetchPendingConflict = async () => {
       try {
-        const pending = await window.electron.ipcRenderer.invoke('gateway:getPendingPortConflict');
+        const pending = await hostApi.gateway.pendingPortConflict();
         if (pending) {
-          setConflictData(pending as PortConflictData);
+          setConflictData(pending);
         }
       } catch (error) {
         console.error('Failed to fetch pending port conflict', error);
@@ -41,7 +42,7 @@ export function PortConflictDialog() {
   const handleConfirm = async () => {
     if (!conflictData) return;
     try {
-      await window.electron.ipcRenderer.invoke('gateway:resolve-conflict', true);
+      await hostApi.gateway.resolvePortConflict(true);
     } catch (error) {
       toast.error(t('common:errors.generic', { error: String(error) }));
     } finally {
@@ -52,8 +53,8 @@ export function PortConflictDialog() {
   const handleCancel = async () => {
     if (!conflictData) return;
     try {
-      await window.electron.ipcRenderer.invoke('gateway:resolve-conflict', false);
-      await window.electron.ipcRenderer.invoke('app:quit');
+      await hostApi.gateway.resolvePortConflict(false);
+      await hostApi.app.quit();
     } catch (error) {
       console.error('Failed to send conflict resolution', error);
     } finally {

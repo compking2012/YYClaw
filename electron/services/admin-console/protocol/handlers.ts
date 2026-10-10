@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Centrifuge } from 'centrifuge';
 import { proxyAwareFetch } from '../../../utils/proxy-fetch';
 import type { GatewayManager } from '../../../gateway/manager';
@@ -109,7 +108,6 @@ export async function handleAdminConsoleCommand(params: {
             'skills.config.update',
             { skillKey: slugOrName, config: { enabled: true } },
             12000,
-            { priority: 'high' },
           );
         } catch (e) {
           console.error(`Failed to auto-enable skill ${slugOrName} after installation`, e);

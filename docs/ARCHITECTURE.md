@@ -345,6 +345,12 @@ facade over the `shared/host-api/contract.ts` module/action registry, and every
 method delegates to `invokeHost` (see below). Pages and components import
 `hostApi` from `@/lib/host-api`; they never call IPC directly.
 
+Gateway port-conflict reads and explicit force-kill consent use
+`hostApi.gateway.pendingPortConflict()` / `resolvePortConflict(forceKill)`.
+Application exit and Feishu login use `hostApi.app.quit()` / `feishuLogin(tmpCode)`;
+`feishuConfig()` exposes only the public app ID, never the app secret. Main
+validates these payloads before invoking the existing lifecycle and OAuth helpers.
+
 `hostApiFetch<T>(path, init?)` remains for legacy `/api/*`-shaped business calls.
 It normalizes headers and routes the request through the typed
 `invokeHost('legacy', 'fetch', ...)` action, so the request executes inside the

@@ -1,4 +1,3 @@
-// @ts-nocheck
 export type SessionSendRemoteRequest = {
   schema_version: 1;
   target_client_id: string;

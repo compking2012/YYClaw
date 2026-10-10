@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Dynamic workflow — data-driven definition.
  *

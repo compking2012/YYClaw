@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { app } from 'electron';
 import { promises as fs } from 'node:fs';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';

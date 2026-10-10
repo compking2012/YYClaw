@@ -1,4 +1,3 @@
-// @ts-nocheck
 export const AdminConsoleTopics = {
   command: (machineId: string) => `device:${machineId}`,
   broadcast: 'broadcast:all',

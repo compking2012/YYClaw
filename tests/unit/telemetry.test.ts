@@ -67,6 +67,7 @@ describe('main telemetry shutdown', () => {
     });
     setSettingMock.mockResolvedValue(undefined);
     captureMock.mockReturnValue(undefined);
+    shutdownMock.mockResolvedValue(undefined);
   });
 
   it.skip('ignores PostHog network timeout errors during shutdown', async () => {
@@ -88,5 +89,19 @@ describe('main telemetry shutdown', () => {
       'Ignored telemetry shutdown network error:',
       expect.objectContaining({ name: 'PostHogFetchNetworkError' }),
     );
+  });
+
+  it('keeps captureTelemetryEvent disabled even when a client is initialized', async () => {
+    vi.stubEnv('YYCLAW_TELEMETRY_UPLOAD_ENABLED', 'true');
+    try {
+      const { initTelemetry, captureTelemetryEvent, shutdownTelemetry } = await import('@electron/utils/telemetry');
+      await initTelemetry();
+      captureMock.mockClear();
+      captureTelemetryEvent('private-event', { secret: 'not-uploaded' });
+      expect(captureMock).not.toHaveBeenCalled();
+      await shutdownTelemetry();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

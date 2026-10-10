@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Local step registry — the implementations behind `callTool`.
  *

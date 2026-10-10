@@ -84,7 +84,9 @@ function parseJsonFromMixedOutput(output: string): any {
           try {
             const parsed = JSON.parse(candidate);
             if (parsed && typeof parsed === "object") return parsed;
-          } catch {}
+          } catch {
+            break;
+          }
           break;
         }
       }
@@ -198,8 +200,7 @@ async function probeModelDirect(params: ProbeModelParams): Promise<DirectProbeRe
           text: "OK (direct model probe)",
         };
       }
-      let payload: any = null;
-      try { payload = await resp.json(); } catch {}
+      const payload = await resp.json().catch(() => null);
       const error = extractErrorMessage(payload, `HTTP ${resp.status}`);
       return {
         ok: false,
@@ -248,8 +249,7 @@ async function probeModelDirect(params: ProbeModelParams): Promise<DirectProbeRe
           text: "OK (direct model probe)",
         };
       }
-      let payload: any = null;
-      try { payload = await resp.json(); } catch {}
+      const payload = await resp.json().catch(() => null);
       const error = extractErrorMessage(payload, `HTTP ${resp.status}`);
       return {
         ok: false,
@@ -349,4 +349,3 @@ export async function probeModel(params: ProbeModelParams): Promise<ModelProbeOu
   }
   return probeProviderViaOpenclaw(params);
 }
-

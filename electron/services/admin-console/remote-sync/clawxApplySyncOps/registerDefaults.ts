@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { applyModelsCreateProvider } from '../apply-models-create-provider';
 import { applyModelsDeleteProvider } from '../apply-models-delete-provider';
 import { applyModelsSetDefaultPrimary } from '../apply-models-set-default-primary';

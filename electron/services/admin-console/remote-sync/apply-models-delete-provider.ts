@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { GatewayManager } from '../../../gateway/manager';
 import type { ProviderAccount } from '../../../shared/providers/types';
 import { logger } from '../../../utils/logger';
@@ -41,7 +40,7 @@ function accountStorageIdMatchesDeletedOpenClawKey(idNorm: string, key: string):
 
 function isProviderAccountBoundToDeletedModelsKey(acc: ProviderAccount, key: string): boolean {
   const idNorm = normProviderId(acc.id);
-  let bucketNorm = '';
+  let bucketNorm: string;
   try {
     bucketNorm = normProviderId(getOpenClawProviderKeyForType(String(acc.vendorId), acc.id));
   } catch {
@@ -102,7 +101,7 @@ async function purgeManagerDeletedProviderLocalBindings(openClawKeyRaw: string):
   };
 
   for (const row of rows) {
-    let runtimeKey = '';
+    let runtimeKey: string;
     try {
       runtimeKey = getOpenClawProviderKeyForType(row.vendorId, row.id);
     } catch {

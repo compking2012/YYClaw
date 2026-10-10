@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Electron-facing bootstrap for the workflow engine.
  *

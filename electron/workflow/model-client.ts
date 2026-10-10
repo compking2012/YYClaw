@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Thin single-shot model client used by `runModel`.
  *

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * HeadlessAdapter — v1 implementation of {@link OpenClawAdapter}.
  *

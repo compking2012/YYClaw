@@ -90,7 +90,7 @@ class CompanyHubMarketplaceExtension implements MarketplaceProviderExtension {
               await new Promise(r => setTimeout(r, 500));
               rmRetries--;
             } else {
-              throw new Error(`Failed to remove old skill directory: ${e.message || String(e)}`);
+              throw new Error(`Failed to remove old skill directory: ${e.message || String(e)}`, { cause: e });
             }
           }
         }
@@ -106,7 +106,7 @@ class CompanyHubMarketplaceExtension implements MarketplaceProviderExtension {
             await new Promise(r => setTimeout(r, 500));
             retries--;
           } else {
-            throw new Error(`Failed to rename extracted skill directory: ${e.message || String(e)}`);
+            throw new Error(`Failed to rename extracted skill directory: ${e.message || String(e)}`, { cause: e });
           }
         }
       }

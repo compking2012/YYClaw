@@ -804,7 +804,6 @@ export async function callOpenclawGateway(method: string, params: Record<string,
     const stderr = typeof err?.stderr === "string" ? err.stderr.trim() : "";
     const stdout = typeof err?.stdout === "string" ? err.stdout.trim() : "";
     const message = stderr || stdout || err?.message || `Gateway call failed: ${method}`;
-    throw new Error(message);
+    throw new Error(message, { cause: err });
   }
 }
-

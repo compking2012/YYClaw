@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * OpenClawAdapter — the engine's DRIVER interface onto OpenClaw.
  *

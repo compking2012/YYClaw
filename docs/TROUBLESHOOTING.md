@@ -18,6 +18,11 @@ This is a development-only companion to the PRD, feature breakdown, and architec
   `window.electron.ipcRenderer.invoke(...)` call or a renderer→`localhost`/`127.0.0.1`
   `fetch(...)`. Route everything through `src/lib/host-api.ts` and
   `src/lib/host-api-client.ts`. (Full rationale in AGENTS.md.)
+- **Non-mutating lint baseline**: CI and autonomous development use `pnpm run lint:check`.
+  Generated `artifacts/` (including temporary worktrees), `test-results/`, and
+  `playwright-report/` are excluded; repository source rules remain enforced.
+  Previously unapproved blanket TypeScript suppression directives are removed, so run typecheck
+  alongside lint. Explicit-`any` warnings remain advisory, not a reason to bypass errors.
 - **UI changes** must add or update a Playwright E2E spec in the same change — run `/e2e`.
 - **Comms-path changes** (gateway events, runtime send/receive, delivery, fallback)
   must pass `/comms-check` before finishing.

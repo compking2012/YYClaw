@@ -87,7 +87,7 @@ export async function runCiSmokeProviderSetup(gatewayManager: GatewayManager): P
     const existing = await providerService.getAccount(vendorId);
 
     if (existing) {
-      const { id: _id, createdAt, ...patch } = account;
+      const { id: _id, createdAt: _createdAt, ...patch } = account;
       const updated = await providerService.updateAccount(vendorId, { ...patch, updatedAt: now }, apiKey);
       await syncSavedProviderToRuntime(providerAccountToConfig(updated), apiKey, gatewayManager);
     } else {

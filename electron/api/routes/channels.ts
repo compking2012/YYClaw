@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { readFile, readdir } from 'node:fs/promises';
 import { extractSessionRecords } from '../../utils/session-util';
 import type { IncomingMessage, ServerResponse } from 'http';

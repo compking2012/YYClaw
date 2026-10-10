@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { IncomingMessage, ServerResponse } from 'http';
 import { applyProxySettings } from '../../main/proxy';
 import { syncLaunchAtStartupSettingFromStore } from '../../main/launch-at-startup';
@@ -87,11 +86,12 @@ export async function handleSettingsRoutes(
   }
 
   if (url.pathname.startsWith('/api/settings/') && req.method === 'GET') {
-    const key = url.pathname.slice('/api/settings/'.length) as keyof AppSettings;
-    if (key === 'officeCollaborationEnabled') {
+    const rawKey = url.pathname.slice('/api/settings/'.length);
+    if (rawKey === 'officeCollaborationEnabled') {
       sendJson(res, 404, { success: false, error: 'Setting not found' });
       return true;
     }
+    const key = rawKey as keyof AppSettings;
     try {
       sendJson(res, 200, { value: await getSetting(key) });
     } catch (error) {
@@ -101,11 +101,12 @@ export async function handleSettingsRoutes(
   }
 
   if (url.pathname.startsWith('/api/settings/') && req.method === 'PUT') {
-    const key = url.pathname.slice('/api/settings/'.length) as keyof AppSettings;
-    if (key === 'officeCollaborationEnabled') {
+    const rawKey = url.pathname.slice('/api/settings/'.length);
+    if (rawKey === 'officeCollaborationEnabled') {
       sendJson(res, 404, { success: false, error: 'Setting not found' });
       return true;
     }
+    const key = rawKey as keyof AppSettings;
     try {
       const body = await parseJsonBody<{ value: AppSettings[keyof AppSettings] }>(req);
       await setSetting(key, body.value);

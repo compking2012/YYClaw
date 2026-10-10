@@ -137,6 +137,9 @@ export type {
 } from '@shared/host-api/contract';
 export const hostApi = {
   app: {
+    quit: () => invokeHost('app', 'quit'),
+    feishuConfig: () => invokeHost('app', 'feishuConfig'),
+    feishuLogin: (tmpCode: string) => invokeHost('app', 'feishuLogin', { tmpCode }),
     openClawDoctor: async (mode: OpenClawDoctorMode): Promise<OpenClawDoctorResult> => ({
       ...(await invokeHost('app', 'openClawDoctor', { mode })),
       mode,
@@ -216,6 +219,8 @@ export const hostApi = {
     reset: () => invokeHost('settings', 'reset'),
   },
   gateway: {
+    pendingPortConflict: () => invokeHost('gateway', 'pendingPortConflict'),
+    resolvePortConflict: (forceKill: boolean) => invokeHost('gateway', 'resolvePortConflict', { forceKill }),
     status: () => invokeHost('gateway', 'status'),
     start: () => invokeHost('gateway', 'start'),
     stop: () => invokeHost('gateway', 'stop'),

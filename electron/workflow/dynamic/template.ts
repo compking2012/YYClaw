@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Template rendering for dynamic workflow steps.
  *

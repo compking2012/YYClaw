@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Align with YYClawManager syncops / frontend ClawxSyncOp. */
 export const ClawxApplySyncOp = {
   modelsCreateProvider: 'models_create_provider',

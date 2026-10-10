@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createHash } from 'node:crypto';
 
 function asRecord(value: unknown): Record<string, unknown> | null {

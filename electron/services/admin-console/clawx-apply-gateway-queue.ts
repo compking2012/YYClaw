@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Serialize gateway-bound work with in-flight `clawx_apply_sync` on the device.
  * The OpenClaw gateway multiplexes RPCs on one WebSocket, so apply-sync work is serialized here to

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Workflow engine — shared types.
  *

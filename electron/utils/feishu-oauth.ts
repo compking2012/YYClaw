@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { logger } from './logger';
 import { getSetting, setSetting } from './store';
 
@@ -108,7 +107,7 @@ export async function handleFeishuLogin(tmpCode: string): Promise<FeishuLoginRes
           code = codeMatch[1];
           logger.info('[Feishu OAuth] Extracted code from HTML body');
         }
-      } catch (e) {
+      } catch {
         // Ignore read errors
       }
 

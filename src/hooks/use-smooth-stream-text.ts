@@ -150,8 +150,8 @@ export function useSmoothStreamText(fullText: string, enabled: boolean): string 
       }
       revealedRef.current = fullText.length;
       prevTextRef.current = fullText;
-      setRevealed(fullText.length);
-      return;
+      const frame = requestAnimationFrame(() => setRevealed(revealedRef.current));
+      return () => cancelAnimationFrame(frame);
     }
 
     const resolved = resolveRevealedOnTextChange({
@@ -163,7 +163,9 @@ export function useSmoothStreamText(fullText: string, enabled: boolean): string 
     prevTextRef.current = fullText;
     if (resolved !== revealedRef.current) {
       revealedRef.current = resolved;
-      setRevealed(resolved);
+      const frame = requestAnimationFrame(() => setRevealed(revealedRef.current));
+      ensureLoopRef.current();
+      return () => cancelAnimationFrame(frame);
     }
     ensureLoopRef.current();
   }, [fullText, animate]);

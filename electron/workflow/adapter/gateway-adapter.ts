@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * GatewayBackedAdapter — the production {@link OpenClawAdapter} for the workflow
  * engine. ALL model work (constrained `runModel` calls AND full `runAgent`

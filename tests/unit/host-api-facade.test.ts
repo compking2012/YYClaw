@@ -13,6 +13,24 @@ beforeEach(() => {
 });
 
 describe('hostApi facade', () => {
+  it('routes port conflict, login and quit through typed host requests', async () => {
+    hostInvoke.mockResolvedValue({ ok: true, data: null });
+    const { hostApi } = await import('@/lib/host-api');
+    await hostApi.gateway.pendingPortConflict();
+    await hostApi.gateway.resolvePortConflict(false);
+    await hostApi.app.feishuConfig();
+    await hostApi.app.feishuLogin('temporary-code');
+    await hostApi.app.quit();
+    expect(hostInvoke.mock.calls.map(([request]) => ({
+      module: request.module, action: request.action, payload: request.payload,
+    }))).toEqual([
+      { module: 'gateway', action: 'pendingPortConflict', payload: undefined },
+      { module: 'gateway', action: 'resolvePortConflict', payload: { forceKill: false } },
+      { module: 'app', action: 'feishuConfig', payload: undefined },
+      { module: 'app', action: 'feishuLogin', payload: { tmpCode: 'temporary-code' } },
+      { module: 'app', action: 'quit', payload: undefined },
+    ]);
+  });
   it('calls settings.getAll through hostInvoke', async () => {
     hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { theme: 'dark' } });
     const { hostApi } = await import('@/lib/host-api');

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { GatewayStatus } from '../../../gateway/manager';
 import {
   collectAgentActivity,

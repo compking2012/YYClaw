@@ -2,7 +2,7 @@
  * IPC Handlers
  * Registers all IPC handlers for main-renderer communication
  */
-import { ipcMain, BrowserWindow, shell, dialog, app, type Session } from 'electron';
+import { ipcMain, BrowserWindow, shell, app, type Session } from 'electron';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { machineIdSync } from 'node-machine-id';

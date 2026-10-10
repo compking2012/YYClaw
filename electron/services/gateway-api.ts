@@ -27,6 +27,13 @@ function parseTimeoutMs(timeoutMs: unknown): number | undefined {
 
 export function createGatewayApi(gatewayManager: GatewayManager): CompleteHostServiceRegistry['gateway'] {
   return {
+    pendingPortConflict: () => gatewayManager.getPendingPortConflict(),
+    resolvePortConflict: (payload) => {
+      if (!isRecord(payload) || typeof payload.forceKill !== 'boolean') {
+        throw new Error('Invalid port conflict resolution');
+      }
+      gatewayManager.resolvePortConflict(payload.forceKill);
+    },
     status: () => gatewayManager.getStatus(),
     start: async () => {
       await gatewayManager.start();

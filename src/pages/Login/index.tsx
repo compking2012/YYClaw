@@ -4,11 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { TitleBar } from '@/components/layout/TitleBar';
 import { useSettingsStore } from '@/stores/settings';
 import { toast } from 'sonner';
+import { hostApi } from '@/lib/host-api';
 
 declare global {
   interface Window {
     QRLogin: any;
-    electron: any;
   }
 }
 
@@ -29,7 +29,7 @@ export function Login() {
     
     const initFeishuSDK = async () => {
       try {
-        const config = await window.electron.ipcRenderer.invoke('auth:get-feishu-config');
+        const config = await hostApi.app.feishuConfig();
         if (!config || !config.appId) {
           toast.error(t('login.missingAppId'));
           return;
@@ -79,8 +79,8 @@ export function Login() {
                   }
                 };
 
-                window.electron.ipcRenderer.invoke('auth:feishu-login', { tmpCode: loginTmpCode })
-                  .then((res: any) => {
+                hostApi.app.feishuLogin(loginTmpCode)
+                  .then((res) => {
                     if (res.success) {
                       toast.success(t('login.success'), { id: toastId });
                       setLoggedIn(true, res.userInfo);

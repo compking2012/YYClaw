@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { randomUUID } from 'node:crypto';
 import type { GatewayManager } from '../../../gateway/manager';
 import './clawxApplySyncOps/registerDefaults';

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { GatewayManager } from '../../../../gateway/manager';
 
 export type ClawxApplySyncHandler = (gateway: GatewayManager, payload: unknown) => Promise<unknown>;

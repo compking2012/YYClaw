@@ -81,7 +81,7 @@ export async function writeEncryptedJson(filePath: string, data: any, keyHex: st
  * Currently disabled to mitigate .clobbered file issues in OpenClaw config observe.
  * TODO: when ready, change this to: return app.isPackaged && Boolean(keyHex)
  */
-export function shouldEncryptConfigFilesAtRest(keyHex?: string | null): boolean {
+export function shouldEncryptConfigFilesAtRest(_keyHex?: string | null): boolean {
   // temporarily force plaintext for both dev and packaged modes
   return false;
 }

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Compiles a data-driven {@link DynamicWorkflowDefinition} into a real XState
  * machine + a standard {@link WorkflowDefinition}, so dynamic workflows become
@@ -86,7 +85,7 @@ export function compileToMachine(
     throw new Error(`dynamic workflow "${def.id}" has no steps`);
   }
 
-  const actors: Record<string, ReturnType<typeof fromPromise>> = {};
+  const actors: Record<string, ReturnType<typeof stepActor>> = {};
   for (const step of def.steps) {
     actors[step.id] = stepActor(step, adapter);
   }
@@ -116,20 +115,20 @@ export function compileToMachine(
         onDone: {
           target: step.next ?? DONE_STATE,
           actions: assign({
-            results: ({ context, event }: { context: DynamicWorkflowContext; event: { output: unknown } }) => ({
+            results: ({ context, event }: { context: DynamicWorkflowContext; event: { type: string; output?: unknown } }) => ({
               ...context.results,
               [step.id]: event.output,
             }),
             // The step that transitions to DONE is the run's terminal step; its
             // output is the final result the engine surfaces to the UI.
-            finalResult: ({ context, event }: { context: DynamicWorkflowContext; event: { output: unknown } }) =>
+            finalResult: ({ context, event }: { context: DynamicWorkflowContext; event: { type: string; output?: unknown } }) =>
               isTerminal ? String(event.output ?? '') : context.finalResult,
           }),
         },
         onError: {
           target: FAILED_STATE,
           actions: assign({
-            errorMessage: ({ event }: { event: { error: unknown } }) => String(event.error),
+            errorMessage: ({ event }: { event: { error?: unknown } }) => String(event.error),
           }),
         },
       },

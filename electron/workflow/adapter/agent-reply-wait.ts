@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Session-reply waiter for the workflow engine's gateway turns (runAgent /
  * runModel / generation). It must return the agent turn's FINAL reply — never an

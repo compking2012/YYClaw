@@ -66,7 +66,7 @@ export async function loadGatewayReloadPolicy(): Promise<GatewayReloadPolicy> {
           const parsed = decryptJson(raw, configKey);
           return parseGatewayReloadPolicy(parsed);
         }
-      } catch (err) {
+      } catch {
         // Fall back to JSON.parse or default policy if decryption fails
       }
     }
@@ -76,4 +76,3 @@ export async function loadGatewayReloadPolicy(): Promise<GatewayReloadPolicy> {
     return { ...DEFAULT_GATEWAY_RELOAD_POLICY };
   }
 }
-

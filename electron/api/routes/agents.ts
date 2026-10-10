@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { IncomingMessage, ServerResponse } from 'http';
 import {
   assignChannelToAgent,

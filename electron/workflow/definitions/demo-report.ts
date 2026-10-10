@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Demo workflow — the v1 end-to-end proof of the deterministic kernel.
  *

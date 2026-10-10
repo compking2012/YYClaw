@@ -62,6 +62,10 @@ function applyWindowsOrMacLaunchAtStartup(enabled: boolean): void {
 }
 
 export async function applyLaunchAtStartupSetting(enabled: boolean): Promise<void> {
+  if (process.platform === 'darwin' && !app.isPackaged) {
+    logger.info('Launch-at-startup login items are skipped for development launches');
+    return;
+  }
   try {
     if (process.platform === 'linux') {
       await applyLinuxLaunchAtStartup(enabled);

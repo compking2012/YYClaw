@@ -79,14 +79,6 @@ export class AppUpdater extends EventEmitter {
 
     const realVersion = app.getVersion();
 
-    // In dev mode, pretend we have an old version so updates trigger
-    if (!app.isPackaged) {
-      // Override electron-updater currentVersion internally instead of app
-      // Because electron-updater parses version in constructor
-      const { parse } = require('semver');
-      (autoUpdater as unknown as { currentVersion: unknown }).currentVersion = parse('0.0.1');
-    }
-
     const version = app.getVersion();
     const channel = detectChannel(realVersion); // Use real version to determine channel
 
@@ -99,11 +91,6 @@ export class AppUpdater extends EventEmitter {
     // CI publishes GitHub Releases with `prerelease: true`; without this the
     // GitHub provider only looks at the latest stable release and never finds them.
     autoUpdater.allowPrerelease = true;
-
-    // By default, electron-updater skips checking in dev mode. We force it to check.
-    if (!app.isPackaged) {
-      autoUpdater.forceDevUpdateConfig = true;
-    }
 
     // The feed itself comes from electron-builder.yml `publish` (GitHub Releases)
     // and is baked into app-update.yml at package time — no runtime override.
@@ -200,40 +187,22 @@ export class AppUpdater extends EventEmitter {
    * Check for updates.
    * electron-updater automatically tries providers defined in electron-builder.yml in order.
    *
-   * In dev mode (not packed), autoUpdater.checkForUpdates() silently returns
-   * null without emitting any events, so we must detect this and force a
-   * final status so the UI never gets stuck in 'checking'.
    */
   async checkForUpdates(): Promise<UpdateInfo | null> {
+    if (!app.isPackaged) {
+      logger.info('[Updater] Update checks are disabled for development launches');
+      this.updateStatus({ status: 'idle' });
+      return null;
+    }
     try {
       logger.info(`[Updater] checkForUpdates called. Status before: ${this.status.status}, isPackaged: ${app.isPackaged}`);
-      // By default, electron-updater skips checking in dev mode. We force it to check.
-      if (!app.isPackaged) {
-        autoUpdater.forceDevUpdateConfig = true;
-      }
-      
       logger.info(`[Updater] About to call autoUpdater.checkForUpdates()`);
-      
-      // Before check, override electron-updater currentVersion internally 
-      // Because electron-updater checks this right before download
-      if (!app.isPackaged) {
-        const { parse } = require('semver');
-        (autoUpdater as unknown as { currentVersion: unknown }).currentVersion = parse('0.0.1');
-      }
-      
       const result = await autoUpdater.checkForUpdates();
-      
-      // 添加详细日志来追踪 checkForUpdates 的返回值
-      // logger.info(`[Updater] checkForUpdates() result: ${JSON.stringify(result, null, 2)}`);
-
-      // In dev mode (app not packaged), autoUpdater silently returns null
-      // without emitting ANY events (not even checking-for-update).
-      // Detect this and force an error so the UI never stays silent.
       if (result == null) {
         logger.info(`[Updater] result is null`);
         this.updateStatus({
           status: 'error',
-          error: 'Update check skipped (dev mode – app is not packaged)',
+          error: 'Update check returned no result',
         });
         return null;
       }

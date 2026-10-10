@@ -6,6 +6,8 @@
  */
 
 const INVALID_CONFIG_PATTERNS: RegExp[] = [
+  /Cannot save redacted OpenClaw credentials without a durable value/i,
+  /Reserved redaction sentinel.*not valid config data/i,
   /\binvalid config\b/i,
   /\bconfig invalid\b/i,
   /\bfatal configuration error\b/i,
@@ -216,4 +218,3 @@ export function getGatewayStartupRecoveryAction(options: {
 
   return 'fail';
 }
-

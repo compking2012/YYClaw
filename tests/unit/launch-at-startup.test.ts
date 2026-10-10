@@ -82,6 +82,15 @@ describe('launch-at-startup integration', () => {
     await expect(access(autostartPath)).rejects.toThrow();
   });
 
+  it('does not alter macOS login items for development launches', async () => {
+    setPlatform('darwin');
+    electronAppMock.isPackaged = false;
+    const { applyLaunchAtStartupSetting } = await import('@electron/main/launch-at-startup');
+    await applyLaunchAtStartupSetting(false);
+    await applyLaunchAtStartupSetting(true);
+    expect(setLoginItemSettingsMock).not.toHaveBeenCalled();
+  });
+
   it('does not throw on unsupported platforms', async () => {
     setPlatform('freebsd');
     const { applyLaunchAtStartupSetting } = await import('@electron/main/launch-at-startup');

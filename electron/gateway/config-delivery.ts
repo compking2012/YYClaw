@@ -66,6 +66,12 @@ function serializeConfig(config: OpenClawConfig): string {
   return `${JSON.stringify(config, null, 2)}\n`;
 }
 
+function containsRedactedSentinel(value: unknown): boolean {
+  if (value === OPENCLAW_REDACTED_SENTINEL) return true;
+  return !!value && typeof value === 'object'
+    && Object.values(value).some(containsRedactedSentinel);
+}
+
 function parseRunningConfigSnapshot(snapshot: ConfigSnapshot | undefined): OpenClawConfig {
   if (snapshot?.config && typeof snapshot.config === 'object' && !Array.isArray(snapshot.config)) {
     return structuredClone(snapshot.config) as OpenClawConfig;
@@ -205,6 +211,11 @@ async function mutateRunningConfig(
     const config = parseRunningConfigSnapshot(snapshot);
     await options.beforeApply?.();
     if (!await applyMutator(config, mutator, true)) return false;
+    if (containsRedactedSentinel(config)) {
+      const baseline = await readFileConfig(resolveOpenClawConfigPath());
+      restoreRedactedSentinelsFromBaseline(config, baseline.config);
+    }
+    assertNoRedactedSentinels(config);
 
     try {
       await manager.rpc('config.set', {
@@ -279,12 +290,14 @@ async function readFileConfig(configPath: string): Promise<FileConfigSnapshot> {
   throw new Error('Failed to read durable OpenClaw config');
 }
 
-export function assertNoRedactedSentinels(value: unknown): void {
+export function assertNoRedactedSentinels(value: unknown, fieldPath = ''): void {
   if (value === OPENCLAW_REDACTED_SENTINEL) {
-    throw new Error('Cannot save redacted OpenClaw credentials without a durable value; re-enter the credential');
+    throw new Error(`Cannot save redacted OpenClaw credentials without a durable value (${fieldPath || '<root>'}); re-enter the credential`);
   }
   if (value && typeof value === 'object') {
-    for (const child of Object.values(value)) assertNoRedactedSentinels(child);
+    for (const [key, child] of Object.entries(value)) {
+      assertNoRedactedSentinels(child, fieldPath ? `${fieldPath}.${key}` : key);
+    }
   }
 }
 

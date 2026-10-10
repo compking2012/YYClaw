@@ -43,6 +43,11 @@ describe('gateway startup recovery heuristics', () => {
     ).toBe(false);
   });
 
+  it('classifies persisted redaction placeholders as invalid config rather than a reconnectable error', () => {
+    expect(hasInvalidConfigFailureSignal(new Error('Cannot save redacted OpenClaw credentials without a durable value (channels.feishu.appSecret); re-enter the credential'), [])).toBe(true);
+    expect(hasInvalidConfigFailureSignal(new Error('Reserved redaction sentinel "__OPENCLAW_REDACTED__" is not valid config data (channels.feishu.appSecret).'), [])).toBe(true);
+  });
+
   it('attempts auto-repair only once per startup flow', () => {
     const lines = ['Config invalid', '- skills: Unrecognized key: "enabled"'];
     expect(shouldAttemptConfigAutoRepair(new Error('start failed'), lines, false)).toBe(true);

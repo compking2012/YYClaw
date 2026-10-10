@@ -18,6 +18,8 @@ When the Gateway is running, the coordinator prefers the runtime-shaped `config.
 
 Coordinator mutators are replayable transformations. They must not perform filesystem writes, SQLite writes, settings writes, lifecycle actions, or other non-idempotent external effects; preload required external inputs before entering the mutator and perform follow-up effects only after a successful commit.
 
+Before config.set, restore any remaining redaction sentinel from the corresponding durable config value and reject unresolved placeholders. Do not depend on Gateway plugin schema hints to restore unrelated channel credentials. Preserve the runtime snapshot shape, explicit credential changes and deletions, and reread durable credentials on each base-hash retry. Never replace a missing secret with an empty value or bypass validation with a file write.
+
 Gateway WebSocket traces must replace serialized `raw` config-write payloads with a redacted marker. They must not log credentials introduced by a mutator.
 
 When the Gateway is stopped or starting, the same coordinator mutates the resolved config file under the shared config lock. It must not start the Gateway solely to apply a config mutation.

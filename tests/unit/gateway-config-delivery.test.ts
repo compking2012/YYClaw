@@ -11,6 +11,7 @@ import {
   registerOpenClawConfigCoordinator,
   resetOpenClawConfigCoordinatorForTests,
   restoreRedactedSentinelsFromBaseline,
+  assertNoRedactedSentinels,
 } from '@electron/gateway/config-delivery';
 import { encryptJson } from '@electron/utils/crypto-helper';
 
@@ -46,6 +47,10 @@ function createGatewayManager(state: 'running' | 'stopped' | 'starting' = 'runni
 }
 
 describe('restoreRedactedSentinelsFromBaseline', () => {
+  it('reports the damaged credential path without exposing other secret values', () => {
+    expect(() => assertNoRedactedSentinels({ channels: { feishu: { accounts: { default: { appSecret: '__OPENCLAW_REDACTED__' } } } } }))
+      .toThrow('channels.feishu.accounts.default.appSecret');
+  });
   it('replaces sentinels from the baseline and leaves other fields intact', () => {
     const current = {
       channels: {
@@ -471,7 +476,8 @@ describe('OpenClaw config delivery coordinator', () => {
     expect(JSON.parse(await readFile(configPath, 'utf8'))).toEqual({ persisted: true });
   });
 
-  it('round-trips OpenClaw redacted placeholders when mutating an unrelated running field', async () => {
+  it('restores OpenClaw redacted placeholders before mutating an unrelated running field', async () => {
+    await writeFile(configPath, JSON.stringify({ provider: { apiKey: 'real-key' }, enabled: false }), 'utf8');
     const gatewayManager = createGatewayManager();
     gatewayManager.rpc.mockImplementation(async (method: string) => {
       if (method === 'config.get') {
@@ -490,9 +496,83 @@ describe('OpenClaw config delivery coordinator', () => {
     });
 
     expect(JSON.parse((gatewayManager.rpc.mock.calls[1][1] as { raw: string }).raw)).toEqual({
-      provider: { apiKey: '__OPENCLAW_REDACTED__' },
+      provider: { apiKey: 'real-key' },
       enabled: true,
     });
+  });
+
+  it('deletes a provider without sending redacted Feishu credentials to config.set', async () => {
+    const channels = { feishu: { accounts: { default: { appId: 'cli-test', appSecret: 'feishu-secret' } } } };
+    const providers = { 'custom-new': { baseUrl: 'https://example.com/v1', apiKey: 'provider-secret' } };
+    await writeFile(configPath, JSON.stringify({ channels, models: { providers }, sourceOnly: true }), 'utf8');
+    const gatewayManager = createGatewayManager();
+    gatewayManager.rpc.mockImplementation(async (method: string, params: unknown) => {
+      if (method === 'config.get') return {
+        config: {
+          channels: { feishu: { accounts: { default: { appId: 'cli-test', appSecret: '__OPENCLAW_REDACTED__' } } } },
+          models: { providers },
+          runtimeOnly: true,
+        },
+        hash: 'delete-hash',
+      };
+      if (method === 'config.set') {
+        const submitted = params as { raw: string; baseHash: string };
+        expect(submitted.baseHash).toBe('delete-hash');
+        expect(submitted.raw).not.toContain('__OPENCLAW_REDACTED__');
+        expect(JSON.parse(submitted.raw)).toEqual({ channels, models: { providers: {} }, runtimeOnly: true });
+        await writeFile(configPath, submitted.raw, 'utf8');
+        return { ok: true };
+      }
+      throw new Error(`Unexpected RPC method: ${method}`);
+    });
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await expect(mutateOpenClawConfig((config) => {
+      delete (config.models as { providers: Record<string, unknown> }).providers['custom-new'];
+    })).resolves.toBe(true);
+    expect(JSON.parse(await readFile(configPath, 'utf8')).channels).toEqual(channels);
+  });
+
+  it('rejects unresolved running credentials before config.set without overwriting the file', async () => {
+    const durable = { enabled: false };
+    await writeFile(configPath, JSON.stringify(durable), 'utf8');
+    const gatewayManager = createGatewayManager();
+    gatewayManager.rpc.mockResolvedValue({ config: { ...durable, secret: '__OPENCLAW_REDACTED__' }, hash: 'missing-secret' });
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await expect(mutateOpenClawConfig((config) => { config.enabled = true; })).rejects.toThrow('Cannot save redacted OpenClaw credentials');
+    expect(gatewayManager.rpc).toHaveBeenCalledOnce();
+    expect(JSON.parse(await readFile(configPath, 'utf8'))).toEqual(durable);
+  });
+
+  it('refreshes durable credentials on a hash retry while preserving explicit edits and deletions', async () => {
+    await writeFile(configPath, JSON.stringify({ secret: 'old-secret', changedSecret: 'old-explicit', removedSecret: 'remove-me' }), 'utf8');
+    const gatewayManager = createGatewayManager();
+    let attempts = 0;
+    gatewayManager.rpc.mockImplementation(async (method: string, params: unknown) => {
+      if (method === 'config.get') return {
+        config: { secret: '__OPENCLAW_REDACTED__', changedSecret: '__OPENCLAW_REDACTED__', removedSecret: '__OPENCLAW_REDACTED__' },
+        hash: `hash-${attempts}`,
+      };
+      if (method === 'config.set') {
+        const submitted = JSON.parse((params as { raw: string }).raw);
+        expect(submitted).toEqual({ secret: attempts === 0 ? 'old-secret' : 'rotated-secret', changedSecret: 'explicit-secret' });
+        attempts += 1;
+        if (attempts === 1) {
+          await writeFile(configPath, JSON.stringify({ secret: 'rotated-secret', changedSecret: 'old-explicit', removedSecret: 'remove-me' }), 'utf8');
+          throw new Error('config changed since last load; re-run config.get and retry');
+        }
+        return { ok: true };
+      }
+      throw new Error(`Unexpected RPC method: ${method}`);
+    });
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await expect(mutateOpenClawConfig((config) => {
+      config.changedSecret = 'explicit-secret';
+      delete config.removedSecret;
+    })).resolves.toBe(true);
+    expect(attempts).toBe(2);
   });
 
   it('uses the runtime-shaped config snapshot when OpenClaw also returns source-shaped raw', async () => {
@@ -617,6 +697,7 @@ describe('OpenClaw config delivery coordinator', () => {
   });
 
   it('accepts a lost config.set commit although OpenClaw stamped meta and restored redacted secrets', async () => {
+    await writeFile(configPath, JSON.stringify({ gateway: { auth: { token: 'real-secret-token' } }, channels: {} }), 'utf8');
     // config.get hands ClawX a redacted snapshot; config.set restores the real
     // secret and stamps meta.lastTouched* before the 1012 close loses the reply.
     const gatewayManager = createGatewayManager();

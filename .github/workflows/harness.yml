@@ -1,17 +1,15 @@
 name: Harness
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
   pull_request:
     branches:
       - main
-    paths:
-      - 'harness/**'
-      - 'tests/unit/harness-specs.test.ts'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - '.github/workflows/harness.yml'
+      - 'codex/autopilot-*'
 
 jobs:
   harness:

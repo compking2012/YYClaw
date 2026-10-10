@@ -2,10 +2,15 @@
 # Runs on pull requests (main/develop) 
 name: Check and Build
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
     branches:
       - main
+      - 'codex/autopilot-*'
 
 jobs:
   check:
@@ -15,6 +20,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -72,7 +79,7 @@ jobs:
         run: pnpm run ext:bridge
 
       - name: Run linter
-        run: pnpm run lint
+        run: pnpm run lint:check
 
       - name: Run typecheck
         run: pnpm run typecheck

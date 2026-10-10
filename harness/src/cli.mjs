@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import process from 'node:process';
 import { getChangedFiles } from './git.mjs';
-import { PROFILES, selectSteps } from './profiles.mjs';
+import { PROFILES } from './profiles.mjs';
+import { validationSteps } from './validation.mjs';
 import { writeReport } from './report.mjs';
 import { runStep } from './runner.mjs';
 import {
@@ -18,6 +19,7 @@ import {
   touchesCommunicationPath,
   validateGatewayTaskSpec,
   validatePluginLifecycleTaskSpec,
+  validateAutonomousDevelopmentTaskSpec,
 } from './rules.mjs';
 
 function parseArgs(argv) {
@@ -48,6 +50,8 @@ function printUsage() {
     '  pnpm harness validate --spec <path> [--since origin/main] [--no-diff]',
     '  pnpm harness explain --spec <path> [--since origin/main]',
     '  pnpm harness run --spec <path> [--since origin/main] [--dry-run] [--continue-on-error]',
+    '  pnpm harness autopilot plan|run --feature <id> --goal <goal> | --plan <file>',
+    '  pnpm harness autopilot status|resume|cancel --run <run-id>',
   ].join('\n'));
 }
 
@@ -92,6 +96,8 @@ async function validate(specPath, options = {}) {
     failures.push(...validateGatewayTaskSpec(spec, scenario, changedFiles));
   } else if (isPluginLifecycleTask(spec)) {
     failures.push(...validatePluginLifecycleTaskSpec(spec, scenario, changedFiles));
+  } else if (spec.data.scenario === 'autonomous-development') {
+    failures.push(...validateAutonomousDevelopmentTaskSpec(spec, scenario, changedFiles));
   } else if (!spec.data.id || !spec.data.title) {
     failures.push(`${spec.path}: spec must include id and title`);
   }
@@ -102,6 +108,9 @@ async function validate(specPath, options = {}) {
       failures.push(`${spec.path}: communication path changes must require comms`);
     }
   }
+
+  try { await validationSteps(spec, scenario, changedFiles); }
+  catch (error) { failures.push(`${spec.path}: ${error.message}`); }
 
   return { spec, scenario, changedFiles, failures };
 }
@@ -120,7 +129,7 @@ async function explain(specPath, options = {}) {
     for (const file of result.changedFiles) console.log(`- ${file}`);
   }
   console.log('\nSelected steps:');
-  for (const step of selectSteps(profiles)) {
+  for (const step of await validationSteps(result.spec, result.scenario, result.changedFiles)) {
     console.log(`- [${step.profile}] ${step.command} ${step.args.join(' ')}`);
   }
   if (result.failures.length > 0) {
@@ -155,7 +164,7 @@ async function run(specPath, options = {}) {
     durationMs: 0,
   });
 
-  const selectedSteps = selectSteps(profiles);
+  const selectedSteps = await validationSteps(validation.spec, validation.scenario, validation.changedFiles);
   if (failures.length === 0) {
     for (const step of selectedSteps) {
       if (options.dryRun) {
@@ -199,6 +208,10 @@ async function run(specPath, options = {}) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const command = args._[0];
+  if (command === 'autopilot') {
+    const { autopilotCommand } = await import('./autopilot/cli.mjs');
+    return await autopilotCommand(args);
+  }
   if (!command || args.help) {
     printUsage();
     return 0;

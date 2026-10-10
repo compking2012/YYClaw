@@ -137,3 +137,9 @@ Playwright 的 Electron 套件会从 `dist/` 与 `dist-electron/` 启动打包�
 在 macOS 上构建 Linux `.deb` 目标需要 GNU tar 与 GNU ar（`brew install gnu-tar binutils`）。macOS 只自带 BSD 的 `ar`/`tar`，这会让内置的 `fpm` 静默产出一个 96 字节的空 `.deb`（只有一个 `__.SYMDEF` ar 符号表，并非有效的 Debian 包），而构建仍以 0 退出。`scripts/electron-builder-env.mjs` 现在会在 `darwin` + `--linux` 组合下预检此项，缺少任一工具时会带上 `brew install` 提示快速失败。AppImage 不受影响。
 
 在 Windows 的打包构建中，内置的 `openclaw` CLI/TUI 通过随包发布的 `node.exe` 入口运行，以保持终端输入行为稳定。
+
+### 自动开发工具
+
+项目 harness 提供有界任务拆解、隔离 Codex 编码、独立测试验收、逐任务 Draft PR 和提交后立即清理工作区。CI 修复会重新创建临时工作区；合并和发布仍由人工控制。先运行 `pnpm harness autopilot plan --feature <id> --goal "<goal>"`，再运行 `pnpm harness autopilot run --plan <plan-file>`。需要干净且已提交的仓库、已登录的 Codex 与 GitHub CLI，以及测试依赖。外部服务需要专用沙箱凭据，缺条件不会判定验收通过。默认最多 8 个任务、2 个编码任务并行、3 轮修复、6 小时。具体安全边界和部署限制见开发 harness 指南。
+
+[Harness](../../harness/README.md)

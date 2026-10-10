@@ -582,6 +582,12 @@ section below. Add new features to this table first, then to **Core Features**.
 - **Single Gateway owner:** Only one process may listen on `127.0.0.1:18789`.
 - **Feature gating:** Workflows and Image Generation are dev-mode gated.
 
+## Developer Tooling: Autonomous Repository Development (F33)
+
+The repository development harness derives bounded tasks from committed requirements and runs isolated implementation, independent acceptance and per-task draft PR publication. Each successful publication must immediately remove its owned workspace after evidence archival; CI repair recreates temporary workspaces. Default limits are 8 tasks, 2 independent workers, 3 repairs and 6 hours. It is a project development tool, not an additional desktop UI or OpenClaw Agent collaboration feature.
+
+Scope includes deterministic quality/UI/comms gates, explicit real sandbox prerequisites, current-SHA CI evidence, durable recovery, protected write scopes, and manual merge/release. Missing prerequisites, exhausted limits or cleanup failures block success. Real account/platform qualification is tracked in FEATURELIST F33; controller tests alone do not certify deployment.
+
 ## Reliability & Performance Targets
 
 - **UI-first startup:** The main window appears without blocking on the Gateway

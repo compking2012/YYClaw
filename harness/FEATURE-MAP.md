@@ -39,6 +39,8 @@ Existing scenario/task links identify related implementation slices, not proof t
 | F31 | Multilingual consistent UI | DONE | [acp-chat-experience](specs/scenarios/acp-chat-experience.md) | No bounded task indexed | Maintain the documented scope; new work needs a bounded task. |
 | F32 | Setup, observability and desktop lifecycle | DONE | [gateway-startup-diagnostics](specs/scenarios/gateway-startup-diagnostics.md) | [improve-gateway-startup-logging](specs/tasks/improve-gateway-startup-logging.md) | Maintain the documented scope; new work needs a bounded task. |
 
+| F33 | Repository autonomous development and per-task PR cleanup | PARTIAL | [autonomous-development](specs/scenarios/autonomous-development.md) | [implement-autonomous-development](specs/tasks/implement-autonomous-development.md) | Real Codex/GitHub and cross-platform sandbox qualification; reserved Claude adapter |
+
 ## Decomposition Rules
 
 - Preserve feature IDs and link PRODUCT/ARCHITECTURE sections from each new bounded task. Add featureIds metadata for new or substantially edited tasks; current CLI does not enforce this metadata.

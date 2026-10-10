@@ -25,9 +25,9 @@ function unique(values) {
   return [...new Set(values)].sort();
 }
 
-async function readTextIfExists(relativePath) {
+async function readTextIfExists(relativePath, root = ROOT) {
   try {
-    return await readFile(path.join(ROOT, relativePath), 'utf8');
+    return await readFile(path.join(root, relativePath), 'utf8');
   } catch {
     return '';
   }
@@ -37,12 +37,12 @@ export function touchesCommunicationPath(files) {
   return files.some((file) => pathMatchesAny(file, COMMUNICATION_PATHS));
 }
 
-export async function scanBackendCommunicationBoundary(files) {
+export async function scanBackendCommunicationBoundary(files, root = ROOT) {
   const failures = [];
   const scanFiles = unique(files).filter((file) => file.startsWith('src/') && /\.(ts|tsx|js|jsx)$/.test(file));
 
   for (const file of scanFiles) {
-    const text = await readTextIfExists(file);
+    const text = await readTextIfExists(file, root);
     if (!text) continue;
 
     const isPageOrComponent = file.startsWith('src/pages/') || file.startsWith('src/components/');
@@ -86,6 +86,13 @@ export function validatePluginLifecycleTaskSpec(taskSpec, scenarioSpec, changedF
     taskType: 'plugin-lifecycle',
     label: 'plugin lifecycle',
     requiredProfiles: ['fast'],
+  });
+}
+
+export function validateAutonomousDevelopmentTaskSpec(taskSpec, scenarioSpec, changedFiles = []) {
+  return validateTaskSpec(taskSpec, scenarioSpec, changedFiles, {
+    scenarioId: 'autonomous-development', taskType: 'development-tooling',
+    label: 'autonomous development', requiredProfiles: ['fast'],
   });
 }
 

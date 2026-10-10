@@ -141,3 +141,9 @@ Playwright Electronスイートは`dist/`と`dist-electron/`からパッケー�
 macOS で Linux の `.deb` ターゲットをビルドするには GNU tar と GNU ar が必要です（`brew install gnu-tar binutils`）。macOS には BSD の `ar`/`tar` しか同梱されていないため、同梱の `fpm` は 96 バイトの空の `.deb`（有効な Debian パッケージではなく `__.SYMDEF` の ar シンボルテーブルだけ）を黙って生成し、それでもビルドは 0 で終了します。`scripts/electron-builder-env.mjs` は `darwin` + `--linux` の組み合わせでこれを事前チェックし、どちらか欠けていれば `brew install` のヒントを添えて即座に失敗します。AppImage は影響を受けません。
 
 パッケージ化された Windows ビルドでは、同梱の `openclaw` CLI/TUI は同梱の `node.exe` エントリポイント経由で実行され、ターミナル入力の挙動が安定します。
+
+### 自動開発ツール
+
+リポジトリの harness は、有界なタスク分解、隔離された Codex 実装、独立したテスト検証、タスクごとの Draft PR、および公開直後の作業領域クリーンアップを提供します。CI 修正では一時作業領域を再作成し、マージとリリースは手動です。`pnpm harness autopilot plan --feature <id> --goal "<goal>"` の後に `pnpm harness autopilot run --plan <plan-file>` を実行します。変更がコミット済みのクリーンなリポジトリ、認証済み Codex/GitHub CLI、テスト依存関係が必要です。外部サービスには専用サンドボックス認証情報が必要で、不足時は検証を停止します。既定値は 8 タスク、2 並列ワーカー、3 修正ラウンド、6 時間です。安全条件と配備制限は開発 harness ガイドを参照してください。
+
+[Harness](../../harness/README.md)

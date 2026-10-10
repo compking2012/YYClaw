@@ -474,6 +474,12 @@ pnpm run comms:compare
 > 编辑器配置、性能剖析与端到端测试细节见
 > [docs/zh-CN/development.md](docs/zh-CN/development.md)。
 
+### 自动开发工具
+
+项目 harness 提供有界任务拆解、隔离 Codex 编码、独立测试验收、逐任务 Draft PR 和提交后立即清理工作区。CI 修复会重新创建临时工作区；合并和发布仍由人工控制。先运行 `pnpm harness autopilot plan --feature <id> --goal "<goal>"`，再运行 `pnpm harness autopilot run --plan <plan-file>`。需要干净且已提交的仓库、已登录的 Codex 与 GitHub CLI，以及测试依赖。外部服务需要专用沙箱凭据，缺条件不会判定验收通过。默认最多 8 个任务、2 个编码任务并行、3 轮修复、6 小时。具体安全边界和部署限制见开发 harness 指南。
+
+[Harness](harness/README.md)
+
 ## 参与贡献
 
 欢迎各种形式的贡献 —— 缺陷修复、新功能、文档与翻译都很有帮助。

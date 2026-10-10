@@ -109,6 +109,7 @@ tracking references, not delivery order or release commitments.
 | F30 | Office/developer tools and MCP ecosystem | PARTIAL | Skills/plugins, document tools, DingTalk workspace integration and runtime extension points | Verified GitHub/Notion/Jira/Google Workspace connector coverage and comprehensive MCP lifecycle/compatibility; extensibility is not proof of every integration |
 | F31 | Multilingual consistent UI | DONE | `en`/`zh`/`ja`/`ru`, themes and shared desktop UI conventions | Cross-platform experience remains F06/F08 |
 | F32 | Setup, observability and desktop lifecycle | DONE | Wizard, usage dashboard, settings, Gateway supervision, diagnostics, tray/autostart/update; PRODUCT Core Features 1/5/13–16 | Server/remote observability expansion is F07/F11 |
+| F33 | Repository autonomous development and per-task PR cleanup | PARTIAL | Harness CLI planning/run/recovery, frozen contracts, Codex adapter, deterministic acceptance, stacked draft PR publisher and owned worktree cleanup; disposable Git integration tests | Real Codex/GitHub sandbox certification, full cross-platform unattended execution and dedicated external-account acceptance remain deployment gates; Claude adapter is reserved |
 
 ## TODO Items — PRD Backlog
 

@@ -300,9 +300,9 @@ describe('harness specs', () => {
     expect(acpReference).not.toContain(staleSidebarContract);
     expect(workspaceReference).not.toContain(staleSidebarContract);
 
-    expect(englishReadme).toContain('embedded subagent status with live read-only child drill-down and direct-parent return');
-    expect(chineseReadme).toContain('内嵌子 Agent 状态、实时只读下钻及直接返回父会话');
-    expect(japaneseReadme).toContain('埋め込みサブエージェントの状態表示・ライブ更新される読み取り専用の子会話・直接の親会話への復帰');
+    expect(englishReadme).toContain('Subagent tasks provide live status, read-only child conversations, and navigation back to the parent conversation');
+    expect(chineseReadme).toContain('子智能体任务支持查看实时状态、打开只读子会话，以及返回父会话');
+    expect(japaneseReadme).toContain('サブエージェントのタスクではライブ状態、読み取り専用の子会話、親会話への復帰を利用できます');
   });
 
   it('defines the local HTML preview harness contract', async () => {

@@ -24,7 +24,19 @@ This is the implementation and validation layer of YYClaw, not a public feature 
 
 Existing historical task specs remain valid without retroactive frontmatter migration. FEATURE-MAP supplies their feature association; add explicit featureIds when creating or substantially editing a task. Reference documents may contain future design but must label it and must never be passed to harness validate/run.
 
-## Validation
+## Autonomous Development
+
+`pnpm harness autopilot plan --feature F33 --goal "A bounded development goal"` creates a frozen plan from committed docs and code. `pnpm harness autopilot run --plan <plan-file>` executes it; `run --feature <id> --goal <goal>` performs both steps. Use `status`, `resume`, or `cancel` with `--run <run-id>` for durable runs.
+
+Prerequisites: clean committed repository, pinned pnpm, authenticated compatible Codex CLI, authenticated `gh`, Git push rights, and Electron test dependencies. Defaults: 8 tasks, 2 independent coding tasks, 3 repairs, 6 hours. Options include `--model`, `--concurrency`, `--max-repairs`, `--max-hours`, `--target`, and explicit `--allow-risk dependencies,runtime,infrastructure,release`. Risk authorization never permits weakening tests. External acceptance may receive only explicitly authorized `--sandbox-env AUTOPILOT_SANDBOX_...` values; worker/publisher credentials are not passed to tests.
+
+Each task publishes one draft PR in a topological stack and immediately removes its owned worktree, HOME, processes and temporary resources after preserving recovery/test evidence. CI repairs recreate worktrees and update the same PR. Missing acceptance, stale CI or cleanup failures block completion. No automatic merge or release. Main workspaces and shared caches are retained. Artifacts are stored under `artifacts/autopilot/<run-id>/`; inspect `run.json`, `events.jsonl`, task attempt reports and `summary.json`.
+
+The initial committed SHA must equal the published target branch SHA. Commit and publish baseline maintenance separately before starting. The controller runs baseline lint/typecheck/unit/build/harness checks in an owned validation worktree before any coding. Existing failures block a run rather than inviting automatic gate edits. Host validation resources are serialized across runs sharing the artifact root; only isolated coding is concurrent. The resume deadline remains the original deadline, not a refreshed unlimited budget.
+
+See [implementation and cleanup contracts](reference/autonomous-development.md). Controller tests use disposable Git repositories and controlled adapters; real account/platform certification remains required. Claude Code is reserved but not implemented.
+
+## Baseline Validation
 
 - pnpm harness list
 - pnpm harness validate --spec <task-spec>

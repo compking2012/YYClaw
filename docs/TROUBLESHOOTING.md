@@ -2,6 +2,8 @@
 
 This is a development-only companion to the PRD, feature breakdown, and architecture. It records environment traps and quality gates, not public feature claims. See [DOCUMENTATION.md](DOCUMENTATION.md) for the document hierarchy.
 
+- **Autonomous development**: `pnpm harness autopilot` requires clean committed inputs matching the remote target SHA, an authenticated compatible Codex CLI, authenticated `gh`, Git push rights and a green baseline. A failed baseline blocks coding. Publication, missing CI, unverified process ownership, stale evidence or cleanup failures leave explicit non-success run states under `artifacts/autopilot/`; inspect `run.json` before `resume --run <id>`. Resume keeps the original deadline. Never delete retained foreign/unbacked resources merely to turn a run green.
+
 ## Environment and Development
 
 - **Bundled download timeouts**: uv and agent-browser downloads retry failed requests,

@@ -1,11 +1,16 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { ROOT } from './specs.mjs';
 
 const REPORT_DIR = path.join(ROOT, 'artifacts', 'harness');
 
 export async function writeReport(report) {
   await mkdir(REPORT_DIR, { recursive: true });
+  const runDir = path.join(REPORT_DIR, 'runs', randomUUID());
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'report.json'), JSON.stringify(report, null, 2));
+  await writeFile(path.join(runDir, 'report.md'), renderMarkdownReport(report));
   const jsonPath = path.join(REPORT_DIR, 'latest.json');
   const markdownPath = path.join(REPORT_DIR, 'latest.md');
   await writeFile(jsonPath, JSON.stringify(report, null, 2));
@@ -13,6 +18,7 @@ export async function writeReport(report) {
   return {
     jsonPath,
     markdownPath,
+    runDir,
   };
 }
 

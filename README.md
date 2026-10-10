@@ -542,6 +542,12 @@ pnpm run comms:compare
 > Editor setup, performance profiling, and E2E details are in
 > [docs/en-US/development.md](docs/en-US/development.md).
 
+### Autonomous Development Tooling
+
+The repository harness provides bounded automatic planning, isolated Codex implementation, independent test acceptance, per-task draft PRs, and immediate cleanup of owned workspaces. CI repairs recreate temporary workspaces; merge and release remain manual. Start with `pnpm harness autopilot plan --feature <id> --goal "<goal>"`, then `pnpm harness autopilot run --plan <plan-file>`. A clean committed repository, authenticated Codex and GitHub CLI, and test dependencies are required. External services need dedicated sandbox credentials; missing conditions block acceptance. Defaults are 8 tasks, 2 workers, 3 repairs and 6 hours. See the development harness guide for exact safety and deployment limitations.
+
+[Harness](harness/README.md)
+
 ## Contributing
 
 Contributions are welcome — bug fixes, features, documentation, and translations

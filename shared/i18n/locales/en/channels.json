@@ -143,7 +143,7 @@
         "reasons": {
             "gateway_degraded": "Gateway heartbeat recently degraded.",
             "gateway_unresponsive": "Gateway control plane appears unresponsive.",
-            "gateway_verifying": "ClawX is verifying Gateway responsiveness.",
+            "gateway_verifying": "$t(common:appName) is verifying Gateway responsiveness.",
             "external_gateway_unavailable": "An externally managed Gateway is unavailable.",
             "channels_status_timeout": "Channel runtime status probe timed out.",
             "rpc_timeout": "Recent Gateway RPC calls timed out.",
@@ -154,10 +154,10 @@
             "dingtalk_dws_auth_required": "Chat works. Calendar, docs, and other office skills need DingTalk workspace authorization."
         },
         "recovery": {
-            "verifying": "ClawX is verifying Gateway responsiveness.",
-            "restart-pending": "ClawX is waiting to restart its Gateway.",
-            "restart-executing": "ClawX is restarting its Gateway.",
-            "external-unavailable": "An externally managed Gateway is unavailable. ClawX is reconnecting; use Restart Gateway if needed."
+            "verifying": "$t(common:appName) is verifying Gateway responsiveness.",
+            "restart-pending": "$t(common:appName) is waiting to restart its Gateway.",
+            "restart-executing": "$t(common:appName) is restarting its Gateway.",
+            "external-unavailable": "An externally managed Gateway is unavailable. $t(common:appName) is reconnecting; use Restart Gateway if needed."
         },
         "restartGateway": "Restart Gateway",
         "copyDiagnostics": "Copy Diagnostics",
@@ -254,7 +254,7 @@
                 }
             },
             "instructions": [
-                "ClawX installs the official DingTalk connector and keeps your existing dingtalk channel identity",
+                "$t(common:appName) installs the official DingTalk connector and keeps your existing dingtalk channel identity",
                 "Create a DingTalk internal app and enable Stream mode",
                 "Fill in Client ID (AppKey) and Client Secret (AppSecret)",
                 "Chat works immediately; calendar, docs, and todos need DingTalk workspace authorization (dws)"

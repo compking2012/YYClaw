@@ -100,6 +100,41 @@ test.describe('OpenClaw Dreams', () => {
     },
   };
 
+  test('restores Chinese memory translations and aligns the Devices settings page', async ({ electronApp, page }) => {
+    await installIpcMocks(electronApp, {
+      gatewayStatus: { state: 'running', port: 18789, pid: 12345, gatewayReady: true },
+      gatewayRpc: dreamsRpcMocks,
+    });
+    await page.getByRole('button', { name: '中文', exact: true }).click();
+    await completeSetup(page);
+    await page.getByTestId('sidebar-nav-settings').click();
+    await page.getByTestId('settings-tab-memory').click();
+    const memory = page.getByTestId('memory-tab');
+    await expect(memory.getByRole('heading', { name: '梦境', exact: true })).toBeVisible();
+    await expect(memory.getByRole('heading', { name: '梦境日记', exact: true })).toBeVisible();
+    await expect(memory.getByRole('heading', { name: '维护', exact: true })).toBeVisible();
+    await expect(page.getByTestId('dreams-action-backfill')).toHaveText('回填日记');
+    const memoryHeadingStyle = await memory.locator('h1').evaluate((heading) => {
+      const style = getComputedStyle(heading);
+      return { fontFamily: style.fontFamily, fontSize: style.fontSize, fontWeight: style.fontWeight };
+    });
+    const memoryBounds = await memory.boundingBox();
+    const deviceTab = page.getByTestId('settings-tab-computer-use');
+    await expect(deviceTab).toHaveText('设备');
+    await deviceTab.click();
+    const devices = page.getByTestId('computer-use-page');
+    await expect(devices.getByRole('heading', { name: '设备', exact: true })).toBeVisible();
+    const deviceHeadingStyle = await devices.locator('h1').evaluate((heading) => {
+      const style = getComputedStyle(heading);
+      return { fontFamily: style.fontFamily, fontSize: style.fontSize, fontWeight: style.fontWeight };
+    });
+    expect(deviceHeadingStyle).toEqual(memoryHeadingStyle);
+    const deviceBounds = await devices.boundingBox();
+    expect(deviceBounds!.x).toBe(memoryBounds!.x);
+    expect(deviceBounds!.width).toBe(memoryBounds!.width);
+    await expect(page.getByTestId('computer-use-refresh')).toBeVisible();
+  });
+
   test('renders the native Dreams page and runs a maintenance action', async ({ electronApp, page }) => {
     await installIpcMocks(electronApp, {
       gatewayStatus: { state: 'running', port: 18789, pid: 12345, gatewayReady: true },

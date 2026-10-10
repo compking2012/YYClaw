@@ -1,6 +1,8 @@
 <p align="center">
 
-Computer Use is always available under Settings → Computer Use, without developer mode, and remains disabled until explicitly enabled. Voice input, prompt optimization, and Send are grouped at the right edge of the composer. The bundled provider catalog no longer includes legacy company-network presets before Anthropic; official providers and saved user accounts remain unchanged.
+Interface product mentions use the YYClaw app-name translation. Purple primary and gradient buttons use white text in both light and dark themes; internal identifiers and upstream links are unchanged.
+
+Settings → Devices contains the always-visible, opt-in Computer Use controls. Its full-width layout, heading typography, panels, and header refresh action follow the other settings tabs. Memory translations are registered for all four languages, including the original Chinese Dreams labels.
   <img src="src/assets/logo.svg" width="128" height="128" alt="YYClaw Logo" />
 </p>
 

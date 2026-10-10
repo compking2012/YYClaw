@@ -5,7 +5,7 @@
   "tabs": {
     "general": "通用",
     "voice": "语音",
-    "computerUse": "操作计算机",
+    "computerUse": "设备",
     "gateway": "网关",
     "developer": "开发者",
     "updates": "更新",
@@ -395,7 +395,7 @@
       },
       "logs": {
         "title": "诊断日志",
-        "description": "可用的 ClawX 和 OpenClaw 日志。"
+        "description": "可用的 $t(common:appName) 和 OpenClaw 日志。"
       },
       "manifest": {
         "title": "清单",
@@ -437,7 +437,7 @@
     "hints": {
       "bailianDialectPrefix": "阿里云百炼 API 输入语音需 Data URI 而非纯 Base64 编码（见 ",
       "bailianDialectLinkText": "文档",
-      "bailianDialectSuffix": "），ClawX 已适配。",
+      "bailianDialectSuffix": "），$t(common:appName) 已适配。",
       "bailianWorkspace": "请将 <WorkspaceId> 替换为你的百炼业务空间 ID，并按需调整地域名。"
     },
     "model": "模型",

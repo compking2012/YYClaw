@@ -11,6 +11,10 @@ appliesTo:
 
 Route every new user-visible string through `react-i18next` with matching English, Chinese, Japanese, and Russian locale coverage. Do not hardcode display text in pages or components.
 
+User-facing product mentions use the common appName translation rather than hardcoding the upstream ClawX brand. Purple primary and gradient action buttons use the white primary-foreground token in both themes; do not change internal identifiers, configuration headers, user-authored content, or upstream URLs for a visual branding cleanup.
+
+Every shipped translation namespace must be registered in both I18N_NAMESPACES and each language's I18N_RESOURCES; files alone do not provide runtime translations. Preserve the Dreams memory translations. The Devices settings tab contains Computer Use and follows the existing full-width settings layout, serif page-heading typography, section panels, and trailing header refresh action.
+
 Generate README screenshots in an isolated profile with Developer Mode disabled. Assert developer-only navigation and settings tabs are absent, while the always-visible Computer Use settings tab remains available. Capture all four locales using the ordinary user interface, with a deterministic selected conversation and DPR 2 output for the screenshot decoration pipeline.
 
 Use the semantic tokens and substitutions documented in `src/styles/globals.css`: raised cards and panels use `bg-surface-modal`, recessed inputs and code surfaces use `bg-surface-input`, selected state uses `bg-black/5 dark:bg-white/10`, hover state uses `hover:bg-black/5 dark:hover:bg-white/5`, status colors pair a light `-700` shade with dark `-400`, and page H1/H2 headings use `font-serif font-normal tracking-tight`. Do not add arbitrary colors or redundant dark surface companions when a named token exists.

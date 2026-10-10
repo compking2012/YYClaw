@@ -5,7 +5,7 @@
   "tabs": {
     "general": "General",
     "voice": "Voice",
-    "computerUse": "Computer Use",
+    "computerUse": "Devices",
     "gateway": "Gateway",
     "developer": "Developer",
     "updates": "Updates",
@@ -395,7 +395,7 @@
       },
       "logs": {
         "title": "Diagnostic logs",
-        "description": "Available ClawX and OpenClaw logs."
+        "description": "Available $t(common:appName) and OpenClaw logs."
       },
       "manifest": {
         "title": "Manifest",
@@ -437,7 +437,7 @@
     "hints": {
       "bailianDialectPrefix": "The Alibaba Cloud Model Studio API requires input_audio as a Data URI rather than plain Base64 (see ",
       "bailianDialectLinkText": "docs",
-      "bailianDialectSuffix": "); ClawX adapts this automatically.",
+      "bailianDialectSuffix": "); $t(common:appName) adapts this automatically.",
       "bailianWorkspace": "Replace <WorkspaceId> with your Model Studio workspace ID and adjust the region domain as needed."
     },
     "model": "Model",

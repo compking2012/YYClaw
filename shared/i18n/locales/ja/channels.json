@@ -143,7 +143,7 @@
         "reasons": {
             "gateway_degraded": "ゲートウェイのハートビートに劣化が見られます。",
             "gateway_unresponsive": "ゲートウェイの制御プレーンが無応答です。",
-            "gateway_verifying": "ClawX がゲートウェイの応答を確認しています。",
+            "gateway_verifying": "$t(common:appName) がゲートウェイの応答を確認しています。",
             "external_gateway_unavailable": "外部管理のゲートウェイを利用できません。",
             "channels_status_timeout": "チャンネル状態の問い合わせがタイムアウトしました。",
             "rpc_timeout": "最近のゲートウェイ RPC がタイムアウトしました。",
@@ -154,10 +154,10 @@
             "dingtalk_dws_auth_required": "チャットは利用できます。カレンダーやドキュメントなどのオフィススキルには、DingTalk workspace の認可が必要です。"
         },
         "recovery": {
-            "verifying": "ClawX がゲートウェイの応答を確認しています。",
-            "restart-pending": "ClawX はゲートウェイの再起動を待機しています。",
-            "restart-executing": "ClawX はゲートウェイを再起動しています。",
-            "external-unavailable": "外部管理のゲートウェイを利用できません。ClawX は再接続中です。必要に応じて「ゲートウェイを再起動」を使用してください。"
+            "verifying": "$t(common:appName) がゲートウェイの応答を確認しています。",
+            "restart-pending": "$t(common:appName) はゲートウェイの再起動を待機しています。",
+            "restart-executing": "$t(common:appName) はゲートウェイを再起動しています。",
+            "external-unavailable": "外部管理のゲートウェイを利用できません。$t(common:appName) は再接続中です。必要に応じて「ゲートウェイを再起動」を使用してください。"
         },
         "restartGateway": "ゲートウェイを再起動",
         "copyDiagnostics": "診断をコピー",
@@ -254,7 +254,7 @@
                 }
             },
             "instructions": [
-                "ClawX は公式 DingTalk コネクタをインストールし、既存の dingtalk チャネル ID を維持します",
+                "$t(common:appName) は公式 DingTalk コネクタをインストールし、既存の dingtalk チャネル ID を維持します",
                 "DingTalk 開発者コンソールで社内アプリを作成し Stream モードを有効にします",
                 "Client ID (AppKey) と Client Secret (AppSecret) を入力します",
                 "チャットはすぐ使えます。カレンダー、ドキュメント、ToDo には DingTalk workspace 認可（dws）が必要です"

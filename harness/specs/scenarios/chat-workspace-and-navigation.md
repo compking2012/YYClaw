@@ -41,6 +41,7 @@ ownedPaths:
   - src/stores/settings-modal.ts
   - resources/config/providers.json
   - shared/i18n/locales/*/settings.json
+  - shared/i18n/resources.ts
   - src/pages/Chat/ChatToolbar.tsx
   - shared/host-api/contract.ts
   - electron/utils/store.ts
@@ -71,6 +72,7 @@ ownedPaths:
   - tests/unit/acp-chat-components.test.tsx
   - tests/e2e/chat-workspace-context.spec.ts
   - tests/e2e/computer-use.spec.ts
+  - tests/e2e/openclaw-dreams.spec.ts
   - tests/e2e/developer-mode.spec.ts
   - tests/e2e/voice-features.spec.ts
   - tests/unit/providers.test.ts

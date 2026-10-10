@@ -148,7 +148,7 @@
             "gateway_not_running": "网关当前未运行。",
             "gateway_error": "网关当前处于错误状态。",
             "runtime_error": "频道运行时返回了错误。",
-            "gateway_verifying": "ClawX 正在验证网关响应。",
+            "gateway_verifying": "$t(common:appName) 正在验证网关响应。",
             "external_gateway_unavailable": "外部管理的网关当前不可用。",
             "dingtalk_dws_missing": "聊天可用。日历、文档等办公技能需要已随包提供的钉钉工作台 CLI（dws）。",
             "dingtalk_dws_auth_required": "聊天可用。日历、文档等办公技能还需要完成钉钉工作台授权。"
@@ -163,10 +163,10 @@
         "restartTriggered": "已请求重启网关",
         "restartFailed": "重启网关失败：{{error}}",
         "recovery": {
-            "verifying": "ClawX 正在验证网关响应。",
-            "restart-pending": "ClawX 正在等待重启其网关。",
-            "restart-executing": "ClawX 正在重启其网关。",
-            "external-unavailable": "外部管理的网关当前不可用。ClawX 正在重连；如有需要，请使用“重启网关”。"
+            "verifying": "$t(common:appName) 正在验证网关响应。",
+            "restart-pending": "$t(common:appName) 正在等待重启其网关。",
+            "restart-executing": "$t(common:appName) 正在重启其网关。",
+            "external-unavailable": "外部管理的网关当前不可用。$t(common:appName) 正在重连；如有需要，请使用“重启网关”。"
         }
     },
     "meta": {
@@ -254,7 +254,7 @@
                 }
             },
             "instructions": [
-                "ClawX 会安装官方钉钉连接器，并继续使用现有的 dingtalk 频道身份",
+                "$t(common:appName) 会安装官方钉钉连接器，并继续使用现有的 dingtalk 频道身份",
                 "在钉钉开发者后台创建企业内部应用并开启 Stream 模式",
                 "填写 Client ID (AppKey) 和 Client Secret (AppSecret)",
                 "聊天可立即使用；日历、文档和待办需要完成钉钉工作台授权（dws）"

@@ -5,7 +5,7 @@
   "tabs": {
     "general": "一般",
     "voice": "音声",
-    "computerUse": "コンピューター操作",
+    "computerUse": "デバイス",
     "gateway": "ゲートウェイ",
     "developer": "開発者",
     "updates": "アップデート",
@@ -395,7 +395,7 @@
       },
       "logs": {
         "title": "診断ログ",
-        "description": "利用可能な ClawX と OpenClaw のログ。"
+        "description": "利用可能な $t(common:appName) と OpenClaw のログ。"
       },
       "manifest": {
         "title": "マニフェスト",
@@ -437,7 +437,7 @@
     "hints": {
       "bailianDialectPrefix": "Alibaba Cloud Model Studio の API は input_audio に純 Base64 ではなく Data URI を必要とします（",
       "bailianDialectLinkText": "ドキュメント",
-      "bailianDialectSuffix": "を参照）。ClawX が自動的に対応します。",
+      "bailianDialectSuffix": "を参照）。$t(common:appName) が自動的に対応します。",
       "bailianWorkspace": "<WorkspaceId> を Model Studio のワークスペース ID に置き換え、必要に応じてリージョンのドメインを調整してください。"
     },
     "model": "モデル",

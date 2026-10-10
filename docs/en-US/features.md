@@ -1,5 +1,9 @@
 # YYClaw Features
 
+Interface product mentions use the YYClaw app-name translation. Purple primary and gradient buttons use white text in both light and dark themes; internal identifiers and upstream links are unchanged.
+
+Settings → Devices contains the always-visible, opt-in Computer Use controls. Its full-width layout, heading typography, panels, and header refresh action follow the other settings tabs. Memory translations are registered for all four languages, including the original Chinese Dreams labels.
+
 ## Product Vision and Target Scope
 
 YYClaw aims to be an **open-source, vendor-neutral, cross-platform AI workbench** with controlled privacy and cost, reliable execution, extensibility, and auditability. Its unified Agent runtime connects a full-feature desktop, mobile/tablet console, and persistent user-owned Linux server. Six pillars guide the product: MIT openness, consistent permission-tiered experiences, local–cloud cooperation, native multimodality, deterministic audited automation, and global plus Chinese ecosystem coverage.

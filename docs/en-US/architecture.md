@@ -1,5 +1,9 @@
 # YYClaw Architecture
 
+Interface product mentions use the YYClaw app-name translation. Purple primary and gradient buttons use white text in both light and dark themes; internal identifiers and upstream links are unchanged.
+
+Settings → Devices contains the always-visible, opt-in Computer Use controls. Its full-width layout, heading typography, panels, and header refresh action follow the other settings tabs. Memory translations are registered for all four languages, including the original Chinese Dreams labels.
+
 ## Target Local–Cloud Architecture
 
 The [PRD](../PRODUCT.md) targets a unified runtime across permission-controlled desktop execution, mobile/tablet consoles without unrestricted Shell, and Headless Linux workers with user/workspace isolation. **This is target design, not shipped cloud management.** Common Agent configuration, memory schemas, skills, and workflows synchronize only authorized non-sensitive data.

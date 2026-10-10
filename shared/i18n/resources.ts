@@ -14,6 +14,7 @@ import enMenu from './locales/en/menu.json';
 import enWorkflow from './locales/en/workflow.json';
 import enWorkspace from './locales/en/workspace.json';
 import enErrors from './locales/en/errors.json';
+import enDreams from './locales/en/dreams.json';
 
 // ZH
 import zhCommon from './locales/zh/common.json';
@@ -29,6 +30,7 @@ import zhMenu from './locales/zh/menu.json';
 import zhWorkflow from './locales/zh/workflow.json';
 import zhWorkspace from './locales/zh/workspace.json';
 import zhErrors from './locales/zh/errors.json';
+import zhDreams from './locales/zh/dreams.json';
 
 // JA
 import jaCommon from './locales/ja/common.json';
@@ -44,6 +46,7 @@ import jaMenu from './locales/ja/menu.json';
 import jaWorkflow from './locales/ja/workflow.json';
 import jaWorkspace from './locales/ja/workspace.json';
 import jaErrors from './locales/ja/errors.json';
+import jaDreams from './locales/ja/dreams.json';
 
 // RU
 import ruCommon from './locales/ru/common.json';
@@ -59,6 +62,7 @@ import ruMenu from './locales/ru/menu.json';
 import ruWorkflow from './locales/ru/workflow.json';
 import ruWorkspace from './locales/ru/workspace.json';
 import ruErrors from './locales/ru/errors.json';
+import ruDreams from './locales/ru/dreams.json';
 
 export const I18N_NAMESPACES = [
   'common',
@@ -74,6 +78,7 @@ export const I18N_NAMESPACES = [
   'workflow',
   'workspace',
   'errors',
+  'dreams',
 ] as const;
 
 export const I18N_RESOURCES = {
@@ -91,6 +96,7 @@ export const I18N_RESOURCES = {
     workflow: enWorkflow,
     workspace: enWorkspace,
     errors: enErrors,
+    dreams: enDreams,
   },
   zh: {
     common: zhCommon,
@@ -106,6 +112,7 @@ export const I18N_RESOURCES = {
     workflow: zhWorkflow,
     workspace: zhWorkspace,
     errors: zhErrors,
+    dreams: zhDreams,
   },
   ja: {
     common: jaCommon,
@@ -121,6 +128,7 @@ export const I18N_RESOURCES = {
     workflow: jaWorkflow,
     workspace: jaWorkspace,
     errors: jaErrors,
+    dreams: jaDreams,
   },
   ru: {
     common: ruCommon,
@@ -136,6 +144,7 @@ export const I18N_RESOURCES = {
     workflow: ruWorkflow,
     workspace: ruWorkspace,
     errors: ruErrors,
+    dreams: ruDreams,
   },
 } as const;
 

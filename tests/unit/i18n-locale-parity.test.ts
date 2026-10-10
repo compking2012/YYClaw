@@ -15,10 +15,34 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   I18N_RESOURCES,
+  I18N_NAMESPACES,
 } from '@shared/i18n/resources';
 
 const REFERENCE_LOCALE = 'en';
 const LOCALES_DIR = path.resolve(__dirname, '../../shared/i18n/locales');
+
+describe('runtime translation registration', () => {
+  it('does not hardcode the upstream product name in interface translations', () => {
+    for (const locale of ['en', 'zh', 'ja', 'ru'] as const) {
+      expect(JSON.stringify(I18N_RESOURCES[locale])).not.toContain('ClawX');
+      expect(I18N_RESOURCES[locale].common.computerUse.off).toContain('$t(common:appName)');
+    }
+  });
+  it('registers every shipped namespace for every language', () => {
+    for (const locale of ['en', 'zh', 'ja', 'ru'] as const) {
+      const shipped = fs.readdirSync(path.join(LOCALES_DIR, locale)).filter((file) => file.endsWith('.json')).map((file) => file.slice(0, -5)).sort();
+      expect([...I18N_NAMESPACES].sort()).toEqual(shipped);
+      expect(Object.keys(I18N_RESOURCES[locale]).sort()).toEqual(shipped);
+    }
+  });
+
+  it('restores the pre-merge Chinese memory labels', () => {
+    expect(I18N_RESOURCES.zh.dreams.title).toBe('梦境');
+    expect(I18N_RESOURCES.zh.dreams.diary.title).toBe('梦境日记');
+    expect(I18N_RESOURCES.zh.dreams.actions.backfill).toBe('回填日记');
+    expect(I18N_RESOURCES.zh.settings.tabs.computerUse).toBe('设备');
+  });
+});
 
 type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
 interface JsonObject {

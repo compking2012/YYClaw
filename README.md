@@ -1,8 +1,4 @@
 <p align="center">
-
-Interface product mentions use the YYClaw app-name translation. Purple primary and gradient buttons use white text in both light and dark themes; internal identifiers and upstream links are unchanged.
-
-Settings → Devices contains the always-visible, opt-in Computer Use controls. Its full-width layout, heading typography, panels, and header refresh action follow the other settings tabs. Memory translations are registered for all four languages, including the original Chinese Dreams labels.
   <img src="src/assets/logo.svg" width="128" height="128" alt="YYClaw Logo" />
 </p>
 
@@ -50,20 +46,11 @@ local-first skills, configure multiple AI providers with credentials in your OS
 keychain, and watch your token usage and runtime health.
 
 YYClaw ships with best-practice provider presets, first-class Windows support, and
-four UI languages. Everything else is reachable through
-**Settings → Advanced → Developer**.
+four UI languages. Use Settings for everyday configuration and
+**Settings → Advanced → Developer** for debugging tools.
 
 It is, in short, an **open-source alternative to hosted office-agent products** —
 see [Positioning](#positioning-the-open-source-option-in-the-office-agent-category).
-
-
-### Upstream Integration
-
-The composer keeps local account names and conversation-only model selection. ACP context usage appears before Gateway status; fresh runtime totals remain authoritative. Compaction and embedded subagent status with live read-only child drill-down and direct-parent return coexist with the independent local workflow timeline. Switching with `@agent` starts a fresh target-agent conversation.
-
-Only changing the global default conversation model recalculates the compaction reserve floor (25% of explicit context metadata, otherwise 50,000 tokens). Per-agent overrides, media slots and startup synchronization do not recalculate it. Explicit compaction settings remain preserved.
-
-DingTalk uses the upstream official connector while retaining local multi-account support and optional workspace authorization. Computer Use follows the upstream local driver lifecycle and permissions. Settings → About exports redacted diagnostics and optionally selected raw conversation transcripts to a local ZIP; no automatic upload occurs.
 
 ## Design Goals and Philosophy
 
@@ -159,6 +146,8 @@ specs. See [Architecture Invariants](docs/ARCHITECTURE.md#architecture-invariant
 | **Agent Workspace** | File-tree browser and preview of the agent workspace |
 | **Image Generation** | Dedicated OpenAI-compatible image endpoint |
 | **OpenClaw Dreams** | `memory-core` dreaming: status, diary, maintenance |
+| **Computer Use** | Opt-in local operation in Settings → Devices, controlled by system permissions |
+| **Diagnostics & Support** | Redacted diagnostic exports, optional transcripts, no automatic upload |
 
 ### 🎯 Zero Configuration Barrier
 
@@ -181,6 +170,8 @@ configured, the model picker shows account names and overrides only the current
 conversation's model, without changing agent defaults or restarting Gateway. The session sidebar is workspace-first,
 and the right panel offers Workspace, Preview, and Changes tabs with read-only
 previews for Markdown, `.docx`, `.pptx`, and local HTML.
+
+The chat interface shows context usage and compaction status so you can track conversation capacity. Subagent tasks provide live status, read-only child conversations, and navigation back to the parent conversation. Workflow tasks have their own progress timeline.
 
 ### 🎙️ Voice Interaction
 
@@ -223,6 +214,8 @@ QQ, and WhatsApp. Feishu app creation also auto-configures a Quick Commands bot
 menu (`/new`, `/stop`, `/reset`, `/status`, `/compact`) so users can drive session
 control by tapping instead of typing.
 
+DingTalk supports multiple accounts and optional workspace authorization.
+
 ### ⏰ Cron-Based Automation
 
 Schedule AI tasks on **Recurring** (hourly, daily, weekdays, weekly, or raw cron)
@@ -248,10 +241,16 @@ with a progress popover.
 
 ### 🧩 Extensible Skill System
 
+- **Manage skills:** Use **Settings → Skills** to browse, install, uninstall, manage versions, and publish to marketplaces. Installing a skill does not assign it to an agent.
+- **Configure agents:** In **Agent → Settings → Skills**, choose the default plan or an independent configuration. The default plan stays synchronized with inheriting agents; an independent plan affects only that agent, and an empty plan uses no skills.
+- **Add and adjust:** Search and select multiple skills to add. In use cards offer descriptions, pause, and remove actions. Expand Paused to resume skills, or enter selection mode for batch operations.
+- **Save or cancel:** Edits stay in a draft until you save. Cancel leaves the configuration unchanged; a failed save keeps the draft available for retry.
+- **Uninstall safely:** Pausing keeps the association, while removing an association does not uninstall the skill. Remove all agent and default-plan associations before uninstalling. Agent skill selections do not automatically enable disabled skill assets.
+
 The Skills page is local-first: it scans managed, bundled, extension, and plugin
 skill directories — excluding workspace, `.agents`, and extra directories to
-prevent duplicate versions — and enables or disables skills without depending on
-the Gateway. Each skill shows its real on-disk location so you can open the actual
+prevent duplicate versions. Asset management does not assign skills to agents.
+Each skill shows its real on-disk location so you can open the actual
 folder.
 
 Document-processing skills (`pdf`, `xlsx`, `docx`, `pptx`) from
@@ -277,6 +276,10 @@ and startup update checks that prompt before downloading or installing.
 
 > Full feature detail, including implementation caveats and limits, lives in
 > [docs/en-US/features.md](docs/en-US/features.md).
+
+### 🛠️ Diagnostics and Support
+
+Use **Settings → About** to export a local diagnostic ZIP for troubleshooting or support. Diagnostics are redacted; raw conversation transcripts are included only when you explicitly select them. Exported files are not uploaded automatically.
 
 ## Use Cases
 
@@ -347,7 +350,7 @@ The **Setup Wizard** guides you through four steps:
 
 ### Local Computer Use
 
-On supported macOS and Windows systems, enable Computer Use explicitly in Settings and grant the requested native permissions. The bundled driver runs locally under Electron Main supervision. Its private `CLAWX_CUA_CONNECTION_FILE` descriptor is supplied to OpenClaw; no runtime download or external pairing is required. Disable the setting to stop the driver.
+On supported macOS and Windows systems, open **Settings → Devices**, enable Computer Use, and grant the requested system permissions. This entry is available without developer mode, and the feature is off by default. The driver runs locally without additional downloads or external pairing; disabling the feature stops it.
 
 ### Proxy Settings
 
@@ -403,9 +406,9 @@ the main process.
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-- **Local Computer Use**: Electron Main retains `EmbeddedCuaDriverHost`, native SDK loading, permission checks, and daemon supervision. `CLAWX_CUA_CONNECTION_FILE` identifies a private descriptor `{ v: 2, generation, driverVersion, binaryPath, socketPath }`. Existing OpenClaw `exec` invokes that absolute bundled binary with the explicit socket, and `read` supplies screenshot images to the model. No custom plugin, MCP proxy, node host, pairing, or runtime download is involved.
-
 ### Architectural Characteristics
+
+- **Local Computer Use.** Electron Main supervises the bundled driver, checks system permissions, and manages its local lifecycle. The runtime accesses this capability through a local connection.
 
 - **Process isolation.** The AI runtime is a separate process, so the UI stays
   responsive during heavy computation and a runtime crash doesn't take the window
@@ -498,9 +501,8 @@ On headless Linux, run Electron tests under a display server, e.g.
 `xvfb-run -a pnpm run test:e2e`.
 
 > Building the Linux `.deb` on macOS requires GNU tar and GNU ar
-> (`brew install gnu-tar binutils`). Without them the bundled `fpm` silently emits
-> an invalid 96-byte `.deb` while still reporting success; `pnpm package:linux`
-> now fails fast if either is missing.
+> (`brew install gnu-tar binutils`). `pnpm package:linux` checks these dependencies
+> and stops the build if either tool is missing.
 
 When a change touches communication paths — gateway events, the ACP chat bridge,
 channel delivery, or transport fallback — run the regression checks:

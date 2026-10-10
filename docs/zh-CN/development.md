@@ -1,5 +1,7 @@
 # YYClaw 开发文档
 
+本文介绍现有的构建、测试、打包与诊断工具。开发需求和待实现的设计方案另行维护。
+
 本文档是 README「开发指南」一节的详细说明。
 
 ### 前置要求
@@ -42,7 +44,7 @@
 ```
 
 > 注意：国际化资源位于 `shared/i18n/locales/<lang>/<ns>.json`，而不是 `src/i18n/`。
-> 不存在独立的 `/dashboard` 页面 —— token 用量看板已合并进 Models 页面。
+> Token 用量分析位于 Models 页面，没有独立的 `/dashboard` 路由。
 
 ### 常用命令
 

@@ -36,6 +36,13 @@ Standard dev commands are in `package.json` scripts and `README.md`. Key ones:
   more reliable model execution. Exceptions: established Chinese domain terms that have
   no clean English equivalent, and user-facing copy that is intentionally Chinese.
 
+## Documentation Layers
+
+- Follow `docs/DOCUMENTATION.md`: root READMEs and localized guides introduce implemented scope only, with all four locales updated for relevant delivered changes.
+- `docs/PRODUCT.md` is the PRD; `docs/FEATURELIST.md` is its complete stable-ID requirement breakdown; `docs/ARCHITECTURE.md` is the derived technical design and key implementation description. Root development docs may include explicit pending requirements/designs and do not require translation.
+- Derive bounded harness tasks/scenarios/rules from FEATURELIST; maintain `harness/FEATURE-MAP.md` coverage and gaps. A task spec is not delivery evidence.
+- Keep the local-only `docs/yyclaw-multi-agent-design.md` untracked and do not make tracked docs depend on it.
+
 ## Startup Rules
 
 Before writing any code, complete these steps in order:

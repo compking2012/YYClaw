@@ -1,26 +1,12 @@
 # YYClaw 系统架构
 
-界面中的产品名统一通过 YYClaw 品牌翻译显示，不再残留 ClawX 文案。紫色主按钮和渐变按钮在浅色、深色主题下均使用白色文字；内部标识及上游链接不变。
-
-「设置 → 设备」提供始终可见、默认关闭的操作计算机功能，采用与其他设置页一致的全宽布局、标题字体、卡片和页头刷新按钮。记忆页面恢复四种语言的翻译注册，中文沿用合并前的梦境文案。
-
-## 端云融合目标架构
-
-[产品 PRD](../PRODUCT.md) 以统一 Agent 内核连接桌面旗舰版、移动/平板控制台和 Linux Headless 常驻服务端。**本节描述目标设计，不代表已交付云主机管理。** 桌面能力受系统权限和显式授权约束；移动端裁剪 Shell 和深度系统操作；服务端支持持续执行、多用户与工作区隔离。统一配置、记忆结构、技能与工作流，仅同步授权的非敏感数据。
-
-本地文件、系统操作、外设依赖和敏感任务强制本地执行；预计超过 30 分钟的合规定时、值守、批处理任务优先授权云主机。轻量推理、OCR、转写优先本地模型，复杂推理与生成仅在隐私允许时使用云模型；执行位置与模型调用位置必须分别校验。
-
-迁移基于事件日志和安全状态快照，要求节点兼容、单一执行所有者并防止重复外部副作用。计划休眠/关机前交接合规长任务，唤醒后同步结果；突然断电依赖持久化检查点。本地敏感文件、系统凭证、私密记忆永不同步；日志与快照同样受数据分级和授权范围控制，云主机默认无权访问本地文件。XState 固化控制流并负责重试、审批、恢复与审计，多 Agent 保持物理隔离工作区。
-
-未来远端能力仍须遵守 Host API/Main 边界，不允许 Renderer 直连 Gateway 或自行切换协议。`farmApiBaseUrl` 的目录/市场私有部署不等于云 Agent 部署。详见 [目标架构说明](../ARCHITECTURE.md#target-architecture-unified-localcloud-workbench)，下文描述当前桌面实现。
-
-本文档是 README「系统架构」一节的详细说明。
+本文仅介绍已经实现的 Electron 桌面架构和运行时契约，不包含待实现的目标设计。
 
 YYClaw 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用统一客户端抽象，协议选择与进程生命周期由 Electron 主进程统一管理：
 
 OpenClaw 配置交付也统一由 Electron Main 管理。Gateway 运行时，YYClaw 以 `config.get` 返回的权威快照为基线，并通过 `config.set` 提交修改；Gateway 停止或启动中时，同一个协调器只更新解析后的 JSON5 配置文件，不会因此启动 Gateway。因此，普通的 Provider、Agent、Channel、绑定、Skill 和模型修改不会替换 Gateway 进程。完整重启仅保留给代理等进程启动环境变化和用户显式操作。已确认的进程退出与 WebSocket 关闭继续使用现有的自动重连路径。连续前 3 次 WebSocket 心跳无响应只更新诊断，不会因短暂的 pong 延迟中断长时间运行的任务；收到 pong 或任意消息会重置计数，连续第 4 次无响应时，只有在生命周期处于可自动恢复的 running 状态时，才会请求受保护的 Gateway 自动恢复。认证配置写入 SQLite 后，YYClaw 会调用 OpenClaw 的 `secrets.reload`，让运行中的 Agent 无需重启即可读取新凭据。
 
-Chat 使用由 Electron Main 持有的 ACP stdio bridge。Main 通过私有进程环境把同一份应用管理的 Gateway token 传给本地子进程，因此运行时配置重载后 ACP 历史回放仍能完成认证。如果受保护的 Gateway 恢复中断了已接收的主会话 run，补丁后的 OpenClaw 运行时会启动独立的恢复 run，并显式携带直接被中断的 run id 作为 lineage。Chat 和 agent events 会保留该 lineage；重连后的 ACP bridge 据此逐次将 pending prompt 接续到新 run，重置该 run 的流式游标，并订阅会话级 tool events。如果之后的重启在答复持久化后丢失了进程内终态通知，ACP 会把当前 run id 和 session key 传给 `agent.wait`；Gateway 仅在持久化 lifecycle owner 与该 run 匹配时结算。Renderer 不感知 Gateway 运行实例身份，仍通过类型化 host events 渲染同一个内存 ACP timeline。Gateway 继续负责 providers、models、skills、workspace、settings、diagnostics 和 media configuration 等非 Chat 能力。
+Chat 使用由 Electron Main 持有的 ACP stdio bridge。Main 通过私有进程环境把同一份应用管理的 Gateway token 传给本地子进程，因此运行时配置重载后 ACP 历史回放仍能完成认证。如果受保护的 Gateway 恢复中断了已接收的主会话 run，内置 OpenClaw 运行时会启动独立的恢复 run，并显式携带直接被中断的 run id 作为 lineage。Chat 和 agent events 会保留该 lineage；重连后的 ACP bridge 据此逐次将 pending prompt 接续到新 run，重置该 run 的流式游标，并订阅会话级 tool events。如果之后的重启在答复持久化后丢失了进程内终态通知，ACP 会把当前 run id 和 session key 传给 `agent.wait`；Gateway 仅在持久化 lifecycle owner 与该 run 匹配时结算。Renderer 不感知 Gateway 运行实例身份，仍通过类型化 host events 渲染同一个内存 ACP timeline。Gateway 继续负责 providers、models、skills、workspace、settings、diagnostics 和 media configuration 等非 Chat 能力。
 
 ### ACP 语义权威
 
@@ -28,7 +14,7 @@ Chat 使用由 Electron Main 持有的 ACP stdio bridge。Main 通过私有进�
 
 只有在上游 ACP 没有对应能力时，才允许绕过 ACP。此类兼容性路径必须保持狭窄、有界，并绑定 session 和 generation；同时必须在相关 Harness reference 或 rule 中记录其原因、事实来源、限制、协调行为和移除条件，不得悄悄演变为竞争性的权威来源。
 
-补丁后的 OpenClaw 会在提交给 Provider 前执行 prompt 压力恢复。当聚合工具结果文本超过扣除预留后的 prompt 预算时，它会根据实测溢出量和安全缓冲推导一个截断目标，并在 mid-turn、pre-prompt 和 post-compaction 恢复中复用该目标。系统会优先缩减较早的工具输出，同时保留每组工具调用/结果配对以及最新结果的有界表示。压缩返回“没有真实会话消息”时，不会丢弃已经实测到的 transcript 或渲染后 prompt 压力。结构化压缩失败事件会将触发来源与可选的稳定原因码分开，并在 ACP 记录前把纯文本原因裁剪到 500 个字符。
+内置 OpenClaw 会在提交给 Provider 前执行 prompt 压力恢复。当聚合工具结果文本超过扣除预留后的 prompt 预算时，它会根据实测溢出量和安全缓冲推导一个截断目标，并在 mid-turn、pre-prompt 和 post-compaction 恢复中复用该目标。系统会优先缩减较早的工具输出，同时保留每组工具调用/结果配对以及最新结果的有界表示。压缩返回“没有真实会话消息”时，不会丢弃已经实测到的 transcript 或渲染后 prompt 压力。结构化压缩失败事件会将触发来源与可选的稳定原因码分开，并在 ACP 记录前把纯文本原因裁剪到 500 个字符。
 
 ### ACP 历史权威与有界 transcript 补充
 
@@ -40,7 +26,7 @@ ACP prompt 运行期间，`session/update` 通知会继续即时更新可见 tim
 
 该 load 进行期间，Renderer 会保留已经结算的 live timeline，不会暴露空白 loading 状态；IPC 结果交接窗口中提前到达的新 generation events 也会被缓冲。成功且非空的 batch 会先按返回的 session 和 generation 过滤，再从空 ACP timeline 开始通过普通 reducer 归约，最后把完整 timeline 与 generation 在一次状态提交中原子替换。Pending attachments 会按新 generation 重新解析，live turn timing 会映射到 replay 中的 user-message identity，replay 图片证据也会接管旧 generation 中尚未完成的投影。失败、抛错、过期或已被 supersede 的 hydration 不会替换 live 内容。成功但为空或标记为 resumed-active-prompt 的结果会保留可见 items，但仍采用 Main 已经提交的 generation，避免后续 events 因 generation 不匹配而被丢弃。
 
-`session/prompt` 成功完成就是此流程的因果结算屏障。无条件延迟只会增加回复结算耗时、让 sending 状态维持更久，并扩大 navigation 或其它 load 使本次 hydration 过期的窗口，却不能证明上游持久化已经完成。如果未来确认某个上游实现在 replay 可用前就返回 prompt success，正确的补救应是在相同 identity guards 下，针对空 replay 或缺失当前回合做有界、条件式重试，而不是加入固定延迟。下文的 1500 ms 重试只属于有界 transcript 兼容补充，不是 ACP replay hydration 的一部分。
+当前实现以 `session/prompt` 成功完成作为结算屏障，在 replay hydration 前不插入固定延迟。下文的 1500 ms 重试仅用于有界 transcript 兼容补充，不属于 ACP replay hydration。
 
 - 只有在同一 session 中存在已确认的 `image_generate` 上下文，且完成证据可信或来自获准 transcript 证据时，才可以恢复异步图像生成结果。
 - 普通附件可以从持久化的 assistant `__openclaw.media` 规范事实或明确的行首 assistant `MEDIA:` 指令中恢复。这只恢复附件引用和声明的元数据，不恢复周围的 assistant 消息。
@@ -111,6 +97,14 @@ ACP Chat 也可在 runtime 以可信结构化媒体投递图像生成结果时�
 │  • 供应商抽象层                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
+## 智能体技能配置
+
+技能方案使用 OpenClaw 原生的 `agents.defaults.skills` 与 `agents.list[].skills`：智能体未设置列表时继承默认方案，显式列表覆盖默认方案，`[]` 表示不使用技能。暂停关联保存在运行时配置旁的 `yyclaw-skill-associations.json`。元数据使用共享配置锁和原子替换写入，运行时配置保存失败时恢复原元数据；首次方案修改前备份原运行时文件。关联与 `skills.entries.enabled` 相互独立，目录读取不修改配置。
+
+## 本地电脑操作
+
+在支持的 macOS 与 Windows 系统上，打开 **设置 → 设备**，主动启用“操作计算机”，并按提示授予系统权限。此入口无需开发者模式，功能默认关闭。驱动在本地运行，无需额外下载或外部配对；关闭该功能即可停止驱动。
+
 ### 设计原则
 
 - **进程隔离**：AI 运行时在独立进程中运行，确保即使在高负载计算期间 UI 也能保持响应

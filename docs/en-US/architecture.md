@@ -1,26 +1,12 @@
 # YYClaw Architecture
 
-Interface product mentions use the YYClaw app-name translation. Purple primary and gradient buttons use white text in both light and dark themes; internal identifiers and upstream links are unchanged.
-
-Settings → Devices contains the always-visible, opt-in Computer Use controls. Its full-width layout, heading typography, panels, and header refresh action follow the other settings tabs. Memory translations are registered for all four languages, including the original Chinese Dreams labels.
-
-## Target Local–Cloud Architecture
-
-The [PRD](../PRODUCT.md) targets a unified runtime across permission-controlled desktop execution, mobile/tablet consoles without unrestricted Shell, and Headless Linux workers with user/workspace isolation. **This is target design, not shipped cloud management.** Common Agent configuration, memory schemas, skills, and workflows synchronize only authorized non-sensitive data.
-
-Local permissions and sensitive-data locality override placement preferences. Eligible scheduled/monitoring/batch tasks estimated above 30 minutes prefer authorized cloud hosts; lightweight inference/OCR/transcription prefers local models, while complex reasoning/generation may use cloud models when privacy permits. Execution location and inference location are separate checks.
-
-Migration requires compatible nodes, event logs, safe snapshots, single-owner execution, and protection against duplicate side effects. Planned sleep/shutdown may hand off eligible tasks; wake synchronizes results; abrupt loss relies on durable checkpoints. Sensitive files, credentials, and private memories never synchronize; logs/snapshots also require classification and scoped authorization. XState owns control flow, retries, approvals, recovery, and audit; Agent workspaces remain isolated.
-
-Future remote support must preserve Host API/Main boundaries. `farmApiBaseUrl` catalog hosting is not cloud Agent deployment. See [target design details](../ARCHITECTURE.md#target-architecture-unified-localcloud-workbench); below is the current desktop architecture.
-
-This document provides the detailed version of the Architecture section in the README.
+This guide describes the implemented Electron desktop architecture and runtime contracts only.
 
 YYClaw uses a **dual-process architecture with a unified Host API layer**. The renderer calls one client abstraction, while protocol selection and process lifecycle are managed by Electron Main:
 
 OpenClaw configuration delivery is also managed by Electron Main. While the Gateway is running, YYClaw uses the authoritative snapshot returned by `config.get` as its baseline and commits changes with `config.set`. While the Gateway is stopped or starting, the same coordinator updates the resolved JSON5 configuration file without starting the Gateway. Ordinary provider, agent, channel, binding, skill, and model changes therefore do not replace the Gateway process. Full restarts are reserved for process-launch environment changes such as proxy settings and explicit user actions. Confirmed process exits and WebSocket closes retain their existing automatic reconnect paths. The first three consecutive WebSocket heartbeat misses remain diagnostic-only so brief pong delays do not interrupt long-running work; a pong or any incoming message resets the count, while a fourth consecutive miss requests guarded automatic Gateway recovery when the lifecycle is in an auto-recoverable running state. After authentication configuration is written to SQLite, YYClaw calls OpenClaw's `secrets.reload` so running agents can read new credentials without a process restart.
 
-Chat uses an ACP stdio bridge owned by Electron Main. Main passes the same app-managed Gateway token to this local child through its private process environment, so ACP history replay remains authenticated when the runtime configuration reloads. If guarded Gateway recovery interrupts an accepted main-session run, the patched OpenClaw runtime starts a distinct recovery run carrying the directly interrupted run id as explicit lineage. Chat and agent events preserve that lineage; the reconnecting ACP bridge adopts each new run for its pending prompt, resets per-run stream cursors, and subscribes to session-scoped tool events. If a later restart loses process-local terminal delivery after the response was persisted, ACP passes the current run id and session key to `agent.wait`; Gateway settles only when the durable lifecycle owner matches that run. The renderer remains unaware of Gateway runtime identity and continues to receive typed host events for one in-memory ACP timeline. The Gateway remains responsible for non-Chat capabilities such as providers, models, skills, workspace, settings, diagnostics, and media configuration.
+Chat uses an ACP stdio bridge owned by Electron Main. Main passes the same app-managed Gateway token to this local child through its private process environment, so ACP history replay remains authenticated when the runtime configuration reloads. If guarded Gateway recovery interrupts an accepted main-session run, the bundled OpenClaw runtime starts a distinct recovery run carrying the directly interrupted run id as explicit lineage. Chat and agent events preserve that lineage; the reconnecting ACP bridge adopts each new run for its pending prompt, resets per-run stream cursors, and subscribes to session-scoped tool events. If a later restart loses process-local terminal delivery after the response was persisted, ACP passes the current run id and session key to `agent.wait`; Gateway settles only when the durable lifecycle owner matches that run. The renderer remains unaware of Gateway runtime identity and continues to receive typed host events for one in-memory ACP timeline. The Gateway remains responsible for non-Chat capabilities such as providers, models, skills, workspace, settings, diagnostics, and media configuration.
 
 ### ACP Semantic Authority
 
@@ -28,7 +14,7 @@ ACP is the preferred semantic authority for every Chat meaning and context that 
 
 A bypass is allowed only when upstream ACP has no equivalent. Such a compatibility path must be narrow, bounded, session- and generation-scoped, and documented with its rationale, source of truth, limits, reconciliation behavior, and removal condition in the relevant Harness reference or rule. It must not silently become a competing authority.
 
-Patched OpenClaw performs prompt-pressure recovery before provider submission. When aggregate tool-result text exceeds the reserve-adjusted prompt budget, it derives one truncation target from the measured overflow plus a safety buffer and reuses that target across mid-turn, pre-prompt, and post-compaction recovery. Older tool output is reduced first while each tool call/result pair and a bounded representation of the newest results remain present. A compaction response that reports no real conversation messages does not discard measured transcript or rendered-prompt pressure. Failed structured compaction events keep their trigger source separate from an optional stable reason code and a plain-text reason trimmed to 500 characters before ACP records it.
+Bundled OpenClaw performs prompt-pressure recovery before provider submission. When aggregate tool-result text exceeds the reserve-adjusted prompt budget, it derives one truncation target from the measured overflow plus a safety buffer and reuses that target across mid-turn, pre-prompt, and post-compaction recovery. Older tool output is reduced first while each tool call/result pair and a bounded representation of the newest results remain present. A compaction response that reports no real conversation messages does not discard measured transcript or rendered-prompt pressure. Failed structured compaction events keep their trigger source separate from an optional stable reason code and a plain-text reason trimmed to 500 characters before ACP records it.
 
 ### ACP History Authority and Bounded Transcript Supplements
 
@@ -40,7 +26,7 @@ While an ACP prompt is running, `session/update` notifications continue to updat
 
 Renderer keeps the settled live timeline committed while this load is in flight and does not expose a blank loading state. It also buffers next-generation events that arrive during the IPC handoff. A successful non-empty batch is filtered to the returned session and generation, reduced from an empty ACP timeline through the ordinary reducer, and committed together with its generation in one state update. Pending attachments are resolved again under that generation, the live turn timing is remapped to the replayed user-message identity, and replay image evidence supersedes stale in-flight projections. Failed, thrown, stale, or superseded hydration never replaces live content. A successful empty or resumed-active-prompt result preserves visible items but still adopts the generation already committed by Main so later events are not discarded.
 
-The successful `session/prompt` completion is the causal settlement barrier. An unconditional delay would add latency, keep sending state active longer, and enlarge the window in which navigation or another load supersedes hydration without proving that upstream persistence is ready. If a future upstream implementation is shown to return success before replay is durable, the appropriate mitigation is a bounded, condition-based retry for an empty or missing-current-turn replay under the same identity guards, not a fixed delay. The separate 1500 ms retry below applies only to bounded transcript compatibility supplements; it is not part of ACP replay hydration.
+Successful `session/prompt` completion is the settlement barrier for the current implementation; no fixed delay is inserted before replay hydration. The separate 1500 ms retry below applies only to bounded transcript compatibility supplements, not ACP replay hydration.
 
 - Asynchronous image-generation completions may be restored only when the same session has proven `image_generate` context and the completion evidence is trusted or approved transcript evidence.
 - General attachments may be recovered from canonical persisted assistant `__openclaw.media` facts or explicit line-leading assistant `MEDIA:` directives. This recovers attachment references and declared metadata, not the surrounding assistant message.
@@ -113,6 +99,14 @@ ACP Chat can also display generated image previews when image-generation media i
 │  • Provider abstraction layer                                    │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+## Agent skill configuration
+
+Skill plans use native `agents.defaults.skills` and `agents.list[].skills`: an absent agent list inherits defaults; an explicit list overrides them, including `[]`. Paused associations are stored in `yyclaw-skill-associations.json` beside the runtime configuration. Metadata writes use the shared config lock and atomic replacement, with rollback on configuration save failure. The original runtime file is backed up before the first policy change. Associations and `skills.entries.enabled` are independent; catalog reads do not modify configuration.
+
+## Local Computer Use
+
+On supported macOS and Windows systems, open **Settings → Devices**, enable Computer Use, and grant the requested system permissions. This entry is available without developer mode, and the feature is off by default. The driver runs locally without additional downloads or external pairing; disabling the feature stops it.
 
 ### Design Principles
 

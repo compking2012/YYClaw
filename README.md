@@ -31,6 +31,18 @@
 
 ---
 
+## Documentation
+
+The README and localized guides describe implemented capabilities only. Setup requirements and developer-mode gates are stated explicitly; they are not promises of future delivery.
+
+- [Feature guide](docs/en-US/features.md)
+- [Architecture guide](docs/en-US/architecture.md)
+- [Development guide](docs/en-US/development.md)
+- [Proxy settings](docs/en-US/proxy-settings.md)
+
+For contributors: [documentation layers and update workflow](docs/DOCUMENTATION.md). Product requirements, delivery status, and implementation specs are development documents, not release claims.
+
+
 ## Overview
 
 **YYClaw** is a cross-platform desktop application that turns the command-line
@@ -111,7 +123,7 @@ your time.** Six principles follow from it.
 
 These goals are enforced, not aspirational: the renderer/main boundary, the
 single-entry rule, and the transport policy are checked by ESLint and the harness
-specs. See [Architecture Invariants](docs/ARCHITECTURE.md#architecture-invariants).
+specs. See [Architecture Invariants](docs/en-US/architecture.md).
 
 ## Screenshots
 
@@ -439,7 +451,7 @@ the main process.
 > The layer diagram, three-tier communication model, ACP file-activity semantics,
 > configuration delivery, and Gateway troubleshooting are covered in
 > [docs/en-US/architecture.md](docs/en-US/architecture.md) and
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+> [docs/en-US/architecture.md](docs/en-US/architecture.md).
 
 ## Development
 

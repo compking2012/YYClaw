@@ -31,6 +31,18 @@
 
 ---
 
+## 文档导航
+
+README 与多语言介绍文档只描述已经实现的能力，并明确配置前提和开发者模式限制，不承诺尚未交付的功能。
+
+- [功能介绍](docs/zh-CN/features.md)
+- [架构介绍](docs/zh-CN/architecture.md)
+- [开发工具介绍](docs/zh-CN/development.md)
+- [代理设置](docs/zh-CN/proxy-settings.md)
+
+面向开发贡献者：[文档分层与更新流程](docs/DOCUMENTATION.md)。产品需求、交付状态与实现规格属于开发文档，不代表发行版已实现的能力。
+
+
 ## 概述
 
 **YYClaw** 是一款跨平台桌面应用，把只能在命令行使用的
@@ -95,7 +107,7 @@ YYClaw 就是通往它的开源路径。
 
 这些目标是被强制执行的，而非停留在口号：渲染进程 / 主进程边界、单一入口规则与传输策略
 都由 ESLint 和 harness 规格校验。详见
-[架构不变量](docs/ARCHITECTURE.md#architecture-invariants)。
+[架构不变量](docs/zh-CN/architecture.md)。
 
 ## 截图预览
 
@@ -375,7 +387,7 @@ YYClaw 是一个**双进程 Electron 应用，前置于一个受托管的 OpenCl
 
 > 分层图、三层通信模型、ACP 文件活动语义、配置下发与 Gateway 排障详见
 > [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md) 与
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+> [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md)。
 
 ## 开发指南
 

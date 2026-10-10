@@ -1,5 +1,11 @@
 # Architecture -- YYClaw AI Workbench
 
+## Document Role
+
+This development document derives technical design from [PRODUCT.md](PRODUCT.md) and maps delivery boundaries to the stable IDs in [FEATURELIST.md](FEATURELIST.md). It may contain current implementation and proposed architecture; target sections and their TODO/PARTIAL status must stay explicit. It is not a public architecture guide and does not require translation.
+
+Current desktop implementation is described below; the target local–cloud section and support matrix are design inputs for future tasks, not release claims. Implementation and validation units live in [harness](../harness/README.md). Only implemented details are promoted to the four localized architecture guides. See [DOCUMENTATION.md](DOCUMENTATION.md).
+
 ## System Overview
 
 **YYClaw** is a cross-platform Electron desktop application that provides a
@@ -417,13 +423,11 @@ Routes are defined in `src/App.tsx` using `react-router-dom` v6 under a
 | `/workflows` | `Workflows` | Deterministic workflow engine UI (dev-mode gated) |
 | `/image-generation` | `ImageGeneration` | Dedicated image-generation endpoint settings (dev-mode gated) |
 
-The former `Models`, `Channels`, `Skills`, `Dreams`, `Settings`, and
-`Workspace` pages no longer have top-level routes. `Models` / `Channels` /
-`Skills` / `Dreams` (now "Memory") / `Settings` (now "System") are tabs inside
-the `SystemSettingsModal` (opened from the sidebar footer); per-agent persona
-files live in `PersonaSettingsModal` (opened from each `AgentCard`); and agent
-workspace files are browsed in the Chat page's right-side `ArtifactPanel`
-(browser tab, writable). The standalone `/workspace` route was removed.
+Models, Channels, Skills, Memory, and System settings are tabs inside
+`SystemSettingsModal`, opened from the sidebar footer. Per-agent persona files
+live in `PersonaSettingsModal`, opened from each `AgentCard`. Agent workspace
+files are browsed in the Chat page's right-side `ArtifactPanel` (browser tab,
+writable). These surfaces do not have standalone top-level routes.
 Extensions may inject additional routes via the renderer extension registry.
 
 ## Components (`src/components/`)
@@ -768,7 +772,9 @@ every change:
 8. **i18n + E2E coverage.** User-facing changes add full-locale i18n and an
    Electron Playwright E2E spec in the same change.
 9. **Doc sync.** Behavior/flow/interface changes update `README.md`,
-   `README.zh-CN.md`, and `README.ja-JP.md` (and this document) in the same
+   `README.zh-CN.md`, `README.ja-JP.md`, and `README.ru-RU.md`, plus
+   corresponding localized guides, for implemented changes. Planned designs
+   update development docs and harness only (see `DOCUMENTATION.md`) in the same
    change.
 
 ## Reference: Ports & Endpoints

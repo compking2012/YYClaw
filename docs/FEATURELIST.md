@@ -1,11 +1,11 @@
 # Feature and TODO List -- YYClaw AI Workbench
 
-This is the working index of **what ships today** and **what is currently open**.
+This development document is the **complete PRD-derived requirement breakdown** and delivery index, including implemented and unimplemented scope. It is not a release introduction and does not require translation.
 `AGENTS.md` Startup Rule 6 points here to decide what to work on next.
 
 It is maintained by hand. Treat it as a pointer, not as generated truth:
 
-- **Authoritative feature behavior** lives in [`PRODUCT.md`](PRODUCT.md) (per-feature
+- **Product requirements and intended feature behavior** live in [`PRODUCT.md`](PRODUCT.md) (per-feature
   route, capabilities, constraints).
 - **Authoritative architecture and invariants** live in
   [`ARCHITECTURE.md`](ARCHITECTURE.md).
@@ -14,8 +14,7 @@ It is maintained by hand. Treat it as a pointer, not as generated truth:
 - **Quality gates and environment traps** live in
   [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
-When you add, change, or remove a feature, update this table **and** the matching
-`PRODUCT.md` section in the same change.
+When requirements change, update this breakdown and the matching PRD and architecture design. When implementation changes, update evidence and delivery status, derive bounded harness tasks, and promote only implemented behavior to localized introductions. See [DOCUMENTATION.md](DOCUMENTATION.md) and the [harness coverage index](../harness/FEATURE-MAP.md).
 
 ---
 
@@ -146,17 +145,17 @@ tracked as GitHub issues.
 | No screenshots for several shipping pages | Setup wizard, Agents, Workflows, Image Generation, and the Memory tab have no screenshot in any locale |
 | Screenshot locale directories are inconsistently named | `resources/screenshot/{en,zh,jp,ru}` vs `docs/{en-US,zh-CN,ja-JP,ru-RU}` |
 | `tests/unit` is not typechecked | `tsconfig.test.json` covers only `tests/e2e/fixtures` (the shared harness). Extending it to every spec surfaces ~350 pre-existing loose-typing errors (inferred literals vs. declared mock shapes, missing vitest globals) that need cleanup first |
-| `docs/yyclaw-multi-agent-design.md` has malformed diagrams | 32 ASCII box lines have inconsistent widths and the file has an odd number of code fences (41) |
 
 ## How to Extend This List
 
-1. Add the feature row above with its entry point and status.
+1. Decompose the PRD into stable feature IDs, acceptance boundaries, and status; add a shipped-surface row only for implemented scope.
    Update the matching stable PRD feature ID and its architecture support row;
    use DONE/PARTIAL/TODO separately from GA/developer/setup availability.
 2. Add the full feature section to [`PRODUCT.md`](PRODUCT.md) using the template in
    its *Extending This Document* section.
-3. Add user-facing detail to `docs/<locale>/features.md` for all four locales.
-4. Route new user-facing strings through `react-i18next` with full locale coverage.
-5. Add or update a Playwright E2E spec covering the new interaction.
-6. If the change touches communication paths, start from a task spec under
+3. Derive a bounded task under `harness/specs/tasks/` from the feature ID, using the [coverage index](../harness/FEATURE-MAP.md); declare rules, evidence, and validation. Add or update a scenario when the behavior needs a new reusable contract.
+4. Only after implementation, add user-facing detail to all four localized guides and READMEs where relevant; do not copy TODO requirements or target designs into introductions.
+5. Route new user-facing strings through `react-i18next` with full locale coverage.
+6. Add or update a Playwright E2E spec covering the new interaction.
+7. If the change touches communication paths, start from a task spec under
    `harness/specs/tasks/` and run `pnpm run comms:replay` + `pnpm run comms:compare`.

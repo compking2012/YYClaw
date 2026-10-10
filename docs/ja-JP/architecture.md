@@ -1,26 +1,12 @@
 # YYClawのアーキテクチャ
 
-画面の製品名は YYClaw のアプリ名翻訳に統一します。紫色の主要ボタンとグラデーションボタンは両テーマで白い文字を使用し、内部識別子と上流リンクは変更しません。
-
-設定 → デバイスに、常時表示され初期状態では無効のコンピューター操作設定を配置します。全幅レイアウト、見出し、パネル、ヘッダーの更新ボタンは他の設定タブに合わせます。記憶ページの翻訳を4言語で登録し、中国語はマージ前の夢境ラベルを維持します。
-
-## ローカル・クラウド連携の目標設計
-
-[PRD](../PRODUCT.md) は共通 Agent ランタイムをデスクトップ、モバイル／タブレット、Headless Linux へ展開する目標を定義します。**提供済みのクラウド管理ではありません。** デスクトップは許可されたシステム操作、モバイルは無制限 Shell を持たないコンソール、サーバーは常時実行とユーザー／作業領域の分離を担当します。共通設定・記憶スキーマ・スキル・ワークフローは、許可された非機密データのみ同期します。
-
-ローカル権限と機密性が配置の必須条件です。30 分超の適格な定時・監視・バッチ処理は許可済みクラウドを優先します。軽量推論・OCR・文字起こしはローカル、複雑な推論・生成はプライバシー条件内でクラウドを選びます。実行場所とモデルの送信先は別々に確認します。
-
-移行には互換ノード、イベントログ、安全なスナップショット、単一所有者、副作用の重複防止が必要です。計画休止前に適格タスクを引き継ぎ、復帰後に同期します。突然の停止は永続チェックポイントに依存します。機密ファイル・認証情報・非公開記憶は同期せず、ログとスナップショットも分類・認可対象です。XState が制御フロー、再試行、承認、復旧、監査を担い、Agent の領域を分離します。
-
-将来のリモート対応でも Host API/Main 境界を維持します。`farmApiBaseUrl` のカタログはクラウド Agent 配備ではありません。[目標設計の詳細](../ARCHITECTURE.md#target-architecture-unified-localcloud-workbench)を参照してください。以下は現在の構成です。
-
-このドキュメントは、READMEの「アーキテクチャ」セクションの詳細版です。
+このガイドは実装済みの Electron デスクトップ構成とランタイム契約のみを紹介します。
 
 YYClawは **統合Host APIレイヤーを備えたデュアルプロセスアーキテクチャ**を採用しています。Rendererは単一のクライアント抽象を呼び出し、プロトコル選択とプロセスライフサイクルはElectron Mainが管理します。
 
 OpenClawの設定配信もElectron Mainが管理します。Gateway実行中は`config.get`が返す権威あるスナップショットを基準にし、変更を`config.set`でコミットします。Gatewayが停止中または起動中の場合は、同じコーディネーターが解決済みJSON5設定ファイルを更新しますが、これを理由にGatewayを起動することはありません。そのため、通常のプロバイダー、Agent、チャネル、バインディング、スキル、モデルの変更ではGatewayプロセスを置き換えません。完全な再起動は、プロキシなどのプロセス起動環境の変更と、ユーザーによる明示的な操作に限られます。確認済みのプロセス終了とWebSocket切断では、既存の自動再接続経路が引き続き使用されます。WebSocketハートビートの連続3回までの欠落は診断のみとし、短いpong遅延で長時間実行中の処理を中断しません。pongまたは任意の受信メッセージでカウントをリセットし、4回連続で欠落した場合に、ライフサイクルが自動復旧可能なrunning状態であれば、保護されたGateway自動復旧を要求します。認証設定をSQLiteへ書き込んだ後はOpenClawの`secrets.reload`を呼び出し、実行中のAgentがプロセス再起動なしで新しい認証情報を読み取れるようにします。
 
-ChatはElectron Mainが所有するACP stdio bridgeを使用します。Mainはアプリが管理するGateway tokenをプライベートなプロセス環境経由でローカルの子プロセスへ渡すため、ランタイム設定の再読み込み後もACP履歴リプレイの認証が維持されます。保護されたGateway復旧が受理済みのメインセッションrunを中断した場合、パッチ済みOpenClawランタイムは別の復旧runを開始し、直接中断されたrun idを明示的なlineageとして保持します。Chat eventとagent eventはそのlineageを維持し、再接続したACP bridgeはpending promptを新しいrunへ順次引き継ぎ、run単位のストリームカーソルをリセットしてセッション単位のtool eventを購読します。その後の再起動で応答永続化後のプロセス内終端通知が失われた場合、ACPは現在のrun idとsession keyを`agent.wait`へ渡し、Gatewayは永続化されたlifecycle ownerがそのrunと一致する場合に限って完了させます。RendererはGatewayランタイムの識別子を認識せず、型付きhost eventから同じメモリ内ACP timelineを描画し続けます。Gatewayはproviders、models、skills、workspace、settings、diagnostics、media configurationなどの非Chat機能を引き続き担当します。
+ChatはElectron Mainが所有するACP stdio bridgeを使用します。Mainはアプリが管理するGateway tokenをプライベートなプロセス環境経由でローカルの子プロセスへ渡すため、ランタイム設定の再読み込み後もACP履歴リプレイの認証が維持されます。保護されたGateway復旧が受理済みのメインセッションrunを中断した場合、同梱OpenClawランタイムは別の復旧runを開始し、直接中断されたrun idを明示的なlineageとして保持します。Chat eventとagent eventはそのlineageを維持し、再接続したACP bridgeはpending promptを新しいrunへ順次引き継ぎ、run単位のストリームカーソルをリセットしてセッション単位のtool eventを購読します。その後の再起動で応答永続化後のプロセス内終端通知が失われた場合、ACPは現在のrun idとsession keyを`agent.wait`へ渡し、Gatewayは永続化されたlifecycle ownerがそのrunと一致する場合に限って完了させます。RendererはGatewayランタイムの識別子を認識せず、型付きhost eventから同じメモリ内ACP timelineを描画し続けます。Gatewayはproviders、models、skills、workspace、settings、diagnostics、media configurationなどの非Chat機能を引き続き担当します。
 
 ### ACPのセマンティック権威
 
@@ -28,7 +14,7 @@ ACPが提供するすべてのChatの意味とコンテキストでは、`sessio
 
 上流ACPに相当する機能がない場合に限り、ACPを迂回できます。その互換性パスは狭く有界で、sessionとgenerationに紐付ける必要があります。また、理由、情報源、制限、調整方法、削除条件を該当するHarness referenceまたはruleに記録し、競合する権威へ暗黙に発展させてはいけません。
 
-パッチ済みOpenClawはProviderへ送信する前にprompt圧力を回復します。ツール結果テキストの合計が予約分を差し引いたprompt予算を超える場合、実測した超過量と安全バッファーから1つの切り詰め目標を算出し、mid-turn、pre-prompt、post-compactionの回復で再利用します。古いツール出力から縮小しつつ、各ツール呼び出しと結果の対応、および最新結果の有界な表現を保持します。コンパクションが「実際の会話メッセージなし」と返しても、実測済みのtranscriptまたはレンダリング済みprompt圧力は破棄しません。構造化されたコンパクション失敗イベントでは、トリガー元と任意の安定した理由コードを分離し、プレーンテキストの理由をACP記録前に500文字へ制限します。
+同梱OpenClawはProviderへ送信する前にprompt圧力を回復します。ツール結果テキストの合計が予約分を差し引いたprompt予算を超える場合、実測した超過量と安全バッファーから1つの切り詰め目標を算出し、mid-turn、pre-prompt、post-compactionの回復で再利用します。古いツール出力から縮小しつつ、各ツール呼び出しと結果の対応、および最新結果の有界な表現を保持します。コンパクションが「実際の会話メッセージなし」と返しても、実測済みのtranscriptまたはレンダリング済みprompt圧力は破棄しません。構造化されたコンパクション失敗イベントでは、トリガー元と任意の安定した理由コードを分離し、プレーンテキストの理由をACP記録前に500文字へ制限します。
 
 ### ACP履歴の権威と有界なtranscript補足
 
@@ -40,7 +26,7 @@ ACP promptの実行中は、`session/update`通知が表示中のtimelineを即�
 
 loadの進行中も、Rendererは完了済みのlive timelineを保持し、空のloading状態を表示しません。IPC結果のhandoff中に先着した次generationのeventもbufferします。成功した空でないbatchだけを返却sessionとgenerationでfilterし、空のACP timelineから通常のreducerで縮約して、完全なtimelineとgenerationを1回のstate updateでatomicにcommitします。Pending attachmentは新generationで再解決し、live turn timingはリプレイされたuser message identityへ移し、リプレイの画像証拠は旧generationの未完了projectionを引き継ぎます。失敗、例外、stale、supersededなhydrationはlive contentを置き換えません。成功しても空、またはresumed-active-promptの結果では表示itemを保持しますが、後続eventを失わないようMainがcommit済みのgenerationは採用します。
 
-成功した`session/prompt`の完了が、この処理の因果的なsettlement barrierです。無条件の遅延はlatencyを増やし、sending状態を長く維持し、navigationや別のloadによってhydrationがsupersedeされるwindowを広げる一方、上流の永続化完了を保証しません。将来、リプレイがdurableになる前にprompt successを返す上流実装が確認された場合は、固定遅延ではなく、同じidentity guardの下で空リプレイまたは現在ターン欠落を条件にした有界retryを使います。以下の1500 ms retryは有界なtranscript互換補足だけに適用され、ACP replay hydrationの一部ではありません。
+現在の実装では、成功した`session/prompt`の完了をsettlement barrierとし、replay hydrationの前に固定遅延を挿入しません。以下の1500 ms retryは有界なtranscript互換補足だけに適用され、ACP replay hydrationの一部ではありません。
 
 - 非同期の画像生成完了は、同じセッションに確認済みの`image_generate`コンテキストがあり、完了の証拠が信頼できるか、承認済みのtranscript証拠である場合に限り復元できます。
 - 一般の添付ファイルは、永続化されたassistantの`__openclaw.media`事実、または行頭にある明示的なassistant `MEDIA:`ディレクティブから復元できます。復元されるのは添付ファイルの参照と宣言されたメタデータだけで、周囲のassistantメッセージは復元しません。
@@ -113,6 +99,14 @@ ACP Chatは、ランタイムが画像生成メディアを信頼できる構造
 │  • プロバイダー抽象化レイヤー                                    │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+## エージェントのスキル設定
+
+スキルプランは `agents.defaults.skills` と `agents.list[].skills` を使用します。未指定のリストは既定を継承し、明示リストは既定を置き換えます。`[]` はスキルを使用しない設定です。一時停止の関連付けはランタイム設定の隣の `yyclaw-skill-associations.json` に保存します。共通ロックと原子的置換で書き込み、設定保存失敗時は元のメタデータに戻します。最初の変更前にランタイムファイルをバックアップします。関連付けと `skills.entries.enabled` は独立し、カタログ読み取りは設定を変更しません。
+
+## ローカルのコンピューター操作
+
+対応する macOS と Windows で **設定 → デバイス** を開き、コンピューター操作を有効にして、必要なシステム権限を許可してください。開発者モードは不要で、初期状態では無効です。ドライバーは追加ダウンロードや外部ペアリングなしでローカル実行され、機能を無効にすると停止します。
 
 ### 設計原則
 

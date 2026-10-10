@@ -1,5 +1,7 @@
 # YYClaw Development Guide
 
+This guide introduces the existing build, test, packaging, and diagnostics tools. Development requirements and proposed designs are maintained separately.
+
 This document provides the detailed version of the Development section in the README.
 
 ### Prerequisites
@@ -47,9 +49,8 @@ YYClaw/
 └── scripts/                  # Build and utility scripts
 ```
 
-> Note: localization resources live in `shared/i18n/locales/<lang>/<ns>.json`, not
-> under `src/i18n/`. There is no separate `/dashboard` page — the token-usage
-> dashboard is merged into the Models page.
+> Localization resources live in `shared/i18n/locales/<lang>/<ns>.json`.
+> Token-usage analytics are available in Models; there is no separate `/dashboard` route.
 
 ### Available Commands
 

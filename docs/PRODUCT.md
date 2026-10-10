@@ -1,4 +1,10 @@
-# Product Description — YYClaw AI Workbench
+# Product Requirements (PRD) — YYClaw AI Workbench
+
+## Document Role
+
+This development document defines product scope, user needs, and intended acceptance boundaries, including implemented and unimplemented requirements. It is not a public feature guide and does not require translation.
+
+The derivation chain is **PRODUCT → FEATURELIST → ARCHITECTURE → harness task/validation → implemented multilingual introduction**. [FEATURELIST.md](FEATURELIST.md) owns stable feature IDs and delivery status; [ARCHITECTURE.md](ARCHITECTURE.md) owns technical design and implementation contracts. See [DOCUMENTATION.md](DOCUMENTATION.md) for ownership and promotion rules.
 
 ## Product Vision and Scope
 
@@ -602,8 +608,8 @@ This file is structured so that adding a feature is mechanical:
    below, keeping sections in the same order as the Feature Map.
 3. **Update cross-cutting sections** only if the feature introduces a new
    constraint, gate, or performance characteristic.
-4. **Keep companion docs in sync** — reflect behavior/flow/interface changes in
-   `ARCHITECTURE.md`, `RELIABILITY.md`, and the localized `README.*` files in the
+4. **Keep development and introduction docs in sync** — reflect behavior/flow/interface changes in
+   `FEATURELIST.md`, `ARCHITECTURE.md`, and `TROUBLESHOOTING.md`; derive or update the relevant `harness/specs/` documents. Update the localized README and guides only for implemented behavior in the
    same change (per the project's doc-sync rule).
 
 ### Feature Section Template

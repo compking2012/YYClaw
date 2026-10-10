@@ -1,35 +1,6 @@
 # YYClaw Features
 
-Interface product mentions use the YYClaw app-name translation. Purple primary and gradient buttons use white text in both light and dark themes; internal identifiers and upstream links are unchanged.
-
-Settings → Devices contains the always-visible, opt-in Computer Use controls. Its full-width layout, heading typography, panels, and header refresh action follow the other settings tabs. Memory translations are registered for all four languages, including the original Chinese Dreams labels.
-
-## Product Vision and Target Scope
-
-YYClaw aims to be an **open-source, vendor-neutral, cross-platform AI workbench** with controlled privacy and cost, reliable execution, extensibility, and auditability. Its unified Agent runtime connects a full-feature desktop, mobile/tablet console, and persistent user-owned Linux server. Six pillars guide the product: MIT openness, consistent permission-tiered experiences, local–cloud cooperation, native multimodality, deterministic audited automation, and global plus Chinese ecosystem coverage.
-
-Core scenarios cover developers' code/operations, creators' private assets and scheduled publishing, small teams' IM/customer workflows, and researchers' private analysis and batch literature processing. Target capabilities include screen/voice/document/video perception, text/chart/image/speech/video-script outputs, XState workflows with retries/approvals/recovery, isolated Agents, traceable Cron, cloud/local models, MCP, and international tools alongside Feishu/Lark, DingTalk, and WeCom.
-
-**These are product goals, not shipped-feature guarantees.** Mobile, remote-host management, synchronization, placement, and migration are target requirements. Sensitive tasks and local system operations stay local; eligible long tasks may run on authorized cloud hosts. A local Agent calling a cloud model is not device-only processing. See the [full PRD](../PRODUCT.md) and [delivery status](../FEATURELIST.md); below is the current desktop feature guide.
-
-Candidate slogan: *One Workbench, All Devices, Any Model.*
-
-The developer-gated standalone Image Generation sidebar page is retained. It shares the integrated upstream endpoint settings with the local developer settings; model management remains in the local Settings modal rather than moving image generation into an upstream Models tab.
-
-The local provider catalog adds TokenDance browser authorization and API-key setup with upstream Chinese-language discovery and request attribution. Anthropic and Google use upstream connection presets. Existing local model IDs, defaults, and multi-model capability slots remain unchanged; the remote/local catalog selection and developer fallback are retained.
-
-This document is the detailed companion to the Features section in the
-[README](../../README.md). It keeps the implementation caveats, limits, and
-configuration mechanics that are too granular for the README itself.
-
-
-### Upstream Integration
-
-The composer keeps local account names and conversation-only model selection. ACP context usage appears before Gateway status; fresh runtime totals remain authoritative. Compaction status and read-only native subagent drill-down coexist with the independent local workflow timeline. Switching with `@agent` starts a fresh target-agent conversation.
-
-Only changing the global default conversation model recalculates the compaction reserve floor (25% of explicit context metadata, otherwise 50,000 tokens). Per-agent overrides, media slots and startup synchronization do not recalculate it. Explicit compaction settings remain preserved.
-
-DingTalk uses the upstream official connector while retaining local multi-account support and optional workspace authorization. Computer Use follows the upstream local driver lifecycle and permissions. Settings → About exports redacted diagnostics and optionally selected raw conversation transcripts to a local ZIP; no automatic upload occurs.
+This guide covers implemented desktop features only, including configuration requirements and developer-mode gates. It is not a roadmap.
 
 ## Zero Configuration Barrier
 
@@ -63,13 +34,11 @@ agent's own conversation context instead of relaying through the default agent.
 Agent workspaces stay separate by default, while stronger runtime isolation
 depends on OpenClaw sandbox settings.
 
-The composer also includes a **Model** picker when multiple configured models are
-available. Model changes are applied by OpenClaw's native config watcher without
-restarting the Gateway; YYClaw waits for the live `agents.list` snapshot to expose
-the selected model before allowing the next send. Skills are scoped per agent
-(`agents.list[].skills`): creating or editing an agent lets you choose that
-agent's enabled skills, and legacy global skill toggles are migrated to each
-existing agent once for backward compatibility.
+The composer displays account names when several models are configured. Choosing a model affects only the current conversation, without changing agent defaults or restarting Gateway.
+
+The chat interface shows context usage and compaction status so you can track conversation capacity. Subagent tasks provide live status, read-only child conversations, and navigation back to the parent conversation. Workflow tasks have their own progress timeline.
+
+Changing the global default conversation model recalculates the compaction reserve: 25% of explicit context-window metadata, or 50,000 tokens without it. Per-agent overrides, media slots, and startup synchronization do not recalculate the reserve. Explicit user compaction settings take precedence.
 
 ### Session Sidebar
 
@@ -195,6 +164,8 @@ channel binding:
 
 ## Multi-Channel Management
 
+DingTalk supports multiple accounts and optional workspace authorization.
+
 Configure and monitor multiple AI channels simultaneously. Each channel operates
 independently, allowing you to run specialized agents for different tasks.
 
@@ -268,11 +239,17 @@ synthesized reply is posted back into the conversation.
 
 ## Extensible Skill System
 
+- **Manage skills:** Use **Settings → Skills** to browse, install, uninstall, manage versions, and publish to marketplaces. Installing a skill does not assign it to an agent.
+- **Configure agents:** In **Agent → Settings → Skills**, choose the default plan or an independent configuration. The default plan stays synchronized with inheriting agents; an independent plan affects only that agent, and an empty plan uses no skills.
+- **Add and adjust:** Search and select multiple skills to add. In use cards offer descriptions, pause, and remove actions. Expand Paused to resume skills, or enter selection mode for batch operations.
+- **Save or cancel:** Edits stay in a draft until you save. Cancel leaves the configuration unchanged; a failed save keeps the draft available for retry.
+- **Uninstall safely:** Pausing keeps the association, while removing an association does not uninstall the skill. Remove all agent and default-plan associations before uninstalling. Agent skill selections do not automatically enable disabled skill assets.
+
 Extend your AI agents with pre-built skills. The integrated Skills page is
 local-first: it scans the managed directory plus bundled, extension, and plugin
 skills, while workspace, `.agents`, and `skills.load.extraDirs` are excluded to
-prevent duplicate versions. You can enable or disable skills without depending on
-the Gateway — no package managers required.
+prevent duplicate versions. Agent settings manage skill associations and pauses;
+the Skills page manages assets.
 
 The Skills page shows each skill's actual location so you can open the real folder
 directly. Installing a managed skill with the same metadata name or slug asks for
@@ -306,6 +283,8 @@ Installing a server-marketplace skill first validates the ZIP's actual skill
 identity before any same-name replacement confirmation.
 
 ## Secure Provider Integration
+
+TokenDance supports browser authorization and API-key setup; availability depends on the interface language. Anthropic and Google offer connection presets. Provider configuration supports local or remote catalogs, default models, and model-type capability slots.
 
 Connect to multiple AI providers, including OpenAI, Anthropic, and Z.AI / GLM,
 with credentials stored securely in the native system keychain. OpenAI supports
@@ -358,6 +337,8 @@ use an mtime/size-keyed incremental cache so a large sessions directory does not
 trigger repeated full-file rescans on the main process.
 
 ## Image Generation
+
+The standalone Image Generation page is available in developer mode. It shares endpoint configuration with developer settings; providers and models are managed in the Settings modal.
 
 In developer mode, the dedicated **Image Generation** page supports an independent
 OpenAI-compatible image-generation endpoint (Base URL, API key, and model name
@@ -444,3 +425,11 @@ written as **plain text** on disk for both development and production builds. Th
 mitigates conflicts with OpenClaw's upstream config-health observe mechanism, which
 may generate `.clobbered` backup files if parsing or size changes unexpectedly.
 Reading of historical encrypted configs (`CLAWX_ENCRYPTED_v1:`) is still supported.
+
+## Local Computer Use
+
+On supported macOS and Windows systems, open **Settings → Devices**, enable Computer Use, and grant the requested system permissions. This entry is available without developer mode, and the feature is off by default. The driver runs locally without additional downloads or external pairing; disabling the feature stops it.
+
+## 🛠️ Diagnostics and Support
+
+Use **Settings → About** to export a local diagnostic ZIP for troubleshooting or support. Diagnostics are redacted; raw conversation transcripts are included only when you explicitly select them. Exported files are not uploaded automatically.

@@ -94,3 +94,6 @@ resources/skills-bundled/lark-*/
 .opencode
 .superpowers
 .playwright-mcp
+
+# Local-only multi-Agent collaboration draft (not part of product delivery)
+/docs/yyclaw-multi-agent-design.md

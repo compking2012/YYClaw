@@ -31,6 +31,18 @@
 
 ---
 
+## ドキュメント
+
+README と各言語のガイドは実装済みの機能のみを説明します。設定条件と開発者モードの制限を明記し、未提供の機能を約束しません。
+
+- [機能ガイド](docs/ja-JP/features.md)
+- [アーキテクチャガイド](docs/ja-JP/architecture.md)
+- [開発ツールガイド](docs/ja-JP/development.md)
+- [プロキシ設定](docs/ja-JP/proxy-settings.md)
+
+開発貢献者向け：[文書の階層と更新手順](docs/DOCUMENTATION.md)。製品要件、提供状況、実装仕様は開発文書であり、リリース済み機能の保証ではありません。
+
+
 ## 概要
 
 **YYClaw** は、コマンドラインでしか使えなかった
@@ -112,7 +124,7 @@ AI エージェントを構築するために、コマンドラインを習得�
 これらの目標は理想論ではなく強制されています。レンダラー／メインプロセスの境界、
 単一エントリ規則、トランスポートポリシーは ESLint と harness spec で検証されます。
 詳細は
-[アーキテクチャ不変条件](docs/ARCHITECTURE.md#architecture-invariants)
+[アーキテクチャ不変条件](docs/ja-JP/architecture.md)
 を参照してください。
 
 ## スクリーンショット
@@ -431,7 +443,7 @@ Electron アプリ**です。レンダラーはネットワークやファイル
 > レイヤー図、3 層通信モデル、ACP ファイルアクティビティのセマンティクス、設定の配信、
 > Gateway のトラブルシューティングは
 > [docs/ja-JP/architecture.md](docs/ja-JP/architecture.md) と
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) で扱っています。
+> [docs/ja-JP/architecture.md](docs/ja-JP/architecture.md) で扱っています。
 
 ## 開発
 

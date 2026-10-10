@@ -1,3 +1,9 @@
+# Troubleshooting and Quality Checks
+
+This is a development-only companion to the PRD, feature breakdown, and architecture. It records environment traps and quality gates, not public feature claims. See [DOCUMENTATION.md](DOCUMENTATION.md) for the document hierarchy.
+
+## Environment and Development
+
 - **Bundled download timeouts**: uv and agent-browser downloads retry failed requests,
   then fall back to system curl. If GitHub is unreachable, set `HTTPS_PROXY` to
   your actual HTTP proxy address before `pnpm run init`. Fetch does not accept SOCKS
@@ -14,7 +20,7 @@
 - **Comms-path changes** (gateway events, runtime send/receive, delivery, fallback)
   must pass `/comms-check` before finishing.
 - **Doc-sync**: when behavior, flows, or interfaces change, update `README.md`,
-  `README.zh-CN.md`, and `README.ja-JP.md` in the same change.
+  `README.zh-CN.md`, `README.ja-JP.md`, and `README.ru-RU.md`, plus the matching localized guides, for implemented behavior. Requirements and target-only design changes belong in root development docs and harness, not introductions.
 - **Merging `upstream/main`**: this is a customized fork — preserve fork
   customizations by default and only take upstream content for a feature/fix/compat
   reason. Follow `harness/specs/rules/upstream-merge.md` before resolving conflicts.

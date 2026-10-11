@@ -30,10 +30,11 @@ export class CodexAdapter {
     await loadCodexConnection(this.authHome);
   }
 
-  async execute({ prompt, schema, workspace, artifactDir, readOnly = false, signal, timeoutMs, onSpawn, onExit }) {
+  async execute({ prompt, schema, workspace, artifactDir, readOnly = false, signal, timeoutMs, onSpawn, onExit, dependencyCache }) {
     await mkdir(artifactDir, { recursive: true });
     const codexHome = path.join(workspace.home, '.codex');
     const connectionEnv = await prepareCodexConnection(this.authHome, codexHome);
+    const workerEnv = dependencyCache ? (await import('./dependencies.mjs')).dependencyEnvironment(workspace.home, dependencyCache, {}) : isolatedEnvironment(workspace.home);
     await mkdir(path.join(workspace.home, 'tmp'), { recursive: true });
     const schemaPath = path.join(artifactDir, 'output-schema.json');
     const outputPath = path.join(artifactDir, 'output.json');
@@ -42,7 +43,7 @@ export class CodexAdapter {
     if (this.model) args.push('--model', this.model);
     args.push('-');
     const result = await this.runStep({ name: readOnly ? 'Independent Codex review' : 'Codex implementation', command: this.executable, args }, {
-      cwd: workspace.path, env: isolatedEnvironment(workspace.home, { ...connectionEnv, CODEX_HOME: codexHome }), signal, timeoutMs,
+      cwd: workspace.path, env: { ...workerEnv, ...connectionEnv, CODEX_HOME: codexHome }, signal, timeoutMs,
       logPath: path.join(artifactDir, 'events.jsonl'),
       input: prompt, onSpawn, onExit,
     });

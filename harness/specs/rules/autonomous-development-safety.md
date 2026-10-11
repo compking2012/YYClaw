@@ -16,4 +16,5 @@ appliesTo:
 - Before removing a workspace, persist evidence and either verify published SHA/PR or archive the recoverable changes.
 - Cleanup touches only recorded run/task-owned directories and processes. Preserve primary workspaces, foreign data, shared caches, remote branches and durable evidence.
 - Cleanup is idempotent and required for completion. A cleanup failure blocks new workspace allocation.
+- Resolve shared dependency/download caches under the primary project's dedicated `node_modules/.autopilot-cache/` before isolating HOME; never reuse its writable installed dependency tree or follow symlinked cache paths. Keep each workspace's copied dependencies and lifecycle outputs private. Preserve shared caches during cleanup, never bypass required lifecycle scripts, and report initialization failures separately from coding repairs.
 - Recreate CI repair workspaces rather than retaining published workspaces. Cancel and timeout preserve recovery evidence before cleanup.

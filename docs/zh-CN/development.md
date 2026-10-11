@@ -145,3 +145,5 @@ Playwright 的 Electron 套件会从 `dist/` 与 `dist-electron/` 启动打包�
 Autopilot 使用本地 Codex 的模型和提供方连接（包括 cc-switch），同时隔离任务凭据和配置。请保持配置的本地代理运行；`--model` 只覆盖模型，不改变提供方。
 
 [Harness](../../harness/README.md)
+
+Autopilot 工作区共用项目 `node_modules/.autopilot-cache/` 下的增量 pnpm 包仓库和持久下载缓存，依赖目录仍独立，清理不会删除共享缓存。该专用缓存不是主工作区已安装的依赖树，首次使用会下载缺失的包。初始化每分钟提示阶段和日志位置；`--init-timeout-minutes` 默认 30 分钟，并受总运行期限约束。

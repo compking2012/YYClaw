@@ -10,6 +10,7 @@ import { validateSources } from './planner.mjs';
 
 export async function autopilotCommand(args) {
   const command = args._[1];
+  if (args['init-timeout-minutes'] !== undefined && (typeof args['init-timeout-minutes'] !== 'string' || !Number.isFinite(Number(args['init-timeout-minutes'])) || Number(args['init-timeout-minutes']) <= 0)) throw new Error('--init-timeout-minutes requires a positive number');
   const artifactRoot = path.join(ROOT, 'artifacts', 'autopilot');
   const adapter = new CodexAdapter({ model: args.model });
   const publisher = new GitHubPublisher(ROOT);
@@ -22,6 +23,7 @@ export async function autopilotCommand(args) {
     ...(args.concurrency ? { concurrency: Number(args.concurrency) } : {}),
     ...(args['max-repairs'] ? { maxRepairs: Number(args['max-repairs']) } : {}),
     ...(args['max-hours'] ? { durationMs: Number(args['max-hours']) * 3600000 } : {}),
+    ...(args['init-timeout-minutes'] !== undefined ? { initTimeoutMs: Number(args['init-timeout-minutes']) * 60000 } : {}),
   } });
   if (['status', 'cancel', 'resume'].includes(command)) {
     if (!args.run) throw new Error('--run <run-id> is required');
@@ -33,7 +35,7 @@ export async function autopilotCommand(args) {
       return 0;
     }
     const record = command === 'resume' ? await engine.resume(args.run) : await store.read();
-    console.log(JSON.stringify({ runId: record.runId, status: record.status, error: record.error, tasks: record.tasks }, null, 2));
+    console.log(JSON.stringify({ runId: record.runId, status: record.status, error: record.error, dependencyCache: record.dependencyCache, baseline: record.baseline, tasks: record.tasks }, null, 2));
     return command === 'status' || record.status === 'complete' ? 0 : 1;
   }
   if (!['plan', 'run'].includes(command)) throw new Error('Usage: pnpm harness autopilot plan|run|status|resume|cancel --feature Fxx --goal <goal> | --plan <file> | --run <run-id>');

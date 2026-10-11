@@ -44,7 +44,7 @@ export const reviewSchema = z.object({
   findings: z.array(z.string()),
 }).strict();
 
-export const DEFAULT_BUDGET = Object.freeze({ maxTasks: 8, concurrency: 2, maxRepairs: 3, durationMs: 6 * 60 * 60 * 1000, commandTimeoutMs: 20 * 60 * 1000 });
+export const DEFAULT_BUDGET = Object.freeze({ maxTasks: 8, concurrency: 2, maxRepairs: 3, durationMs: 6 * 60 * 60 * 1000, commandTimeoutMs: 20 * 60 * 1000, initTimeoutMs: 30 * 60 * 1000 });
 export const RISK_PATHS = Object.freeze({
   dependencies: ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'],
   runtime: ['patches/', 'resources/openclaw'],

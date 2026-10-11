@@ -550,6 +550,8 @@ Autopilot uses the local Codex model/provider connection, including cc-switch, w
 
 [Harness](harness/README.md)
 
+Autopilot workspaces reuse one incremental pnpm package store and persistent download caches under the project's `node_modules/.autopilot-cache/`, with independent dependency trees and safe cleanup. This dedicated cache is not the primary workspace's installed dependency tree; its first use downloads missing packages. Initialization reports its stage/log path every minute; `--init-timeout-minutes` defaults to 30, within the total run deadline.
+
 ## Contributing
 
 Contributions are welcome — bug fixes, features, documentation, and translations

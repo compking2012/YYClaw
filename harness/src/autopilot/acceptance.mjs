@@ -5,6 +5,7 @@ import { runStep } from '../runner.mjs';
 import { scanBackendCommunicationBoundary, touchesCommunicationPath } from '../rules.mjs';
 import { dirtyFiles, git } from './workspaces.mjs';
 import { isolatedEnvironment } from './adapters.mjs';
+import { dependencyEnvironment } from './dependencies.mjs';
 import { RISK_PATHS, reviewSchema, digest } from './contracts.mjs';
 import { atomicJson } from './store.mjs';
 
@@ -61,11 +62,11 @@ export function acceptanceSteps(task) {
   return [...build, ...steps, ...baseline.map((test, index) => ({ ...requiredTestStep(test), id: `baseline-${index}`, kind: 'quality', prerequisites: [] }))];
 }
 
-export async function runAcceptance({ task, workspace, artifactDir, signal, timeoutMs, allowRisks, adapter, executeStep = runStep, externalEnv = {}, onProgress, processHooks = {} }) {
+export async function runAcceptance({ task, workspace, artifactDir, signal, timeoutMs, allowRisks, adapter, executeStep = runStep, externalEnv = {}, onProgress, processHooks = {}, dependencyCache }) {
   const audit = await auditChanges(workspace, task, allowRisks);
   await mkdirArtifact(artifactDir);
   const steps = [];
-  const env = isolatedEnvironment(workspace.home);
+  const env = dependencyCache ? dependencyEnvironment(workspace.home, dependencyCache, {}) : isolatedEnvironment(workspace.home);
   for (const step of acceptanceSteps(task)) {
     if (audit.failures.length) break;
     const missing = step.prerequisites.filter((name) => !externalEnv[name]);
@@ -88,6 +89,7 @@ export async function runAcceptance({ task, workspace, artifactDir, signal, time
       },
       ...processHooks,
     });
+    if (result.error) result.error = `${task.id} acceptance test ${step.id}: ${result.error}; log: ${result.logPath}`;
     if (report && result.status === 'pass') {
       const json = JSON.parse(await readFile(report, 'utf8'));
       if (!json.numTotalTests || json.numFailedTests || json.numPendingTests || json.numTodoTests) result.status = 'fail';
@@ -112,9 +114,9 @@ export async function runAcceptance({ task, workspace, artifactDir, signal, time
   const reviewedFiles = await Promise.all(audit.files.map(async (file) => ({ file, hash: await readFile(path.join(workspace.path, file)).then(digest, () => 'deleted') })));
   if (!audit.failures.length && steps.length === acceptanceSteps(task).length && steps.every((step) => step.status === 'pass')) {
     const response = await adapter.execute({
-      workspace, artifactDir: path.join(artifactDir, 'review'), signal, timeoutMs, readOnly: true, schema: reviewSchema, ...processHooks,
+      workspace, artifactDir: path.join(artifactDir, 'review'), signal, timeoutMs, readOnly: true, schema: reviewSchema, dependencyCache, ...processHooks,
       prompt: `Independently review the diff against ${workspace.baseSha}, immutable task and ACTUAL test evidence below. Do not edit files or run publishing commands. Detect test weakening, missing positive/negative paths, docs/i18n gaps and acceptance omissions. Return one verdict for every acceptance ID. Never infer external behavior from mocks.\n${JSON.stringify({ task, steps, acceptance })}`,
-    });
+    }).catch((error) => { throw new Error(`${task.id} model review failed: ${error.message}; log: ${path.join(artifactDir, 'review/events.jsonl')}`); });
     review = response.output;
     if (new Set(review.acceptance.map((entry) => entry.id)).size !== acceptance.length || !acceptance.every((entry) => review.acceptance.some((verdict) => verdict.id === entry.id && verdict.status === 'pass'))) review.status = 'fail';
   }

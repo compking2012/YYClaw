@@ -3,15 +3,18 @@ import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
+import tar from 'tar';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { validatePlan, digest, scopesConflict, topologicalTasks } from '../../harness/src/autopilot/contracts.mjs';
+import { validatePlan, digest, scopesConflict, topologicalTasks, DEFAULT_BUDGET } from '../../harness/src/autopilot/contracts.mjs';
 import { RunStore } from '../../harness/src/autopilot/store.mjs';
 import { git, WorkspaceManager } from '../../harness/src/autopilot/workspaces.mjs';
 import { AutopilotEngine } from '../../harness/src/autopilot/engine.mjs';
 import { auditChanges, runAcceptance } from '../../harness/src/autopilot/acceptance.mjs';
 import { CodexAdapter, isolatedEnvironment, GitHubPublisher } from '../../harness/src/autopilot/adapters.mjs';
 import { loadCodexConnection, prepareCodexConnection } from '../../harness/src/autopilot/codex-config.mjs';
+import { dependencyEnvironment, dependencyInstallStep, validateDependencyCache, resolveDependencyCache, initializationError } from '../../harness/src/autopilot/dependencies.mjs';
+import { autopilotCommand } from '../../harness/src/autopilot/cli.mjs';
 import { requiredTestStep, validationSteps } from '../../harness/src/validation.mjs';
 import { runStep } from '../../harness/src/runner.mjs';
 
@@ -182,8 +185,12 @@ console.log(JSON.stringify({ type: 'thread.started', thread_id: 'controlled-sess
       vi.stubEnv('CODEX_HOME', authHome);
       expect(new CodexAdapter().authHome).toBe(authHome);
       const artifactDir = path.join(artifactRoot, 'evidence');
-      const request = { prompt: 'Return structured output', schema: z.object({ ok: z.boolean() }), workspace, artifactDir, readOnly: true, timeoutMs: 10000 };
+      const dependencyCache = sharedCache(root);
+      const request = { prompt: 'Return structured output', schema: z.object({ ok: z.boolean() }), workspace, artifactDir, readOnly: true, timeoutMs: 10000, dependencyCache };
       expect(await coding.execute(request)).toEqual({ output: { ok: true }, sessionId: 'controlled-session' });
+      expect(observed.mock.calls[0][1].env.npm_config_store_dir).toBe(dependencyCache.storeDir);
+      expect(observed.mock.calls[0][1].env.electron_config_cache).toBe(dependencyCache.electronCacheDir);
+      expect(observed.mock.calls[0][1].env.npm_config_userconfig).toBe(path.join(workspace.home, '.npmrc'));
       coding.model = 'override-model';
       await coding.execute({ ...request, readOnly: false });
       expect(received).toEqual([
@@ -264,6 +271,263 @@ function publisher(repo: string, failOnce = false) {
 }
 
 const acceptance = async () => ({ status: 'pass', acceptance: [{ id: 'behavior', status: 'pass' }], steps: [] });
+
+function sharedCache(root: string) {
+  return { schemaVersion: 1, storeDir: path.join(root, 'shared/store'), releaseCacheDir: path.join(root, 'shared/releases'), electronCacheDir: path.join(root, 'shared/electron'), lockRoot: path.join(root, 'shared/locks') };
+}
+
+describe('shared dependency initialization', () => {
+  it('keeps one persistent store, private dependency trees and a credential-free network environment', async () => {
+    const { root, repo, artifactRoot } = await repository();
+    const cache = sharedCache(root);
+    expect(validateDependencyCache(cache, repo, artifactRoot)).toBe(cache);
+    const first = dependencyEnvironment(path.join(root, 'first-home'), cache, { HTTPS_PROXY: 'http://proxy.invalid', SSL_CERT_FILE: '/cert.pem', ELECTRON_MIRROR: 'https://mirror.invalid', GH_TOKEN: 'private', GITHUB_TOKEN: 'private', SSH_AUTH_SOCK: '/ssh', OPENAI_API_KEY: 'private', NODE_OPTIONS: 'private', NPM_TOKEN: 'private' });
+    const second = dependencyEnvironment(path.join(root, 'second-home'), cache, {});
+    expect(first.npm_config_store_dir).toBe(second.npm_config_store_dir);
+    expect(first.electron_config_cache).toBe(cache.electronCacheDir);
+    expect(first.YYCLAW_RELEASE_CACHE_DIR).toBe(cache.releaseCacheDir);
+    expect(first.HOME).not.toBe(second.HOME);
+    expect(first.HTTPS_PROXY).toBe('http://proxy.invalid');
+    expect(first.SSL_CERT_FILE).toBe('/cert.pem');
+    for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'SSH_AUTH_SOCK', 'OPENAI_API_KEY', 'NODE_OPTIONS', 'NPM_TOKEN']) expect(first[name]).toBeUndefined();
+    const install = dependencyInstallStep(cache);
+    expect(install.args).toEqual(expect.arrayContaining(['--frozen-lockfile', '--prefer-offline', '--store-dir', cache.storeDir, '--package-import-method=copy', '--no-side-effects-cache']));
+    expect(install.args).not.toContain('--ignore-scripts');
+    expect(() => validateDependencyCache({ ...cache, storeDir: path.join(artifactRoot, 'workspaces/cache') }, repo, artifactRoot)).toThrow('run artifacts');
+    expect(() => validateDependencyCache({ ...cache, storeDir: 'relative' }, repo, artifactRoot)).toThrow('absolute');
+    const resolved = await resolveDependencyCache(repo, artifactRoot);
+    expect(path.isAbsolute(resolved.storeDir)).toBe(true);
+    expect(resolved.storeDir).not.toContain(artifactRoot);
+    const cacheRoot = path.join(repo, 'node_modules/.autopilot-cache');
+    expect(resolved.storeDir.startsWith(path.join(cacheRoot, 'pnpm-store') + path.sep)).toBe(true);
+    expect(resolved.releaseCacheDir).toBe(path.join(cacheRoot, 'releases'));
+    expect(resolved.electronCacheDir).toBe(path.join(cacheRoot, 'electron'));
+    expect(resolved.lockRoot).toBe(path.join(cacheRoot, 'locks'));
+    expect(() => validateDependencyCache({ ...resolved, storeDir: path.join(repo, 'node_modules/.pnpm') }, repo, artifactRoot)).toThrow('dedicated project cache');
+    expect(() => validateDependencyCache({ ...resolved, storeDir: path.join(repo, 'node_modules') }, repo, artifactRoot)).toThrow('dedicated project cache');
+    await mkdir(path.join(repo, 'node_modules'), { recursive: true });
+    await mkdir(path.join(root, 'foreign-cache'));
+    await symlink(path.join(root, 'foreign-cache'), cacheRoot, 'dir');
+    await expect(resolveDependencyCache(repo, artifactRoot)).rejects.toThrow('symlinks');
+    expect(DEFAULT_BUDGET.initTimeoutMs).toBe(30 * 60000);
+    for (const value of ['0', '-1', 'NaN', true]) await expect(autopilotCommand({ _: ['autopilot', 'run'], 'init-timeout-minutes': value })).rejects.toThrow('positive number');
+  });
+
+  it('serializes initialization without serializing coding, and records bounded stages and heartbeats', async () => {
+    const { root, repo, artifactRoot, sha } = await repository();
+    const store = new RunStore(artifactRoot, 'run-shared-prepare');
+    const manager = new WorkspaceManager(repo, store);
+    const cache = sharedCache(root);
+    const progress: string[] = [];
+    let active = 0;
+    let maximum = 0;
+    const executeStep = vi.fn(async (step, options) => {
+      active++;
+      maximum = Math.max(maximum, active);
+      await new Promise((resolve) => setTimeout(resolve, 35));
+      active--;
+      expect(options.env.npm_config_store_dir).toBe(cache.storeDir);
+      expect(options.timeoutMs).toBeGreaterThan(500);
+      return { ...step, status: 'pass', exitCode: 0, durationMs: 35 };
+    });
+    const engine = new AutopilotEngine({ repo, artifactRoot, adapter: adapter(), publisher: publisher(repo), budget: { initTimeoutMs: 1000, commandTimeoutMs: 100 }, executeStep, onProgress: (message) => progress.push(message), progressIntervalMs: 10 });
+    engine.store = store;
+    engine.manager = manager;
+    engine.controller = new AbortController();
+    engine.record = { deadline: Date.now() + 10000, dependencyCache: cache, tasks: { first: {}, second: {} } };
+    const first = await manager.create('first', sha);
+    const second = await manager.create('second', sha);
+    const firstDir = path.join(store.dir, 'first-evidence');
+    const secondDir = path.join(store.dir, 'second-evidence');
+    await Promise.all([engine.prepare(first, firstDir), engine.prepare(second, secondDir)]);
+    expect(maximum).toBe(1);
+    expect(executeStep.mock.calls).toHaveLength(4);
+    expect(progress.filter((entry) => entry.includes('dependency install')).length).toBeGreaterThan(2);
+    for (const [workspace, dir] of [[first, firstDir], [second, secondDir]] as const) {
+      const report = JSON.parse(await readFile(path.join(dir, 'initialization.json'), 'utf8'));
+      expect(report.status).toBe('pass');
+      expect(report.storeDir).toBe(cache.storeDir);
+      expect(report.steps.map((step: { stage: string }) => step.stage)).toEqual(['dependency install', 'extension bridge']);
+      expect(report.steps[0].timeoutMs).toBeLessThanOrEqual(1000);
+      const archive = await manager.archive(workspace, path.join(dir, 'archive'));
+      await manager.cleanup(workspace, archive);
+    }
+    await expect(access(cache.lockRoot)).resolves.toBeUndefined();
+  });
+
+  it('retains timeout and lifecycle errors, cleans failed workspaces and upgrades legacy runs without resetting deadlines', async () => {
+    const { root, repo, artifactRoot, sha } = await repository();
+    const cache = sharedCache(root);
+    const resolveCache = vi.fn(async () => cache);
+    const coding = adapter();
+    const executeStep = vi.fn(async (step, options) => {
+      await writeFile(options.logPath, 'Progress: downloaded 1\n.../sharp install$ node install/check.js\n');
+      return { ...step, status: 'fail', exitCode: null, durationMs: 20, error: 'Command timed out' };
+    });
+    const engine = new AutopilotEngine({ repo, artifactRoot, adapter: coding, publisher: publisher(repo), executeStep, resolveCache, onProgress: () => {} });
+    const failed = await engine.start(plan(sha));
+    expect(failed.status).toBe('failed');
+    expect(failed.error).toContain('baseline dependency install timed out');
+    expect(failed.error).toContain('dependency lifecycle scripts');
+    expect(failed.baseline.initialization.steps[0].timeoutMs).toBeGreaterThan(20 * 60000);
+    expect(failed.tasks.sample.attempts).toBe(0);
+    expect(failed.tasks.sample.repairs).toBe(0);
+    expect(coding.execute).not.toHaveBeenCalled();
+    expect(failed.baseline.cleanup.status).toBe('pass');
+    expect(failed.dependencyCache).toEqual(cache);
+    await expect(access(cache.storeDir)).resolves.toBeUndefined();
+    const store = new RunStore(artifactRoot, failed.runId);
+    const legacy = await store.read();
+    const deadline = legacy.deadline;
+    const planHash = legacy.planHash;
+    delete legacy.dependencyCache;
+    delete legacy.budget.initTimeoutMs;
+    await store.save(legacy);
+    const resumed = await engine.resume(failed.runId);
+    expect(resumed.deadline).toBe(deadline);
+    expect(resumed.planHash).toBe(planHash);
+    expect(resumed.dependencyCache).toEqual(cache);
+    expect(resumed.budget.initTimeoutMs).toBe(DEFAULT_BUDGET.initTimeoutMs);
+    expect(resolveCache).toHaveBeenCalledTimes(2);
+    const oldCache = sharedCache(path.join(root, 'legacy-external-cache'));
+    await mkdir(oldCache.storeDir, { recursive: true });
+    const cachedLegacy = await store.read();
+    cachedLegacy.dependencyCache = oldCache;
+    await store.save(cachedLegacy);
+    const migrated = await engine.resume(failed.runId);
+    expect(migrated.dependencyCache).toEqual(cache);
+    expect(migrated.deadline).toBe(deadline);
+    expect(migrated.planHash).toBe(planHash);
+    await expect(access(oldCache.storeDir)).resolves.toBeUndefined();
+    expect(await readFile(path.join(store.dir, 'events.jsonl'), 'utf8')).toContain('dependency-cache-relocated');
+    const lifecycle = initializationError('sample', 'dependency install', { status: 'fail', exitCode: 7, durationMs: 100, timeoutMs: 1000, logPath: '/log', failureKind: 'dependency lifecycle scripts' });
+    expect(lifecycle).toContain('exit 7');
+    expect(initializationError('sample', 'extension bridge', { error: 'Command cancelled', exitCode: null, durationMs: 100, timeoutMs: 1000, logPath: '/log' })).toContain('was cancelled');
+  });
+
+  it('reuses one real pnpm store offline, incrementally caches versions and preserves copied dependency isolation', async () => {
+    const { root, repo, artifactRoot } = await repository();
+    const cache = await resolveDependencyCache(repo, artifactRoot);
+    const archives = new Map<string, Buffer>();
+    for (const version of ['1.0.0', '2.0.0']) {
+      const source = path.join(root, `fixture-${version}`);
+      await mkdir(path.join(source, 'package'), { recursive: true });
+      await writeFile(path.join(source, 'package/package.json'), JSON.stringify({ name: 'yyclaw-cache-fixture', version, main: 'index.js' }));
+      await writeFile(path.join(source, 'package/index.js'), `module.exports = ${JSON.stringify(version)};\n`);
+      const archive = path.join(source, 'fixture.tgz');
+      await tar.create({ gzip: true, file: archive, cwd: source }, ['package']);
+      archives.set(`/fixture-${version}.tgz`, await readFile(archive));
+      archives.set(`/yyclaw-cache-fixture/-/yyclaw-cache-fixture-${version}.tgz`, await readFile(archive));
+    }
+    const downloads: string[] = [];
+    const server = createServer((request, response) => {
+      const archive = archives.get(request.url ?? '');
+      if (!archive) { response.writeHead(404); response.end(); return; }
+      downloads.push(request.url!);
+      response.end(archive);
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    let closed = false;
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Test registry is unavailable');
+      await writeFile(path.join(repo, '.npmrc'), `registry=http://127.0.0.1:${address.port}/\npackage-import-method=copy\n`);
+      const env = dependencyEnvironment(path.join(root, 'controller-home'), cache, {});
+      await mkdir(env.TMPDIR, { recursive: true });
+      const revisions: string[] = [];
+      for (const version of ['1.0.0', '2.0.0']) {
+        await writeFile(path.join(repo, 'package.json'), JSON.stringify({ name: 'cache-fixture-consumer', private: true, dependencies: { 'yyclaw-cache-fixture': `http://127.0.0.1:${address.port}/fixture-${version}.tgz` }, scripts: { postinstall: 'node -e "require(\'fs\').writeFileSync(\'lifecycle.txt\', \'ran\')"' } }));
+        const result = await runStep({ name: 'Freeze controlled fixture', command: 'pnpm', args: ['install', '--lockfile-only', '--store-dir', cache.storeDir, '--ignore-scripts'] }, { cwd: repo, env, timeoutMs: 20000, logPath: path.join(root, `freeze-${version}.log`) });
+        expect(result.status).toBe('pass');
+        await git(repo, ['add', 'package.json', 'pnpm-lock.yaml', '.npmrc']);
+        await git(repo, ['commit', '-m', `Freeze fixture ${version}`]);
+        revisions.push(await git(repo, ['rev-parse', 'HEAD']));
+      }
+      const store = new RunStore(artifactRoot, 'run-real-cache');
+      const manager = new WorkspaceManager(repo, store);
+      const warm = await manager.create('warm-v1', revisions[0]);
+      const warmEnv = dependencyEnvironment(warm.home, cache, {});
+      await mkdir(warmEnv.TMPDIR, { recursive: true });
+      const warmResult = await runStep(dependencyInstallStep(cache), { cwd: warm.path, env: warmEnv, timeoutMs: 20000, logPath: path.join(store.dir, 'warm.log') });
+      expect(warmResult.status, await readFile(path.join(store.dir, 'warm.log'), 'utf8')).toBe('pass');
+      expect(await readFile(path.join(warm.path, 'lifecycle.txt'), 'utf8')).toBe('ran');
+      const beforeSecond = downloads.length;
+      const second = await manager.create('warm-v2', revisions[1]);
+      const secondEnv = dependencyEnvironment(second.home, cache, {});
+      await mkdir(secondEnv.TMPDIR, { recursive: true });
+      expect((await runStep(dependencyInstallStep(cache), { cwd: second.path, env: secondEnv, timeoutMs: 20000, logPath: path.join(store.dir, 'v2.log') })).status).toBe('pass');
+      expect(downloads.slice(beforeSecond)).toEqual(['/yyclaw-cache-fixture/-/yyclaw-cache-fixture-2.0.0.tgz']);
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      closed = true;
+      const count = downloads.length;
+      const offline = await manager.create('offline-v1', revisions[0]);
+      const offlineEnv = dependencyEnvironment(offline.home, cache, {});
+      await mkdir(offlineEnv.TMPDIR, { recursive: true });
+      expect((await runStep({ ...dependencyInstallStep(cache), args: [...dependencyInstallStep(cache).args, '--offline'] }, { cwd: offline.path, env: offlineEnv, timeoutMs: 20000, logPath: path.join(store.dir, 'offline.log') })).status).toBe('pass');
+      expect(downloads).toHaveLength(count);
+      const firstModule = path.join(warm.path, 'node_modules/yyclaw-cache-fixture/index.js');
+      const offlineModule = path.join(offline.path, 'node_modules/yyclaw-cache-fixture/index.js');
+      await writeFile(firstModule, 'modified locally');
+      expect(await readFile(offlineModule, 'utf8')).toContain('1.0.0');
+      expect(await readFile(path.join(second.path, 'node_modules/yyclaw-cache-fixture/index.js'), 'utf8')).toContain('2.0.0');
+      const emptyEnv = dependencyEnvironment(offline.home, { ...cache, storeDir: path.join(root, 'empty-store') }, {});
+      const missing = await manager.create('offline-missing', revisions[1]);
+      const missingResult = await runStep({ ...dependencyInstallStep({ ...cache, storeDir: emptyEnv.npm_config_store_dir }), args: [...dependencyInstallStep({ ...cache, storeDir: emptyEnv.npm_config_store_dir }).args, '--offline'] }, { cwd: missing.path, env: emptyEnv, timeoutMs: 20000, logPath: path.join(store.dir, 'missing.log') });
+      expect(missingResult.status).toBe('fail');
+      for (const workspace of [warm, second, offline, missing]) {
+        const archive = await manager.archive(workspace, path.join(store.dir, workspace.taskId, 'archive'));
+        await manager.cleanup(workspace, archive);
+      }
+      await expect(access(cache.storeDir)).resolves.toBeUndefined();
+      await expect(access(path.join(repo, 'node_modules/yyclaw-cache-fixture'))).rejects.toThrow();
+    } finally {
+      if (!closed) await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }, 90000);
+
+  it('cancels real initialization processes, keeps recovery evidence and leaves persistent caches intact', async () => {
+    const { root, repo, artifactRoot, sha } = await repository();
+    const cache = sharedCache(root);
+    let engine: AutopilotEngine;
+    const executeStep = async (step, options) => {
+      setTimeout(() => engine.controller.abort(), 75);
+      return await runStep({ ...step, command: process.execPath, args: ['-e', 'setTimeout(() => {}, 60000)'] }, options);
+    };
+    engine = new AutopilotEngine({ repo, artifactRoot, adapter: adapter(), publisher: publisher(repo), executeStep, resolveCache: async () => cache, onProgress: () => {} });
+    const failed = await engine.start(plan(sha));
+    expect(failed.error).toContain('baseline dependency install was cancelled');
+    expect(failed.baseline.initialization.steps[0].error).toBe('Command cancelled');
+    expect(failed.baseline.cleanup.status).toBe('pass');
+    expect(failed.baseline.workspace).toBeNull();
+    expect(failed.tasks.sample.repairs).toBe(0);
+    await expect(access(cache.storeDir)).resolves.toBeUndefined();
+    const listing = await git(repo, ['worktree', 'list', '--porcelain']);
+    expect(listing.split('\n').filter((line: string) => line.startsWith('worktree '))).toHaveLength(1);
+    const summary = JSON.parse(await readFile(path.join(artifactRoot, failed.runId, 'summary.json'), 'utf8'));
+    expect(summary.baseline.initialization.status).toBe('fail');
+    expect(summary.dependencyCache).toEqual(cache);
+    await expect(access(failed.baseline.archive.artifactDir)).resolves.toBeUndefined();
+  });
+
+  it('blocks missing private registry authentication without borrowing user or publisher credentials', async () => {
+    const { root, repo, artifactRoot, sha } = await repository();
+    const coding = adapter();
+    const cache = sharedCache(root);
+    const executeStep = async (step, options) => {
+      expect(options.env.GITHUB_TOKEN).toBeUndefined();
+      expect(options.env.NPM_TOKEN).toBeUndefined();
+      await writeFile(options.logPath, 'ERR_PNPM_FETCH_401 Unauthorized; No authorization header was set\n');
+      return { ...step, status: 'fail', exitCode: 1, durationMs: 1 };
+    };
+    const engine = new AutopilotEngine({ repo, artifactRoot, adapter: coding, publisher: publisher(repo), executeStep, resolveCache: async () => cache, onProgress: () => {} });
+    const blocked = await engine.start(plan(sha));
+    expect(blocked.status).toBe('blocked');
+    expect(blocked.error).toContain('private registry authentication unavailable');
+    expect(blocked.baseline.initialization.status).toBe('blocked');
+    expect(blocked.baseline.cleanup.status).toBe('pass');
+    expect(coding.execute).not.toHaveBeenCalled();
+  });
+});
 
 describe('autopilot contracts and gates', () => {
   it('freezes valid DAGs and rejects cycles, missing evidence and protected writes', () => {

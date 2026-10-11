@@ -482,6 +482,8 @@ Autopilot 使用本地 Codex 的模型和提供方连接（包括 cc-switch）�
 
 [Harness](harness/README.md)
 
+Autopilot 工作区共用项目 `node_modules/.autopilot-cache/` 下的增量 pnpm 包仓库和持久下载缓存，依赖目录仍独立，清理不会删除共享缓存。该专用缓存不是主工作区已安装的依赖树，首次使用会下载缺失的包。初始化每分钟提示阶段和日志位置；`--init-timeout-minutes` 默认 30 分钟，并受总运行期限约束。
+
 ## 参与贡献
 
 欢迎各种形式的贡献 —— 缺陷修复、新功能、文档与翻译都很有帮助。

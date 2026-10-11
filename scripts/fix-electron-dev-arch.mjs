@@ -112,6 +112,7 @@ const zipPath = await downloadArtifact({
   platform,
   arch,
   checksums,
+  cacheRoot: process.env.electron_config_cache,
 });
 
 await extract(zipPath, { dir: distDir });

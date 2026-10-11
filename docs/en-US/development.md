@@ -204,3 +204,5 @@ The repository harness provides bounded automatic planning, isolated Codex imple
 Autopilot uses the local Codex model/provider connection, including cc-switch, while keeping task credentials and configuration isolated. Keep the configured local proxy running; `--model` overrides the model without changing the provider.
 
 [Harness](../../harness/README.md)
+
+Autopilot workspaces reuse one incremental pnpm package store and persistent download caches under the project's `node_modules/.autopilot-cache/`, with independent dependency trees and safe cleanup. This dedicated cache is not the primary workspace's installed dependency tree; its first use downloads missing packages. Initialization reports its stage/log path every minute; `--init-timeout-minutes` defaults to 30, within the total run deadline.

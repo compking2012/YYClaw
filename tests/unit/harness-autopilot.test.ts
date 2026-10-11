@@ -17,6 +17,7 @@ import { dependencyEnvironment, dependencyInstallStep, validateDependencyCache, 
 import { autopilotCommand } from '../../harness/src/autopilot/cli.mjs';
 import { requiredTestStep, validationSteps } from '../../harness/src/validation.mjs';
 import { runStep } from '../../harness/src/runner.mjs';
+import { completePlanRules, generatePlan, validateSources } from '../../harness/src/autopilot/planner.mjs';
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -275,6 +276,75 @@ const acceptance = async () => ({ status: 'pass', acceptance: [{ id: 'behavior',
 function sharedCache(root: string) {
   return { schemaVersion: 1, storeDir: path.join(root, 'shared/store'), releaseCacheDir: path.join(root, 'shared/releases'), electronCacheDir: path.join(root, 'shared/electron'), lockRoot: path.join(root, 'shared/locks') };
 }
+
+describe('planning policy completion', () => {
+  it('adds universal and tagged rules before freezing without changing requirements, tests, scopes or caller input', () => {
+    const proposal = plan('a'.repeat(40));
+    proposal.tasks[0].requiredRules = ['autonomous-development-safety'];
+    proposal.tasks[0].changeTags = ['comms', 'ui'];
+    const original = structuredClone(proposal);
+    const completed = completePlanRules(proposal);
+    expect(proposal).toEqual(original);
+    expect(completed.tasks[0].requiredRules).toEqual(['autonomous-development-safety', 'docs-sync', 'renderer-main-boundary', 'backend-communication-boundary', 'comms-regression', 'ui-i18n-design-tokens', 'e2e-parallel-isolation']);
+    expect({ ...completed.tasks[0], requiredRules: original.tasks[0].requiredRules }).toEqual(original.tasks[0]);
+    expect({ ...completed, tasks: original.tasks }).toEqual(original);
+    expect(completePlanRules(completed)).toEqual(completed);
+  });
+
+  it('freezes a test-only proposal with docs-sync, records additions and removes the planning worktree', async () => {
+    const { repo, artifactRoot, sha } = await repository();
+    await writeFile(path.join(repo, 'harness/specs/rules/autonomous-development-safety.md'), '# Safety\n');
+    await git(repo, ['add', '.']);
+    await git(repo, ['commit', '-m', 'Add planning rule fixture']);
+    const baseSha = await git(repo, ['rev-parse', 'HEAD']);
+    const proposal = plan(baseSha);
+    proposal.tasks[0].requiredRules = ['autonomous-development-safety'];
+    proposal.tasks[0].writePaths = ['tests/unit/example.test.ts'];
+    const coding = { execute: vi.fn(async () => ({ output: proposal, sessionId: 'planning-fixture' })) };
+    const progress = vi.fn();
+    const generated = await generatePlan({ repo, artifactRoot, featureId: 'F33', goal: 'Test contracts', adapter: coding, onProgress: progress });
+    expect(coding.execute).toHaveBeenCalledTimes(1);
+    expect(coding.execute.mock.calls[0][0].prompt).toContain('Every task MUST include docs-sync');
+    expect(proposal.tasks[0].requiredRules).toEqual(['autonomous-development-safety']);
+    expect(generated.plan.tasks[0].requiredRules).toEqual(['autonomous-development-safety', 'docs-sync']);
+    expect(generated.plan.baseSha).toBe(baseSha);
+    expect(generated.plan.baseSha).not.toBe(sha);
+    const dir = path.dirname(generated.planFile);
+    const frozen = JSON.parse(await readFile(generated.planFile, 'utf8'));
+    const manifest = JSON.parse(await readFile(path.join(dir, 'manifest.json'), 'utf8'));
+    expect(manifest.planHash).toBe(digest(frozen));
+    expect(manifest.proposalHash).toBe(digest(proposal));
+    expect(manifest.ruleAdditions).toEqual([{ taskId: 'sample', rules: ['docs-sync'] }]);
+    expect(JSON.parse(await readFile(path.join(dir, 'planning/rule-additions.json'), 'utf8')).additions).toEqual(manifest.ruleAdditions);
+    expect(await readFile(path.join(dir, 'sample.md'), 'utf8')).toContain('  - docs-sync');
+    expect(progress).toHaveBeenCalledTimes(1);
+    const workspace = coding.execute.mock.calls[0][0].workspace;
+    await expect(access(workspace.container)).rejects.toThrow();
+    expect((await git(repo, ['worktree', 'list', '--porcelain'])).split('\n').filter((line) => line.startsWith('worktree '))).toHaveLength(1);
+    await validateSources(repo, frozen);
+  });
+
+  it('still rejects missing rules in frozen input, unknown rules and invalid acceptance without rewriting them', async () => {
+    const { repo, artifactRoot, sha } = await repository();
+    const frozen = plan(sha);
+    frozen.tasks[0].requiredRules = ['docs-sync'];
+    frozen.tasks[0].changeTags = ['comms'];
+    await expect(validateSources(repo, frozen)).rejects.toThrow('renderer-main-boundary');
+    frozen.tasks[0].changeTags = [];
+    frozen.tasks[0].requiredRules = ['unknown-rule'];
+    await expect(validateSources(repo, frozen)).rejects.toThrow('ENOENT');
+    await writeFile(path.join(repo, 'harness/specs/rules/other-rule.md'), '# Other\n');
+    await git(repo, ['add', '.']);
+    await git(repo, ['commit', '-m', 'Add rule rejection fixture']);
+    frozen.baseSha = await git(repo, ['rev-parse', 'HEAD']);
+    frozen.tasks[0].requiredRules = ['other-rule'];
+    await expect(validateSources(repo, frozen)).rejects.toThrow('docs-sync contract');
+    const original = structuredClone(frozen);
+    await expect(generatePlan({ repo, artifactRoot, featureId: 'F33', adapter: { execute: vi.fn(async () => ({ output: { ...frozen, tasks: [{ ...frozen.tasks[0], acceptance: [{ id: 'behavior', description: 'Still mandatory', checks: ['missing'] }] }] } })) }, onProgress: () => {} })).rejects.toThrow('Missing check missing');
+    expect(frozen).toEqual(original);
+    expect((await git(repo, ['worktree', 'list', '--porcelain'])).split('\n').filter((line) => line.startsWith('worktree '))).toHaveLength(1);
+  });
+});
 
 describe('shared dependency initialization', () => {
   it('keeps nested pnpm commands on the controller CLI without bootstrapping Corepack in temporary HOME', async () => {

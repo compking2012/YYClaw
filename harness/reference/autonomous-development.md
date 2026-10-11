@@ -6,6 +6,8 @@ The repository harness exposes `autopilot plan/run/status/resume/cancel`. The de
 
 Plans use Zod-validated version-1 JSON and frozen hashes. Exact write paths, task dependencies, structured tags, registered check commands, rule/source references and acceptance mappings are validated. The default budget is 8 tasks, 2 independent coding tasks, 3 repairs and 6 hours. Task Markdown is generated outside coding worktrees. Existing specs remain readable; autonomous plans must declare acceptance explicitly.
 
+Generated plan proposals receive controller-owned universal `docs-sync` and change-tag-mandated rules before validation and freezing. Completion is additive and idempotent; it does not change tags, acceptance, checks, paths, dependencies or source identity. `planning/rule-additions.json` records proposal/plan hashes and additions, mirrored in the manifest. Frozen JSON and task Markdown contain the completed rules. Loaded plans retain strict validation without automatic mutation. Test-only tasks still review documentation impact but need not add unrelated documentation changes.
+
 The initial committed SHA must match the remote target branch. An owned baseline worktree runs pinned dependency initialization, existing extension bridge generation, lint, typecheck, unit tests, build and harness checks before task coding. Validation acquires a cross-run host-resource lease. A failed baseline is not automatically edited, and no coding starts until it passes. Task source/spec references and UI/comms rule selection are checked before execution.
 
 ## State and Evidence

@@ -785,6 +785,8 @@ every change:
 
 ## Autonomous Repository Development (F33)
 
+Planning separates a model proposal from the frozen execution contract. The controller adds universal documentation-review and UI/comms-tag-mandated rules before semantic/source validation, records proposal hashes and rule additions, then freezes JSON and Markdown. This additive policy never changes acceptance, tests, write scopes or committed input identity. Loaded frozen plans remain immutable and must already satisfy the mandatory rule policy. Documentation review applies to test-only tasks without forcing unrelated documentation edits.
+
 uv preparation reads the required version from the frozen workspace script, verifies a trusted primary-workspace binary's executable header and actual version, and copies it through a receipt-backed persistent cache into private task outputs. Invalid local resources leave official downloads and lifecycle scripts enabled. Nested pnpm lifecycle commands use a task-local launcher for the controller CLI rather than bootstrapping Corepack under isolated HOME. Initialization records uv reuse and distinguishes observed bundled-release connectivity blockers from model execution or native module defects.
 
 `harness/src/autopilot/` is a Node-only development subsystem. Zod contracts freeze plans and acceptance; an independent XState scheduler coordinates Codex planning/coding/review, registered test execution, Git worktrees, a credential-separated GitHub publisher, topological PR stacks and current-SHA CI repairs. It does not import the Electron workflow singleton or start the product Gateway.

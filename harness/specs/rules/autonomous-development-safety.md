@@ -8,6 +8,7 @@ appliesTo:
 
 - Start only from committed inputs; never stash, commit, or clean user changes.
 - Freeze versioned plans, acceptance, dependencies and exact write scopes outside worker workspaces.
+- Before freezing a generated proposal, the controller adds universal docs-sync and change-tag-mandated rules, records additions and validates the resulting contract. Only rule strengthening is automatic; loaded frozen plans, acceptance, checks, scopes and source identity are never rewritten to pass validation.
 - Validate all required tests, structured change tags, evidence and actual exit results. Missing conditions are blocked, not passed.
 - Workers do not receive GitHub/publishing credentials. No dangerous sandbox bypass, arbitrary model-generated shell commands, gate weakening, automatic merge or release.
 - Preserve the local Codex model/provider connection in private task-local configuration. Inherit only model authentication and required network variables; never import user hooks, MCP servers, plugins, trust policies or publisher credentials. Invalid configuration must fail instead of silently falling back to another provider.

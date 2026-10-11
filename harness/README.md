@@ -26,6 +26,8 @@ Existing historical task specs remain valid without retroactive frontmatter migr
 
 ## Autonomous Development
 
+Every generated task retains `docs-sync`, including test-only work: this requires documentation impact review, not unnecessary documentation edits. Before freezing, the controller adds missing universal and UI/comms-tag-mandated rules, records `planning/rule-additions.json` and hashes the strengthened plan. No extra model request is needed for these omissions. Acceptance, tests, scopes, sources and dependencies remain unchanged; imported frozen plans still fail if required rules are missing.
+
 Before dependency installation, verified native uv matching the frozen script's version is copied from the primary workspace or receipt-backed binary cache into each task. Version markers alone are not trusted; invalid binaries retain official downloads. A private pnpm launcher keeps nested lifecycle commands on the controller CLI without reinstalling Corepack. A failed bundled GitHub release download becomes an explicit environment blocker naming the asset and connectivity prerequisite, not a model or sharp failure. `initialization.json` records uv reuse.
 
 `pnpm harness autopilot plan --feature F33 --goal "A bounded development goal"` creates a frozen plan from committed docs and code. `pnpm harness autopilot run --plan <plan-file>` executes it; `run --feature <id> --goal <goal>` performs both steps. Use `status`, `resume`, or `cancel` with `--run <run-id>` for durable runs.

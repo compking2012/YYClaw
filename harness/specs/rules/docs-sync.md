@@ -4,9 +4,12 @@ title: Docs Sync
 type: ai-coding-rule
 appliesTo:
   - gateway-backend-communication
+  - autonomous-development
 ---
 
 ## Document Layer Contract
+
+Every autonomous task retains this rule, including test-only tasks. It requires an explicit documentation impact decision; it does not require unrelated documentation writes when behavior, flows and interfaces are unchanged.
 
 Source: [documentation ownership](../../../docs/DOCUMENTATION.md), [requirement breakdown](../../../docs/FEATURELIST.md), and [harness workflow](../../README.md).
 

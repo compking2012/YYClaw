@@ -19,7 +19,7 @@ export const taskSchema = z.object({
   dependencies: z.array(identifier),
   writePaths: z.array(relativeFile).min(1),
   changeTags: z.array(z.enum(['ui', 'comms', 'performance', 'docs', 'external'])),
-  requiredRules: z.array(identifier).min(1),
+  requiredRules: z.array(identifier).min(1).describe('Every task retains docs-sync, including test-only tasks. Communication/UI change tags additionally require their mandatory boundary, regression, localization and isolation rules.'),
   checks: z.array(check).min(1),
   acceptance: z.array(criterion).min(1),
   exclusions: z.array(z.string()),

@@ -10,8 +10,11 @@ touchedAreas:
   - harness/**
   - scripts/download-release.mjs
   - scripts/fix-electron-dev-arch.mjs
+  - scripts/bundled-uv-cache.mjs
+  - scripts/download-bundled-uv.mjs
   - tests/unit/harness*.test.ts
   - tests/unit/download-release.test.ts
+  - tests/unit/bundled-uv-cache.test.ts
   - README*.md
   - docs/**
 expectedUserBehavior:
@@ -24,11 +27,15 @@ requiredRules:
   - autonomous-development-safety
   - docs-sync
 requiredTests:
+  - tests/unit/bundled-uv-cache.test.ts
   - tests/unit/harness-autopilot.test.ts
   - tests/unit/harness-runner.test.ts
   - tests/unit/harness-specs.test.ts
   - tests/unit/download-release.test.ts
 acceptance:
+  - Native uv matching the frozen version is verified by executable header and actual version, copied through a receipt-backed cache and kept independent per workspace; mismatches retain required downloads.
+  - Nested pnpm lifecycle commands reuse the controller CLI rather than bootstrapping Corepack in temporary HOME.
+  - Observed bundled GitHub download failures report sanitized assets and network prerequisites as blocked without spending coding repairs.
   - Independent workspaces use the same resolved project-local store under node_modules/.autopilot-cache, copy packages, preserve version isolation and support offline reuse.
   - New dependency versions supplement the store without changing existing versions or the primary workspace.
   - Initialization retains required lifecycle scripts and safely inherits only network and mirror settings.

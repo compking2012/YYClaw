@@ -9,7 +9,8 @@ import { runStep } from '../runner.mjs';
 import { runAcceptance, auditChanges } from './acceptance.mjs';
 import { requiredTestStep } from '../validation.mjs';
 import { requirementContext, validateSources, taskMarkdown } from './planner.mjs';
-import { resolveDependencyCache, validateDependencyCache, ensureDependencyCache, dependencyEnvironment, dependencyInstallStep, initializationError } from './dependencies.mjs';
+import { resolveDependencyCache, validateDependencyCache, ensureDependencyCache, dependencyEnvironment, dependencyInstallStep, initializationError, prepareDependencyTools, dependencyFailure } from './dependencies.mjs';
+import { reuseBundledUv } from '../../../scripts/bundled-uv-cache.mjs';
 
 export const DEFAULT_CI_CHECKS = Object.freeze(['check', 'build', 'harness', 'comms-regression', 'Electron E2E (ubuntu-latest)', 'Electron E2E (macos-latest)', 'Electron E2E (windows-latest)']);
 export const runMachine = createMachine({
@@ -133,7 +134,11 @@ export class AutopilotEngine {
       }
       report.status = 'running';
       await persist();
+      await prepareDependencyTools(workspace.home);
       const env = dependencyEnvironment(workspace.home, cache);
+      report.bundledUv = await reuseBundledUv({ repo: this.repo, workspace: workspace.path, cacheDir: cache.releaseCacheDir, env });
+      this.onProgress(`[${workspace.taskId}] uv preparation: ${report.bundledUv.status}${report.bundledUv.version ? ` (${report.bundledUv.version}, ${report.bundledUv.target})` : ''}`);
+      await persist();
       for (const [stage, step, logName] of [
         ['dependency install', dependencyInstallStep(cache), 'install.log'],
         ['extension bridge', { name: 'Generate existing extension bridge', command: 'pnpm', args: ['run', 'ext:bridge'] }, 'extension-bridge.log'],
@@ -143,13 +148,13 @@ export class AutopilotEngine {
         const result = await this.observeStep(workspace, stage, step, { cwd: workspace.path, env, timeoutMs, signal: this.controller.signal, logPath: path.join(artifactDir, logName), ...this.processHooks(workspace) });
         if (result.status !== 'pass' && stage === 'dependency install') {
           const log = await readFile(result.logPath, 'utf8').catch(() => '');
-          result.failureKind = /(?:ERR_PNPM_FETCH_(?:401|403)|E401|E403)/.test(log) ? 'private registry authentication unavailable' : /(?:postinstall|preinstall|install)\$/.test(log) ? 'dependency lifecycle scripts' : /(?:ECONNRESET|ETIMEDOUT|ERR_PNPM_FETCH|downloaded [1-9]\d*|GET https?:)/.test(log) ? 'dependency downloads' : 'dependency installation';
+          Object.assign(result, dependencyFailure(log));
         }
         report.steps.push(result);
         await persist();
         if (result.status !== 'pass') {
           const error = new Error(initializationError(workspace.taskId, stage, result));
-          error.environmentBlocked = result.failureKind === 'private registry authentication unavailable';
+          error.environmentBlocked = ['private registry authentication unavailable', 'bundled release download unavailable'].includes(result.failureKind);
           throw error;
         }
       }

@@ -13,7 +13,7 @@ import { AutopilotEngine } from '../../harness/src/autopilot/engine.mjs';
 import { auditChanges, runAcceptance } from '../../harness/src/autopilot/acceptance.mjs';
 import { CodexAdapter, isolatedEnvironment, GitHubPublisher } from '../../harness/src/autopilot/adapters.mjs';
 import { loadCodexConnection, prepareCodexConnection } from '../../harness/src/autopilot/codex-config.mjs';
-import { dependencyEnvironment, dependencyInstallStep, validateDependencyCache, resolveDependencyCache, initializationError } from '../../harness/src/autopilot/dependencies.mjs';
+import { dependencyEnvironment, dependencyInstallStep, validateDependencyCache, resolveDependencyCache, initializationError, prepareDependencyTools, dependencyFailure } from '../../harness/src/autopilot/dependencies.mjs';
 import { autopilotCommand } from '../../harness/src/autopilot/cli.mjs';
 import { requiredTestStep, validationSteps } from '../../harness/src/validation.mjs';
 import { runStep } from '../../harness/src/runner.mjs';
@@ -277,6 +277,42 @@ function sharedCache(root: string) {
 }
 
 describe('shared dependency initialization', () => {
+  it('keeps nested pnpm commands on the controller CLI without bootstrapping Corepack in temporary HOME', async () => {
+    const { root } = await repository();
+    const home = path.join(root, 'tool-home');
+    const entry = path.join(root, 'fake-pnpm.cjs');
+    await writeFile(entry, `console.log(JSON.stringify({ args: process.argv.slice(2), home: process.env.HOME, token: process.env.GITHUB_TOKEN }));\n`);
+    vi.stubEnv('npm_execpath', entry);
+    await prepareDependencyTools(home);
+    const cache = sharedCache(root);
+    const env = dependencyEnvironment(home, cache, {});
+    await mkdir(env.TMPDIR, { recursive: true });
+    const logPath = path.join(root, 'nested-pnpm.log');
+    const result = await runStep({ name: 'Nested package manager', command: process.execPath, args: ['-e', `require('node:child_process').execFileSync('pnpm', ['run', 'uv:download'], { stdio: 'inherit' });`] }, { cwd: home, env, timeoutMs: 10000, logPath });
+    expect(result.status).toBe('pass');
+    expect(JSON.parse((await readFile(logPath, 'utf8')).trim())).toEqual({ args: ['run', 'uv:download'], home });
+  });
+
+  it('blocks bundled download connectivity failures with a specific asset rather than blaming the model or sharp', async () => {
+    const { root, repo, artifactRoot, sha } = await repository();
+    const cache = sharedCache(root);
+    const coding = adapter();
+    const executeStep = async (step, options) => {
+      await writeFile(options.logPath, '.../sharp install: Done\n. postinstall$ pnpm run uv:download\n. postinstall: Error: Download failed: https://github.com/astral-sh/uv/releases/download/0.10.0/uv-aarch64-apple-darwin.tar.gz. Check GitHub connectivity or set HTTPS_PROXY\n');
+      return { ...step, status: 'fail', exitCode: 1, durationMs: 12 };
+    };
+    const engine = new AutopilotEngine({ repo, artifactRoot, adapter: coding, publisher: publisher(repo), executeStep, resolveCache: async () => cache, onProgress: () => {} });
+    const blocked = await engine.start(plan(sha));
+    expect(blocked.status).toBe('blocked');
+    expect(blocked.error).toContain('bundled release download unavailable');
+    expect(blocked.error).toContain('/astral-sh/uv/releases/download/0.10.0/');
+    expect(blocked.error).toContain('HTTPS_PROXY');
+    expect(blocked.baseline.cleanup.status).toBe('pass');
+    expect(blocked.tasks.sample.repairs).toBe(0);
+    expect(coding.execute).not.toHaveBeenCalled();
+    expect(dependencyFailure('Download failed: https://github.com/org/tool/releases/download/v1/asset?token=private. Check GitHub connectivity').failureDetail).not.toContain('private');
+  });
+
   it('keeps one persistent store, private dependency trees and a credential-free network environment', async () => {
     const { root, repo, artifactRoot } = await repository();
     const cache = sharedCache(root);

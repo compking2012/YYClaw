@@ -34,6 +34,8 @@ The publisher pushes immutable task commits, creates or updates one draft PR per
 
 CI checks must be present and successful at the current PR SHA: `check`, `build`, `harness`, `comms-regression`, and all three `Electron E2E (...)` jobs. Pending, skipped, cancelled, missing and stale checks do not pass. Failed workflow logs feed bounded repair. All PRs remain draft until the entire current stack is accepted. There is no automatic merge or release.
 
+Native uv preparation checks the frozen script's version, executable platform/architecture header, actual `--version` and cached SHA256/size receipt. A verified primary-workspace installation may seed `releases/installed-uv/<version>/<platform-arch>/`; outputs are copied, not linked. The primary installation is a trusted local tool input, not upstream signature certification. Invalid binaries retain required official downloads. Nested lifecycle pnpm uses a private launcher for the controller's running pnpm entry. Observed GitHub release failures become blocked initialization with sanitized asset URLs and connectivity guidance; generic lifecycle failures retain their existing classification.
+
 ## Cleanup Contract
 
 Cleanup starts immediately after publication confirmation, before CI polling. It archives binary recovery diffs, untracked files, reports and an ownership/SHA/hash receipt outside the worktree. It stops registered process groups after verifying their PID/start identity, checks that the archive still matches current files and the published remote branch, then removes only that recorded worktree and its HOME/container. Git worktree removal updates registration; unrelated global pruning is intentionally not used. Remote branches, commits, PRs, shared caches and durable evidence remain.

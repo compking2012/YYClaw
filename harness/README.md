@@ -26,6 +26,8 @@ Existing historical task specs remain valid without retroactive frontmatter migr
 
 ## Autonomous Development
 
+Before dependency installation, verified native uv matching the frozen script's version is copied from the primary workspace or receipt-backed binary cache into each task. Version markers alone are not trusted; invalid binaries retain official downloads. A private pnpm launcher keeps nested lifecycle commands on the controller CLI without reinstalling Corepack. A failed bundled GitHub release download becomes an explicit environment blocker naming the asset and connectivity prerequisite, not a model or sharp failure. `initialization.json` records uv reuse.
+
 `pnpm harness autopilot plan --feature F33 --goal "A bounded development goal"` creates a frozen plan from committed docs and code. `pnpm harness autopilot run --plan <plan-file>` executes it; `run --feature <id> --goal <goal>` performs both steps. Use `status`, `resume`, or `cancel` with `--run <run-id>` for durable runs.
 
 Prerequisites: clean committed repository, pinned pnpm, authenticated compatible Codex CLI, authenticated `gh`, Git push rights, and Electron test dependencies. Defaults: 8 tasks, 2 independent coding tasks, 3 repairs, 6 hours. Options include `--model`, `--concurrency`, `--max-repairs`, `--max-hours`, `--target`, and explicit `--allow-risk dependencies,runtime,infrastructure,release`. Risk authorization never permits weakening tests. External acceptance may receive only explicitly authorized `--sandbox-env AUTOPILOT_SANDBOX_...` values; worker/publisher credentials are not passed to tests.

@@ -785,6 +785,8 @@ every change:
 
 ## Autonomous Repository Development (F33)
 
+uv preparation reads the required version from the frozen workspace script, verifies a trusted primary-workspace binary's executable header and actual version, and copies it through a receipt-backed persistent cache into private task outputs. Invalid local resources leave official downloads and lifecycle scripts enabled. Nested pnpm lifecycle commands use a task-local launcher for the controller CLI rather than bootstrapping Corepack under isolated HOME. Initialization records uv reuse and distinguishes observed bundled-release connectivity blockers from model execution or native module defects.
+
 `harness/src/autopilot/` is a Node-only development subsystem. Zod contracts freeze plans and acceptance; an independent XState scheduler coordinates Codex planning/coding/review, registered test execution, Git worktrees, a credential-separated GitHub publisher, topological PR stacks and current-SHA CI repairs. It does not import the Electron workflow singleton or start the product Gateway.
 
 The Codex adapter parses the local CLI configuration with a TOML parser and projects only the active model/provider connection into a private task-local Codex HOME. This preserves cc-switch endpoints, model authentication and necessary proxy/certificate variables without importing user hooks, MCP servers, plugins, trust or unsafe policies. Explicit sandbox/rule restrictions remain controller-owned. `--model` overrides only model selection; invalid provider configuration fails rather than defaulting to another route. These files are temporary secrets, not durable evidence.

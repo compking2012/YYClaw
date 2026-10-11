@@ -2,6 +2,7 @@
 
 import 'zx/globals';
 import { downloadRelease } from './download-release.mjs';
+import { inspectUvBinary } from './bundled-uv-cache.mjs';
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const UV_VERSION = '0.10.0';
@@ -59,7 +60,8 @@ async function setupTarget(id) {
   const destBin = path.join(targetDir, target.binName);
   if (await fs.pathExists(destBin) && await fs.pathExists(versionFile)) {
     const existingVersion = await fs.readFile(versionFile, 'utf8');
-    if (existingVersion.trim() === UV_VERSION) {
+    const [platform, arch] = id.split('-');
+    if (existingVersion.trim() === UV_VERSION && await inspectUvBinary(destBin, UV_VERSION, { platform, arch })) {
       echo(chalk.green`✅ uv ${UV_VERSION} for ${id} already exists, skipping download.`);
       return;
     }

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { lstatSync } from 'node:fs';
 import path from 'node:path';
 import { isolatedEnvironment } from './adapters.mjs';
@@ -66,6 +66,7 @@ export async function ensureDependencyCache(cache) {
 export function dependencyEnvironment(home, cache, source = process.env) {
   const network = Object.fromEntries(networkVariables.filter((name) => source[name] !== undefined).map((name) => [name, source[name]]));
   return isolatedEnvironment(home, {
+    PATH: [path.join(home, 'bin'), process.env.PATH].filter(Boolean).join(path.delimiter),
     ...network, npm_config_store_dir: cache.storeDir,
     npm_config_package_import_method: 'copy', npm_config_side_effects_cache: 'false',
     YYCLAW_RELEASE_CACHE_DIR: cache.releaseCacheDir,
@@ -74,11 +75,31 @@ export function dependencyEnvironment(home, cache, source = process.env) {
   });
 }
 
+export async function prepareDependencyTools(home) {
+  const entry = process.env.npm_execpath;
+  if (!entry || !/pnpm.*\.[cm]?js$/.test(entry) || !path.isAbsolute(entry)) return;
+  const directory = path.join(home, 'bin');
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const script = `#!/usr/bin/env node\nconst { spawnSync } = require('node:child_process');\nconst result = spawnSync(${JSON.stringify(process.execPath)}, [${JSON.stringify(entry)}, ...process.argv.slice(2)], { stdio: 'inherit', env: process.env });\nif (result.error) console.error(result.error.message);\nprocess.exit(result.status ?? 1);\n`;
+  await writeFile(path.join(directory, 'pnpm'), script, { mode: 0o755 });
+  if (process.platform === 'win32') await writeFile(path.join(directory, 'pnpm.cmd'), `@echo off\r\n"${process.execPath}" "${entry}" %*\r\n`, { mode: 0o700 });
+}
+
+export function dependencyFailure(log) {
+  const release = log.match(/Download failed: (https:\/\/github\.com\/[^\s;]+?)\.(?: Check|\s*postinstall:)/);
+  if (release) {
+    const asset = new URL(release[1]);
+    asset.username = ''; asset.password = ''; asset.search = ''; asset.hash = '';
+    return { failureKind: 'bundled release download unavailable', failureDetail: `${asset.toString()}; reuse a verified matching local binary or provide GitHub connectivity / HTTPS_PROXY` };
+  }
+  return { failureKind: /(?:ERR_PNPM_FETCH_(?:401|403)|E401|E403)/.test(log) ? 'private registry authentication unavailable' : /(?:postinstall|preinstall|install)\$/.test(log) ? 'dependency lifecycle scripts' : /(?:ECONNRESET|ETIMEDOUT|ERR_PNPM_FETCH|downloaded [1-9]\d*|GET https?:)/.test(log) ? 'dependency downloads' : 'dependency installation' };
+}
+
 export function dependencyInstallStep(cache) {
   return { name: 'Install committed workspace dependencies', command: 'pnpm', args: ['install', '--frozen-lockfile', '--prefer-offline', '--store-dir', cache.storeDir, '--package-import-method=copy', '--no-side-effects-cache', '--stream'] };
 }
 
 export function initializationError(taskId, stage, result) {
   const reason = result.error === 'Command timed out' ? 'timed out' : result.error === 'Command cancelled' ? 'was cancelled' : `failed (exit ${result.exitCode ?? 'unknown'})`;
-  return `${taskId} ${stage} ${reason}; elapsed ${Math.round(result.durationMs / 1000)}s; limit ${Math.round(result.timeoutMs / 1000)}s; log: ${result.logPath}${result.failureKind ? `; last observed phase: ${result.failureKind}` : ''}${result.error && !['Command timed out', 'Command cancelled'].includes(result.error) ? `; ${result.error}` : ''}`;
+  return `${taskId} ${stage} ${reason}; elapsed ${Math.round(result.durationMs / 1000)}s; limit ${Math.round(result.timeoutMs / 1000)}s; log: ${result.logPath}${result.failureKind ? `; last observed phase: ${result.failureKind}` : ''}${result.failureDetail ? `; ${result.failureDetail}` : ''}${result.error && !['Command timed out', 'Command cancelled'].includes(result.error) ? `; ${result.error}` : ''}`;
 }

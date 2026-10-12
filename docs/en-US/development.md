@@ -199,6 +199,8 @@ On packaged Windows builds, the bundled `openclaw` CLI/TUI runs via the shipped
 
 ### Autonomous Development Tooling
 
+Autopilot explicitly targets the Git origin host/owner/repository for PR and CI/log operations, never the inherited ClawX upstream or GH_REPO. GitHub CLI defaults and Git remotes are unchanged; unsafe or ambiguous origins block publication.
+
 UI acceptance requires fresh structured reports for Playwright files and registered E2E/performance scripts. Missing, empty, failed or flaky evidence fails even when the command exits successfully; directed or acceptance-mapped checks reject skipped requirements regardless of their declared kind. Only controller-added whole-suite quality checks retain platform exclusions, without certifying a requirement.
 
 Baseline fixtures isolate personal configuration and declare their own pnpm workspace roots, including when TMPDIR is inside a worktree. Resource leases publish complete ownership atomically and release idempotently; unknown leases are preserved. Commit and push reviewed baseline repairs before generating a new plan, never rewrite its frozen input SHA.

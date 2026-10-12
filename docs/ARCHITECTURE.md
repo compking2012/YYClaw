@@ -1,5 +1,7 @@
 # Architecture -- YYClaw AI Workbench
 
+Autopilot publication resolves the Git origin SSH/HTTPS host/owner/repository and explicitly scopes all GitHub PR and CI/log queries to that identity. Upstream ClawX remotes and GH_REPO cannot redirect delivery; user remote/default configuration is unchanged, and ambiguous or credential-bearing origins block publication.
+
 ## Document Role
 
 This development document derives technical design from [PRODUCT.md](PRODUCT.md) and maps delivery boundaries to the stable IDs in [FEATURELIST.md](FEATURELIST.md). It may contain current implementation and proposed architecture; target sections and their TODO/PARTIAL status must stay explicit. It is not a public architecture guide and does not require translation.

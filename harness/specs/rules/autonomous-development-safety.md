@@ -17,6 +17,7 @@ appliesTo:
 - Preserve the local Codex model/provider connection in private task-local configuration. Inherit only model authentication and required network variables; never import user hooks, MCP servers, plugins, trust policies or publisher credentials. Invalid configuration must fail instead of silently falling back to another provider.
 - Dependencies, runtime patches, CI infrastructure and publishing configuration need explicit risk authorization; authorization never permits test weakening.
 - Publish per-task draft PRs in deterministic topological order. Evidence is tied to the published SHA, including after stack repairs.
+- Bind publisher PR operations and CI/log queries explicitly to the Git origin host/owner/repository, never GitHub CLI upstream inference or GH_REPO. Do not alter user remote/default configuration; ambiguous or credential-bearing origins block publication.
 - Before removing a workspace, persist evidence and either verify published SHA/PR or archive the recoverable changes.
 - Cleanup touches only recorded run/task-owned directories and processes. Preserve primary workspaces, foreign data, shared caches, remote branches and durable evidence.
 - Cleanup is idempotent and required for completion. A cleanup failure blocks new workspace allocation.

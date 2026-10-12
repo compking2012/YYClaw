@@ -113,6 +113,8 @@ tracking references, not delivery order or release commitments.
 
 ## TODO Items — PRD Backlog
 
+F33 publisher repository selection is explicitly bound to origin for PR and CI/log operations, including inherited ClawX upstream configurations. This does not certify remote CI execution or promote F33 beyond PARTIAL.
+
 Every **PARTIAL** row above has outstanding TODO Items; **TODO** rows have no
 integrated delivery yet. This index groups the remaining work without duplicating
 the authoritative completion boundaries or implying a priority commitment.

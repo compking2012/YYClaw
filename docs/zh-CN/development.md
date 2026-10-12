@@ -140,6 +140,8 @@ Playwright 的 Electron 套件会从 `dist/` 与 `dist-electron/` 启动打包�
 
 ### 自动开发工具
 
+Autopilot 的 PR 和 CI/日志操作明确绑定 Git origin 的主机、所有者和仓库，不依赖继承的 ClawX upstream 或 GH_REPO。不会修改 GitHub CLI 默认仓库或 Git remote；来源含糊或不安全时阻塞发布。
+
 基线夹具隔离个人配置并声明独立 pnpm 工作区根目录，TMPDIR 位于 worktree 内也不会接管外层锁文件。资源锁原子写入完整所有权并幂等释放；未知归属的锁保留待核查。修复需审核、提交并推送后重新生成计划，不改写冻结的输入 SHA。
 
 项目 harness 提供有界任务拆解、隔离 Codex 编码、独立测试验收、逐任务 Draft PR 和提交后立即清理工作区。CI 修复会重新创建临时工作区；合并和发布仍由人工控制。先运行 `pnpm harness autopilot plan --feature <id> --goal "<goal>"`，再运行 `pnpm harness autopilot run --plan <plan-file>`。需要干净且已提交的仓库、已登录的 Codex 与 GitHub CLI，以及测试依赖。外部服务需要专用沙箱凭据，缺条件不会判定验收通过。默认最多 8 个任务、2 个编码任务并行、3 轮修复、6 小时。具体安全边界和部署限制见开发 harness 指南。

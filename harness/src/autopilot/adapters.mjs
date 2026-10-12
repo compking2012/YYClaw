@@ -99,16 +99,30 @@ export class GitHubPublisher {
   constructor(repo, options = {}) {
     this.repo = repo;
     this.executable = options.executable ?? 'gh';
+    this.execFile = options.execFile ?? execute;
+  }
+
+  async repository() {
+    if (this.repositoryIdentity) return this.repositoryIdentity;
+    const origin = await git(this.repo, ['remote', 'get-url', 'origin']);
+    const normalized = origin.replace(/^git@([^:]+):/, 'ssh://git@$1/');
+    let remote;
+    try { remote = new URL(normalized); } catch { throw new Error('Autopilot publisher requires a GitHub SSH/HTTPS origin'); }
+    const components = remote.pathname.replace(/\.git\/?$/, '').split('/').filter(Boolean);
+    if (!['https:', 'ssh:'].includes(remote.protocol) || remote.password || remote.protocol === 'https:' && remote.username || remote.search || remote.hash || components.length !== 2 || components.some((entry) => !/^[\w.-]+$/.test(entry) || entry === '.' || entry === '..')) throw new Error('Autopilot publisher requires a GitHub SSH/HTTPS origin');
+    this.repositoryIdentity = `${remote.hostname}/${components.join('/')}`;
+    return this.repositoryIdentity;
   }
 
   async gh(args) {
-    const result = await execute(this.executable, args, { cwd: this.repo, timeout: 120000, maxBuffer: 8 * 1024 * 1024 });
+    const scoped = ['pr', 'run'].includes(args[0]) ? [...args, '--repo', await this.repository()] : args;
+    const result = await this.execFile(this.executable, scoped, { cwd: this.repo, timeout: 120000, maxBuffer: 8 * 1024 * 1024 });
     return result.stdout.trim();
   }
 
   async preflight() {
+    await this.repository();
     await this.gh(['auth', 'status']);
-    await git(this.repo, ['remote', 'get-url', 'origin']);
   }
 
   async lookup({ branch, base, sha }) {

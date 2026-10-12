@@ -6,6 +6,8 @@ UI baseline validation uses current settings-modal tabs and explicitly selected 
 
 ## Implemented Architecture
 
+The publisher resolves the Git origin SSH/HTTPS host, owner and repository and supplies it explicitly to every GitHub CLI PR and CI/log command. Upstream remotes and GH_REPO cannot redirect delivery. This does not modify GitHub CLI defaults or Git remotes; unsafe, ambiguous or credential-bearing origin URLs fail before publication.
+
 Validation ownership is explicit: coding workers write scoped changes and may report `validation-pending` when their restricted sandbox cannot run local tests (`listen/spawn EPERM`). This additive worker-result status does not alter version-1 frozen plans or acceptance criteria and never counts as acceptance. The controller audits nonempty changes and executes every registered frozen and mandatory check under the existing host-resource lease with private HOME and scoped process ownership. Controller failures remain failures, external conditions remain blocked, and genuine worker implementation blockers are not reclassified. Independent read-only review reads actual controller logs instead of rerunning network/process/UI/full-suite tests. No Codex sandbox permissions are broadened; manual development validation is unchanged.
 
 Independent review requires exactly one passing verdict for every frozen acceptance ID. Appending duplicates to an otherwise complete passing set fails acceptance and produces a finding. The frozen-contract regression exercises controller receipt identity, protected writes, rule completion and real structured-evidence negative cases without external accounts; it is not deployment certification.

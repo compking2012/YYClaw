@@ -544,6 +544,8 @@ pnpm run comms:compare
 
 ### Autonomous Development Tooling
 
+PR and CI operations explicitly target Git `origin`, not the inherited ClawX upstream or GitHub CLI default repository.
+
 UI acceptance requires fresh structured test reports, not only a successful command exit; missing, empty, failed or flaky results do not pass, and directed UI checks cannot skip requirements.
 
 Baseline tests isolate personal configuration and enclosing pnpm workspaces. Shared leases use atomic ownership publication and idempotent release; unverified leases are retained for safe recovery. Commit and push reviewed baseline repairs before generating a new plan; existing plans remain bound to their original commit.

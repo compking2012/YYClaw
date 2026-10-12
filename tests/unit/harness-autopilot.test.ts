@@ -332,6 +332,48 @@ function publisher(repo: string, failOnce = false) {
   }) };
 }
 
+describe('GitHub publisher origin identity', () => {
+  it.each([
+    ['git@github.com:example/YYClaw.git', 'github.com/example/YYClaw'],
+    ['https://github.com/example/YYClaw.git', 'github.com/example/YYClaw'],
+    ['ssh://git@github.com/example/YYClaw.git', 'github.com/example/YYClaw'],
+    ['git@github.enterprise.test:example/YYClaw.git', 'github.enterprise.test/example/YYClaw'],
+  ])('scopes every PR and CI command to origin %s, not upstream or GH_REPO', async (origin, identity) => {
+    const { repo } = await repository();
+    await git(repo, ['remote', 'set-url', 'origin', origin]);
+    await git(repo, ['remote', 'add', 'upstream', 'git@github.com:upstream/ClawX.git']);
+    vi.stubEnv('GH_REPO', 'upstream/ClawX');
+    const execute = vi.fn(async () => ({ stdout: '[]', stderr: '' }));
+    const publishing = new GitHubPublisher(repo, { execFile: execute });
+    await publishing.preflight();
+    expect(execute).toHaveBeenCalledWith('gh', ['auth', 'status'], expect.objectContaining({ cwd: repo }));
+    const commands = [
+      ['pr', 'list', '--head', 'codex/task'],
+      ['pr', 'create', '--draft', '--head', 'codex/task', '--base', 'main'],
+      ['pr', 'edit', '33', '--base', 'main'],
+      ['pr', 'view', '33', '--json', 'headRefOid,statusCheckRollup'],
+      ['pr', 'ready', '33'],
+      ['run', 'view', '123', '--log-failed'],
+    ];
+    for (const args of commands) {
+      await publishing.gh(args);
+      expect(execute).toHaveBeenLastCalledWith('gh', [...args, '--repo', identity], expect.objectContaining({ cwd: repo }));
+    }
+    expect(await git(repo, ['remote', 'get-url', 'origin'])).toBe(origin);
+    expect(await git(repo, ['remote', 'get-url', 'upstream'])).toBe('git@github.com:upstream/ClawX.git');
+  }, 30000);
+
+  it.each(['/tmp/local-origin.git', 'https://github.com/owner', 'https://github.com/owner/repo/extra', 'https://user:secret@github.com/owner/repo.git', 'https://secret@github.com/owner/repo.git', 'https://github.com/owner/repo.git?token=secret'])('rejects unsafe or ambiguous origin before GitHub commands: %s', async (origin) => {
+    const { repo } = await repository();
+    await git(repo, ['remote', 'set-url', 'origin', origin]);
+    const execute = vi.fn();
+    const publishing = new GitHubPublisher(repo, { execFile: execute });
+    await expect(publishing.preflight()).rejects.toThrow('requires a GitHub SSH/HTTPS origin');
+    await expect(publishing.gh(['pr', 'list'])).rejects.toThrow('requires a GitHub SSH/HTTPS origin');
+    expect(execute).not.toHaveBeenCalled();
+  }, 30000);
+});
+
 const acceptance = async () => ({ status: 'pass', acceptance: [{ id: 'behavior', status: 'pass' }], steps: [] });
 
 function sharedCache(root: string) {

@@ -144,6 +144,8 @@ macOS で Linux の `.deb` ターゲットをビルドするには GNU tar と G
 
 ### 自動開発ツール
 
+Autopilot の PR と CI/ログ操作は Git origin のホスト・所有者・リポジトリを明示し、継承した ClawX upstream や GH_REPO に依存しません。GitHub CLI の既定値や Git remote は変更せず、曖昧または安全でない origin は公開をブロックします。
+
 ベースラインのフィクスチャは個人設定を分離し、TMPDIR が worktree 内でも独自の pnpm ワークスペースを宣言します。ロックは完全な所有情報をアトミックに公開し、冪等に解放します。不明な所有は保持します。修正をレビュー、コミット、プッシュしてから計画を再生成し、固定された入力 SHA は書き換えません。
 
 リポジトリの harness は、有界なタスク分解、隔離された Codex 実装、独立したテスト検証、タスクごとの Draft PR、および公開直後の作業領域クリーンアップを提供します。CI 修正では一時作業領域を再作成し、マージとリリースは手動です。`pnpm harness autopilot plan --feature <id> --goal "<goal>"` の後に `pnpm harness autopilot run --plan <plan-file>` を実行します。変更がコミット済みのクリーンなリポジトリ、認証済み Codex/GitHub CLI、テスト依存関係が必要です。外部サービスには専用サンドボックス認証情報が必要で、不足時は検証を停止します。既定値は 8 タスク、2 並列ワーカー、3 修正ラウンド、6 時間です。安全条件と配備制限は開発 harness ガイドを参照してください。

@@ -1,5 +1,7 @@
 # Product Requirements (PRD) — YYClaw AI Workbench
 
+F33 delivery binds GitHub PR creation, updates and current-SHA CI/log queries to the same origin repository as Git pushes, not an inherited ClawX upstream or GitHub CLI default. Repository mismatch cannot count as successful publication or feature completion.
+
 ## Document Role
 
 This development document defines product scope, user needs, and intended acceptance boundaries, including implemented and unimplemented requirements. It is not a public feature guide and does not require translation.

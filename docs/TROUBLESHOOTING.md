@@ -1,5 +1,7 @@
 # Troubleshooting and Quality Checks
 
+- **Autopilot PR repository mismatch**: With both YYClaw origin and ClawX upstream configured, GitHub CLI can infer upstream while Git pushes to origin. The resulting PR error can mention blank head/base SHAs or no commits despite a valid pushed branch. The publisher explicitly selects origin host/owner/repository for all PR and CI/log operations; it does not change user defaults. Diagnose the pushed remote branch and selected repository separately from coding or acceptance failures.
+
 This is a development-only companion to the PRD, feature breakdown, and architecture. It records environment traps and quality gates, not public feature claims. See [DOCUMENTATION.md](DOCUMENTATION.md) for the document hierarchy.
 
 - **Autonomous development**: `pnpm harness autopilot` requires clean committed inputs matching the remote target SHA, an authenticated compatible Codex CLI, authenticated `gh`, Git push rights and a green baseline. A failed baseline blocks coding. Publication, missing CI, unverified process ownership, stale evidence or cleanup failures leave explicit non-success run states under `artifacts/autopilot/`; inspect `run.json` before `resume --run <id>`. Resume keeps the original deadline. Never delete retained foreign/unbacked resources merely to turn a run green.

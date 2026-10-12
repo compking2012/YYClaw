@@ -29,6 +29,7 @@ requiredTests:
   - tests/unit/harness-runner.test.ts
   - tests/unit/harness-specs.test.ts
 acceptance:
+  - Publisher PR creation, lookup, edits, readiness and CI log queries explicitly select the same origin repository as Git pushes, even with an upstream ClawX remote or conflicting GH_REPO; unsafe origins fail before GitHub operations without changing user configuration.
   - Code-ready workers can report validation-pending for local sandbox restrictions; the controller still executes all frozen and mandatory checks and independently reviews current evidence before PR publication.
   - Actual loopback and subprocess integration checks run through the controller runner, retaining private HOME and credential isolation. Genuine blocked implementations, failed tests, missing external prerequisites, unauthorized writes and empty patches cannot publish or become ready.
   - Coding and read-only review prompts explicitly assign full-suite and system-resource tests to the controller without widening Codex sandbox permissions or reclassifying historical blocked reports by string matching.

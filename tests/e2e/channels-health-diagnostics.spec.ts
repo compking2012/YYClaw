@@ -1,4 +1,4 @@
-import { completeSetup, expect, test } from './fixtures/electron';
+import { openSettingsTab, completeSetup, expect, test } from './fixtures/electron';
 
 test.describe('Channels health diagnostics', () => {
   test('does not flash a stale gateway-not-running banner while status is running', async ({ electronApp, page }) => {
@@ -134,7 +134,7 @@ test.describe('Channels health diagnostics', () => {
     });
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
+    await openSettingsTab(page, 'channels');
     await expect(page.getByTestId('channel-status-dingtalk')).toHaveText(/Connected|已连接|接続済み|Подключ/);
     await expect(page.getByTestId('channel-note-dingtalk')).toContainText(/bundled|随包|同梱|встроенн/i);
     await expect(page.getByTestId('dingtalk-workspace-authorize')).toHaveCount(0);
@@ -270,6 +270,7 @@ test.describe('Channels health diagnostics', () => {
       });
     });
 
+    await page.reload();
     await completeSetup(page);
 
     await page.evaluate(() => {
@@ -321,7 +322,7 @@ test.describe('Channels health diagnostics', () => {
   });
 
   test('shows deadline verification through existing diagnostics', async ({ electronApp, page }) => {
-    await electronApp.evaluate(({ ipcMain }) => {
+    await electronApp.evaluate(({ ipcMain, BrowserWindow }) => {
       const originalHostInvoke = (ipcMain as unknown as {
         _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
       })._invokeHandlers?.get('host:invoke');
@@ -372,10 +373,15 @@ test.describe('Channels health diagnostics', () => {
         }
         return originalHostInvoke?.(event, request) ?? respond(request?.id, {});
       });
+      ipcMain.removeHandler('gateway:status');
+      ipcMain.handle('gateway:status', async () => ({ state: 'running', port: 18789 }));
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send('gateway:status-changed', { state: 'running', port: 18789 });
+      }
     });
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
+    await openSettingsTab(page, 'channels');
     await expect(page.getByTestId('channels-health-banner')).toBeVisible();
     await expect(page.getByTestId('channels-recovery-status')).toContainText(/verifying Gateway responsiveness|正在验证网关响应|ゲートウェイの応答を確認中/i);
 

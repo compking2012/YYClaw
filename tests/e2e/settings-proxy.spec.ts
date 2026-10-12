@@ -59,6 +59,8 @@ test.describe('ClawX developer proxy settings', () => {
     await expect(proxySaveButton).toBeEnabled();
     await proxySaveButton.click();
     await expect.poll(async () => await readProxyEnabled(page)).toBe(true);
+    await expect(proxySaveButton).toBeDisabled();
+    await expect(proxySaveButton).toHaveText('Save');
 
     await ensureSwitchState(proxyToggle, false);
     await expect(proxySaveButton).toBeVisible();

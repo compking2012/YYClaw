@@ -565,6 +565,9 @@ export function ChannelConfigModal({
         }
 
         toast.success(t('autoCreateFeishu.success'));
+        if (result.larkCliReady === false) {
+          toast.info(t('autoCreateFeishu.larkCliPending'), { duration: 10000 });
+        }
 
         if (result.app_id && result.app_secret) {
           setConfigValues((prev) => ({
@@ -1169,6 +1172,17 @@ export function ChannelConfigModal({
                     <Sparkles className="h-4 w-4 text-blue-500" />
                     {feishuCreateMode === 'edit' ? t('autoCreateFeishu.editTitle') : t('autoCreateFeishu.title')}
                   </h4>
+                  {feishuCreateMode === 'create' && (
+                    <div className="rounded-xl bg-surface-input p-3 space-y-2">
+                      <h5 className="text-sm font-medium">{t('autoCreateFeishu.botMenu.title')}</h5>
+                      <p className="text-xs text-muted-foreground">{t('autoCreateFeishu.botMenu.description')}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {['/new', '/stop', '/reset', '/status', '/compact'].map((command) => (
+                          <code key={command} className="text-xs">{command}</code>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-3">
                     <div>
                       <Label className={labelClasses}>{t('autoCreateFeishu.appName')}</Label>

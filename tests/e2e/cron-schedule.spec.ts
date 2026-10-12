@@ -58,6 +58,7 @@ test.describe('cron schedule builder', () => {
       gatewayRpc: {},
       hostApi: BASE_HOST_API,
     });
+    await page.reload();
 
     await completeSetup(page);
 

@@ -138,7 +138,7 @@ export function resolveEffectiveWorkspace(input: {
   defaultWorkspace?: string;
 }): WorkspaceResolution {
   const defaultWorkspace = normalizeWorkspacePath(input.defaultWorkspace) ?? DEFAULT_WORKSPACE_CWD;
-  if (input.session?.key === DEFAULT_SESSION_KEY && input.defaultWorkspace) {
+  if (input.session?.key === DEFAULT_SESSION_KEY) {
     return { cwd: defaultWorkspace, source: 'default', readOnly: true };
   }
 

@@ -105,7 +105,9 @@ test.describe('OpenClaw Dreams', () => {
       gatewayStatus: { state: 'running', port: 18789, pid: 12345, gatewayReady: true },
       gatewayRpc: dreamsRpcMocks,
     });
+    await page.reload();
     await page.getByRole('button', { name: '中文', exact: true }).click();
+    await page.reload();
     await completeSetup(page);
     await page.getByTestId('sidebar-nav-settings').click();
     await page.getByTestId('settings-tab-memory').click();
@@ -151,6 +153,7 @@ test.describe('OpenClaw Dreams', () => {
       },
     });
 
+    await page.reload();
     await completeSetup(page);
     await expect(page.getByTestId('sidebar-nav-settings')).toBeVisible();
     await page.getByTestId('sidebar-nav-settings').click();
@@ -228,6 +231,7 @@ test.describe('OpenClaw Dreams', () => {
       },
     });
 
+    await page.reload();
     await completeSetup(page);
     await page.getByTestId('sidebar-nav-settings').click();
     await page.getByTestId('settings-tab-memory').click();
@@ -287,6 +291,7 @@ test.describe('OpenClaw Dreams', () => {
       },
     });
 
+    await page.reload();
     await completeSetup(page);
     await page.getByTestId('sidebar-nav-settings').click();
     await page.getByTestId('settings-tab-memory').click();

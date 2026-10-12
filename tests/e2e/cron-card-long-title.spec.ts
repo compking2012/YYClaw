@@ -65,6 +65,7 @@ test.describe('Cron job card layout', () => {
       },
     });
 
+    await page.reload();
     await completeSetup(page);
     await page.getByTestId('sidebar-nav-cron').click();
 

@@ -103,6 +103,7 @@ const { acpState, agentsState, artifactPanelState, artifactPanelProps, chatState
     failObservedWorkflow: vi.fn(),
     healStaleObservedWorkflows: vi.fn(),
     workflowCardsBySession: {},
+    workflowRoutingSessionKey: null as string | null,
     abortRun: vi.fn(),
     clearError: vi.fn(),
     loadMoreHistory: vi.fn(),
@@ -181,6 +182,7 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
     onSend,
     onStop,
     sending,
+    routing,
     workspaceLabel,
     workspacePath,
     workspaceReadOnly,
@@ -189,12 +191,13 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
     onSend: (text: string, attachments?: Array<Record<string, unknown>>, targetAgentId?: string | null) => void;
     onStop?: () => void;
     sending?: boolean;
+    routing?: boolean;
     workspaceLabel?: string;
     workspacePath?: string;
     workspaceReadOnly?: boolean;
     onSelectWorkspace?: (path: string) => void;
   }) => (
-    <div data-testid="mock-chat-input" data-disabled={disabled ? 'true' : 'false'} data-sending={sending ? 'true' : 'false'}>
+    <div data-testid="mock-chat-input" data-disabled={disabled ? 'true' : 'false'} data-sending={sending ? 'true' : 'false'} data-routing={routing ? 'true' : 'false'}>
       <span data-testid="mock-workspace-label">{workspaceLabel}</span>
       <span data-testid="mock-workspace-path">{workspacePath}</span>
       <span data-testid="mock-workspace-readonly">{workspaceReadOnly ? 'readonly' : 'editable'}</span>
@@ -380,6 +383,7 @@ describe('ACP Chat page', () => {
     openDialog.mockReset();
     chatState.sessions = [{ key: 'agent:main:main', workspacePath: '/workspace' }];
     chatState.currentSessionKey = 'agent:main:main';
+    chatState.workflowRoutingSessionKey = null;
     chatState.currentAgentId = 'main';
     chatState.loadSessions.mockReset();
     chatState.loadSessions.mockResolvedValue(undefined);
@@ -427,6 +431,16 @@ describe('ACP Chat page', () => {
     });
   });
 
+  it('keeps workflow decomposition feedback scoped to the current conversation', async () => {
+    chatState.workflowRoutingSessionKey = chatState.currentSessionKey;
+    const view = render(<Chat />);
+    await waitFor(() => expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-routing', 'true'));
+    chatState.workflowRoutingSessionKey = 'agent:main:other';
+    view.rerender(<Chat />);
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-routing', 'false');
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'false');
+  });
+
   it('sends ready staged attachments and cancels through the ACP session store', async () => {
     acpState.workspaceRoot = '/workspace';
     acpState.cwd = '/workspace';
@@ -456,13 +470,14 @@ describe('ACP Chat page', () => {
     agentsState.loading = false;
     agentsState.fetchAgents.mockReturnValue(deferred.promise);
     settingsState.chatWorkspacePath = '/global-workspace';
-    chatState.sessions = [{ key: 'agent:main:main', workspacePath: '/session-workspace' }];
+    chatState.currentSessionKey = 'agent:main:persisted';
+    chatState.sessions = [{ key: 'agent:main:persisted', workspacePath: '/session-workspace' }];
 
     const { rerender } = render(<Chat />);
 
     await waitFor(() => {
       expect(acpState.loadSession).toHaveBeenCalledWith({
-        sessionKey: 'agent:main:main', workspaceRoot: '/session-workspace', cwd: '/session-workspace',
+        sessionKey: 'agent:main:persisted', workspaceRoot: '/session-workspace', cwd: '/session-workspace',
       });
     });
 
@@ -472,7 +487,7 @@ describe('ACP Chat page', () => {
 
     await waitFor(() => {
       expect(acpState.loadSession).toHaveBeenCalledWith({
-        sessionKey: 'agent:main:main',
+        sessionKey: 'agent:main:persisted',
         workspaceRoot: '/session-workspace',
         cwd: '/session-workspace',
       });

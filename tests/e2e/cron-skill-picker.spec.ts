@@ -84,6 +84,7 @@ async function installCronSkillMocks(electronApp: ElectronApplication) {
 test.describe('cron skill picker', () => {
   test('inserts a skill token into the scheduled task message without preview', async ({ electronApp, page }) => {
     await installCronSkillMocks(electronApp);
+    await page.reload();
     await completeSetup(page);
 
     await page.getByTestId('sidebar-nav-cron').click();
@@ -112,6 +113,7 @@ test.describe('cron skill picker', () => {
     page,
   }) => {
     await installCronSkillMocks(electronApp);
+    await page.reload();
     await completeSetup(page);
 
     await page.getByTestId('sidebar-nav-cron').click();
@@ -139,6 +141,7 @@ test.describe('cron skill picker', () => {
     page,
   }) => {
     await installCronSkillMocks(electronApp);
+    await page.reload();
     await completeSetup(page);
 
     await page.getByTestId('sidebar-nav-cron').click();

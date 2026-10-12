@@ -118,6 +118,9 @@ async function openChat(app: ElectronApplication) {
     }
   }
   await expect(page.getByTestId('main-layout')).toBeVisible();
+  const sessionRow = page.getByTestId(`sidebar-session-${PROJECT_MANAGER_SESSION_KEY}`);
+  await sessionRow.click();
+  await expect(sessionRow).toHaveAttribute('aria-current', 'page');
   return page;
 }
 

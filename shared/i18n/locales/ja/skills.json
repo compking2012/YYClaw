@@ -66,6 +66,7 @@
         "pathUnavailable": "パスを取得できません",
         "configurable": "設定可能",
         "uninstall": "アンインストール",
+        "uninstalling": "アンインストール中...",
         "enable": "有効化",
         "disable": "無効化"
     },

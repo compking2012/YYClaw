@@ -145,6 +145,7 @@ test.describe('ClawX chat question directory', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await emitAcpSessionUpdates(app, messagesToAcpUpdates(seededHistory));
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
@@ -202,7 +203,7 @@ test.describe('ClawX chat question directory', () => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
-      await installQuestionDirectoryMocks(app, seededHistory);
+      await installQuestionDirectoryMocks(app);
 
       const page = await getStableWindow(app);
       await page.setViewportSize({ width: 1600, height: 900 });
@@ -215,7 +216,10 @@ test.describe('ClawX chat question directory', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
-
+      const sessionRow = page.getByTestId(`sidebar-session-${SESSION_KEY}`);
+      await sessionRow.click();
+      await expect(sessionRow).toHaveAttribute('aria-current', 'page');
+      await emitAcpSessionUpdates(app, messagesToAcpUpdates(seededHistory));
       const toggle = page.getByTestId('chat-question-directory-toggle');
       const directory = page.getByTestId('chat-question-directory');
 
@@ -229,7 +233,7 @@ test.describe('ClawX chat question directory', () => {
       // Reopen, then click outside the anchored popover to dismiss it.
       await toggle.click();
       await expect(directory).toBeVisible();
-      await page.mouse.click(20, 20);
+      await page.getByTestId('chat-composer-input').click();
       await expect(directory).toBeHidden();
 
       // The toolbar button still reopens it afterward.
@@ -257,6 +261,7 @@ test.describe('ClawX chat question directory', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await emitAcpSessionUpdates(app, messagesToAcpUpdates(longQuestionDirectoryHistory));
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });

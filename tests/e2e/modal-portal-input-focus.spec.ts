@@ -34,13 +34,16 @@ const responses = {
 test.describe('ModalPortal input focus', () => {
   test('can click into and type in a portaled modal input while Settings is open', async ({ electronApp, page }) => {
     await electronApp.evaluate(({ ipcMain }, res) => {
+      const originalHostInvoke = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers?.get('host:invoke');
       const respond = (id: unknown, data: unknown) => ({ id: typeof id === 'string' ? id : undefined, ok: true, data });
       ipcMain.removeHandler('host:invoke');
-      ipcMain.handle('host:invoke', async (_event, request: { id?: string; module?: string; action?: string }) => {
+      ipcMain.handle('host:invoke', async (event, request: { id?: string; module?: string; action?: string }) => {
         if (request?.module === 'channels' && request.action === 'accounts') return respond(request.id, res.channelsAccounts);
         if (request?.module === 'agents' && request.action === 'list') return respond(request.id, res.agents);
         if (request?.module === 'channels' && request.action === 'formValues') return respond(request.id, { success: true, values: {} });
-        return respond(request?.id, {});
+        return originalHostInvoke?.(event, request) ?? respond(request?.id, {});
       });
     }, responses);
 
@@ -60,6 +63,9 @@ test.describe('ModalPortal input focus', () => {
     // Real click to focus (not .fill), then verify focus actually landed and stuck.
     await input.click();
     await expect(input).toBeFocused();
+    await input.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+    await input.press('Backspace');
+    await expect(input).toHaveValue('');
 
     // Per-key typing requires sustained focus across keystrokes.
     await input.pressSequentially('mybot', { delay: 20 });

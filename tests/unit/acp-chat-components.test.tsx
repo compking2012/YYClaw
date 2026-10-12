@@ -271,6 +271,7 @@ describe('ACP chat timeline components', () => {
     const paragraph = userMessage.querySelector('p');
     expect(paragraph?.textContent).toBe(userText);
     expect(paragraph).toHaveClass('whitespace-pre-wrap');
+    expect(paragraph).toHaveClass('[overflow-wrap:anywhere]');
     expect(userMessage.querySelector('strong')).not.toBeInTheDocument();
     expect(userMessage.querySelector('code')).not.toBeInTheDocument();
     expect(userMessage.querySelector('h1')).not.toBeInTheDocument();

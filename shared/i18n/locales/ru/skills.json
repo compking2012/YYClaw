@@ -66,6 +66,7 @@
         "pathUnavailable": "Путь недоступен",
         "configurable": "Настраиваемый",
         "uninstall": "Удалить",
+        "uninstalling": "Удаление...",
         "enable": "Включить",
         "disable": "Выключить"
     },

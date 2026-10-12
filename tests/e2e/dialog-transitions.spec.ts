@@ -72,7 +72,8 @@ async function expectCleanDialogClose(locator: Locator): Promise<void> {
       await nextFrame();
     }
     await nextFrame();
-    const overlay = element.parentElement?.querySelector('.clawx-dialog-overlay') ?? null;
+    const overlay = element.previousElementSibling?.matches('.clawx-dialog-overlay')
+      ? element.previousElementSibling : null;
     element.getAnimations().forEach((animation) => animation.pause());
     overlay?.getAnimations().forEach((animation) => animation.pause());
     const contentStyle = window.getComputedStyle(element);
@@ -101,10 +102,33 @@ async function expectCleanDialogClose(locator: Locator): Promise<void> {
 
   // Release the frozen animations so Radix can complete its unmount.
   await locator.evaluate((element) => {
-    const overlay = element.parentElement?.querySelector('.clawx-dialog-overlay') ?? null;
+    const overlay = element.previousElementSibling?.matches('.clawx-dialog-overlay')
+      ? element.previousElementSibling : null;
     element.getAnimations().forEach((animation) => animation.finish());
     overlay?.getAnimations().forEach((animation) => animation.finish());
   }).catch(() => {});
+}
+
+async function freezeNextDialogClose(locator: Locator): Promise<void> {
+  await locator.evaluate((element) => {
+    const observer = new MutationObserver(() => {
+      if (element.getAttribute('data-state') !== 'closed') return;
+      const overlay = element.previousElementSibling;
+      void window.getComputedStyle(element).animationName;
+      if (overlay) void window.getComputedStyle(overlay).animationName;
+      element.getAnimations().forEach((animation) => animation.pause());
+      overlay?.getAnimations().forEach((animation) => animation.pause());
+      observer.disconnect();
+    });
+    observer.observe(element, { attributes: true, attributeFilter: ['data-state'] });
+  });
+}
+
+async function finishDialogClose(locator: Locator): Promise<void> {
+  await locator.evaluate((element) => {
+    element.getAnimations().forEach((animation) => animation.finish());
+    element.previousElementSibling?.getAnimations().forEach((animation) => animation.finish());
+  });
 }
 
 test.describe('dialog transitions', () => {
@@ -167,6 +191,7 @@ test.describe('dialog transitions', () => {
       },
     });
 
+    await page.reload();
     await completeSetup(page);
 
     await page.getByTestId('sidebar-nav-settings').click();
@@ -179,6 +204,16 @@ test.describe('dialog transitions', () => {
     await page.getByTestId('add-provider-close-button').click();
     await expectCleanDialogClose(providerDialog);
     await expect(providerDialog).toHaveCount(0);
+
+    await page.getByTestId('providers-add-button').click();
+    await page.getByTestId('add-provider-type-custom').click();
+    await page.getByTestId('add-provider-close-button').click();
+    await expect(providerDialog).toHaveCount(0);
+    await page.getByTestId('providers-add-button').click();
+    await expect(page.getByTestId('add-provider-type-custom')).toBeVisible();
+    await page.getByTestId('add-provider-close-button').click();
+    await expect(providerDialog).toHaveCount(0);
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
 
     await page.getByTestId('sidebar-nav-agents').click();
     await page.getByTestId('agents-add-button').click();
@@ -245,9 +280,11 @@ test.describe('dialog transitions', () => {
       const confirmDialog = page.getByRole('dialog');
       await expect(confirmDialog).toContainText('Preserved session');
 
+      await freezeNextDialogClose(confirmDialog);
       await page.getByTestId('confirm-dialog-cancel-button').click();
       await expect(confirmDialog).toHaveAttribute('data-state', 'closed');
       await expect(confirmDialog).toContainText('Preserved session');
+      await finishDialogClose(confirmDialog);
       await expect(confirmDialog).toHaveCount(0);
 
       await expect(sessionRow).toBeVisible();
@@ -273,9 +310,11 @@ test.describe('dialog transitions', () => {
           [stableStringify(['sessions', 'delete', { id: MAIN_SESSION_KEY }])]: { success: true },
         },
       });
+      await freezeNextDialogClose(confirmDialog);
       await page.getByTestId('confirm-dialog-confirm-button').click();
       await expect(confirmDialog).toHaveAttribute('data-state', 'closed');
       await expect(confirmDialog).toContainText('Preserved session');
+      await finishDialogClose(confirmDialog);
       await expect(confirmDialog).toHaveCount(0);
     } finally {
       await closeElectronApp(app);

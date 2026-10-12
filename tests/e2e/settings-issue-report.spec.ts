@@ -145,6 +145,7 @@ test.describe('settings issue report export', () => {
       const page = await reloadStableWindow(app);
 
       await page.getByTestId('sidebar-nav-settings').click();
+      await page.getByTestId('settings-tab-about').click();
       await page.getByTestId('settings-issue-report-open').click();
       await page.getByTestId(`issue-report-session-${FIRST_SESSION_KEY}`).uncheck();
       await expect(page.getByTestId('issue-report-selection-count')).toContainText('0');

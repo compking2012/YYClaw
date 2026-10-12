@@ -208,6 +208,7 @@ test.describe('ClawX sidebar session attention', () => {
       const targetUnread = page.getByTestId(`sidebar-session-unread-${TARGET_SESSION_KEY}`);
 
       await expect(page.getByTestId('chat-page')).toBeVisible();
+      await controlRow.click();
       await expect(controlRow).toHaveAttribute('aria-current', 'page');
       await expect(targetRow).not.toHaveAttribute('aria-current', 'page');
       await expect(targetTime).toBeVisible();
@@ -215,8 +216,8 @@ test.describe('ClawX sidebar session attention', () => {
       await targetRow.click();
       await expect(targetRow).toHaveAttribute('aria-current', 'page');
 
-      await page.getByTestId('sidebar-nav-settings').click();
-      await expect(page.getByTestId('settings-page')).toBeVisible();
+      await page.getByTestId('sidebar-nav-agents').click();
+      await expect(page.getByTestId('agents-page')).toBeVisible();
       await expect(page.getByTestId('chat-page')).toHaveCount(0);
 
       await emitSessionSnapshot(app, {
@@ -309,6 +310,7 @@ test.describe('ClawX sidebar session attention', () => {
       const controlRow = page.getByTestId(`sidebar-session-${CONTROL_SESSION_KEY}`);
       const targetRow = page.getByTestId(`sidebar-session-${TARGET_SESSION_KEY}`);
 
+      await controlRow.click();
       await expect(controlRow).toHaveAttribute('aria-current', 'page');
       await expect(composer).toBeEnabled({ timeout: 30_000 });
       const controlDraft = 'Unsent control draft';

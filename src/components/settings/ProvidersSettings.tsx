@@ -3,7 +3,7 @@
  * Manage AI provider configurations and API keys
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ModalPortal } from '@/components/ui/modal-portal';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
   Plus,
   Trash2,
@@ -540,16 +540,23 @@ export function ProvidersSettings() {
       </div>
 
       {/* Add Provider Dialog */}
-      {showAddDialog && (
-        <AddProviderDialog
-          existingVendorIds={existingVendorIds}
-          vendors={vendors}
-          onClose={() => setShowAddDialog(false)}
-          onAdd={handleAddProvider}
-          onValidateKey={(type, key, options) => validateAccountApiKey(type, key, options)}
-          devModeUnlocked={devModeUnlocked}
-        />
-      )}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent
+          data-testid="add-provider-dialog"
+          className="max-w-2xl"
+          overlayClassName="bg-black/50"
+          onInteractOutside={(event) => event.preventDefault()}
+        >
+          <AddProviderDialog
+            existingVendorIds={existingVendorIds}
+            vendors={vendors}
+            onClose={() => setShowAddDialog(false)}
+            onAdd={handleAddProvider}
+            onValidateKey={(type, key, options) => validateAccountApiKey(type, key, options)}
+            devModeUnlocked={devModeUnlocked}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -591,6 +598,7 @@ function ProviderCard({
   const { t, i18n } = useTranslation('settings');
   const { account, vendor, status } = item;
   const [newKey, setNewKey] = useState('');
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [label, setLabel] = useState(account.label || '');
   const [baseUrl, setBaseUrl] = useState(account.baseUrl || '');
   const [apiProtocol, setApiProtocol] = useState<ProviderAccount['apiProtocol']>(account.apiProtocol || 'openai-completions');
@@ -637,6 +645,7 @@ function ProviderCard({
   useEffect(() => {
     if (isEditing) {
       setNewKey('');
+      setValidationError(null);
       setShowKey(false);
       setLabel(account.label || '');
       setBaseUrl(account.baseUrl || '');
@@ -671,6 +680,7 @@ function ProviderCard({
 
   const handleSaveEdits = async () => {
     setSaving(true);
+    setValidationError(null);
     try {
       const payload: { newApiKey?: string; updates?: Partial<ProviderConfig> } = {};
       const normalizedFallbackModels = normalizeFallbackModels(fallbackModelsText.split('\n'));
@@ -685,7 +695,9 @@ function ProviderCard({
         });
         setValidating(false);
         if (!result.valid) {
-          toast.error(getProviderValidationError(result, t));
+          const message = getProviderValidationError(result, t);
+          setValidationError(message);
+          toast.error(message);
           setSaving(false);
           return;
         }
@@ -1009,6 +1021,7 @@ function ProviderCard({
                         </select>
                         <div className="flex-1">
                           <Combobox
+                            data-testid={`provider-edit-model-id-${account.id}-${kind}`}
                             value={modelIdAt(modelIds, originalIndex)}
                             onChange={(v) => {
                               const newIds = [...modelIds];
@@ -1260,10 +1273,16 @@ function ProviderCard({
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Input
+                    data-testid={`provider-edit-key-input-${account.id}`}
                     type={showKey ? 'text' : 'password'}
                     placeholder={typeInfo?.requiresApiKey ? typeInfo?.placeholder : (typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : t('aiProviders.card.editKey'))}
                     value={newKey}
-                    onChange={(e) => setNewKey(e.target.value)}
+                    onChange={(event) => {
+                      setNewKey(event.target.value);
+                      setValidationError(null);
+                    }}
+                    aria-invalid={Boolean(validationError)}
+                    aria-describedby={validationError ? `provider-edit-validation-error-${account.id}` : undefined}
                     className={cn(currentInputClasses, 'pr-10')}
                   />
                   <button
@@ -1320,6 +1339,16 @@ function ProviderCard({
                   <X className="h-4 w-4" />
                 </Button>
               </div>
+              {validationError && (
+                <p
+                  id={`provider-edit-validation-error-${account.id}`}
+                  data-testid={`provider-edit-validation-error-${account.id}`}
+                  role="alert"
+                  className="text-[12px] text-red-700 dark:text-red-400"
+                >
+                  {validationError}
+                </p>
+              )}
               <p className="text-[12px] text-muted-foreground">
                 {t('aiProviders.dialog.replaceApiKeyHelp')}
               </p>
@@ -1690,14 +1719,16 @@ function AddProviderDialog({
   };
 
   return (
-    <ModalPortal>
-    <div data-testid="add-provider-dialog" className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl h-[650px] flex flex-col rounded-3xl border-0 shadow-2xl bg-background overflow-hidden">
         <CardHeader className="relative pb-2 shrink-0">
-          <CardTitle className="text-2xl font-serif font-normal">{t('aiProviders.dialog.title')}</CardTitle>
-          <CardDescription className="text-[15px] mt-1 text-foreground/70">
-            {t('aiProviders.dialog.desc')}
-          </CardDescription>
+          <DialogTitle asChild>
+            <CardTitle className="text-2xl font-serif font-normal">{t('aiProviders.dialog.title')}</CardTitle>
+          </DialogTitle>
+          <DialogDescription asChild>
+            <CardDescription className="text-[15px] mt-1 text-foreground/70">
+              {t('aiProviders.dialog.desc')}
+            </CardDescription>
+          </DialogDescription>
           <Button
             data-testid="add-provider-close-button"
             variant="ghost"
@@ -1824,6 +1855,7 @@ function AddProviderDialog({
                 {isOAuth && supportsApiKey && (
                   <div className="flex rounded-xl border border-black/10 dark:border-white/10 overflow-hidden text-[13px] font-medium shadow-sm bg-surface-input p-1 gap-1">
                     <button
+                      data-testid="add-provider-auth-oauth-tab"
                       onClick={() => setAuthMode('oauth')}
                       className={cn(
                         'flex-1 py-2 px-3 rounded-lg transition-colors',
@@ -1833,6 +1865,7 @@ function AddProviderDialog({
                       {t('aiProviders.oauth.loginMode')}
                     </button>
                     <button
+                      data-testid="add-provider-auth-apikey-tab"
                       onClick={() => setAuthMode('apikey')}
                       className={cn(
                         'flex-1 py-2 px-3 rounded-lg transition-colors',
@@ -2152,6 +2185,7 @@ function AddProviderDialog({
                         {t('aiProviders.oauth.loginPrompt')}
                       </p>
                       <Button
+                        data-testid="add-provider-oauth-login-button"
                         onClick={handleStartOAuth}
                         disabled={oauthFlowing}
                         className="w-full rounded-full h-[42px] font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
@@ -2295,7 +2329,5 @@ function AddProviderDialog({
           )}
         </CardContent>
       </Card>
-    </div>
-    </ModalPortal>
   );
 }

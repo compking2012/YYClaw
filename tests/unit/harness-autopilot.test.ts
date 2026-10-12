@@ -277,6 +277,73 @@ function sharedCache(root: string) {
   return { schemaVersion: 1, storeDir: path.join(root, 'shared/store'), releaseCacheDir: path.join(root, 'shared/releases'), electronCacheDir: path.join(root, 'shared/electron'), lockRoot: path.join(root, 'shared/locks') };
 }
 
+describe('atomic runner leases', () => {
+  it('serializes competing runners across repeated publication and release windows', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'yyclaw-lease-'));
+    roots.push(root);
+    let active = 0;
+    let peak = 0;
+    let completed = 0;
+    await Promise.all(Array.from({ length: 12 }, async () => {
+      const store = new RunStore(root, 'shared');
+      for (let round = 0; round < 12; round++) {
+        let release;
+        for (let attempt = 0; !release && attempt < 2000; attempt++) {
+          try { release = await store.lock(); }
+          catch (error) {
+            expect(error.message).toContain('active runner');
+            await new Promise((resolve) => setTimeout(resolve, 1));
+          }
+        }
+        expect(release).toBeDefined();
+        peak = Math.max(peak, ++active);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        active--;
+        await Promise.all([release(), release(), release()]);
+        completed++;
+      }
+    }));
+    expect(peak).toBe(1);
+    expect(completed).toBe(144);
+    await expect(access(path.join(root, 'shared/runner.lock'))).rejects.toThrow();
+  }, 30000);
+
+  it('recovers a dead owner once and never removes a successor lease on repeated release', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'yyclaw-lease-'));
+    roots.push(root);
+    const store = new RunStore(root, 'shared');
+    await mkdir(store.dir);
+    const lockPath = path.join(store.dir, 'runner.lock');
+    await writeFile(lockPath, JSON.stringify({ pid: 2147483647, nonce: 'dead-owner' }));
+    const releases = await Promise.allSettled(Array.from({ length: 8 }, () => store.lock()));
+    const winners = releases.filter((result) => result.status === 'fulfilled');
+    expect(winners).toHaveLength(1);
+    const first = winners[0].value;
+    await first();
+    const second = await store.lock();
+    await first();
+    await expect(store.lock()).rejects.toThrow('active runner');
+    await second();
+  });
+
+  it('retains incomplete, unknown and crash-recovery leases for ownership verification', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'yyclaw-lease-'));
+    roots.push(root);
+    const store = new RunStore(root, 'shared');
+    await mkdir(store.dir);
+    const lockPath = path.join(store.dir, 'runner.lock');
+    for (const content of ['', '{}', JSON.stringify({ pid: 0, nonce: 'foreign' })]) {
+      await writeFile(lockPath, content);
+      await expect(store.lock()).rejects.toThrow('lease');
+      expect(await readFile(lockPath, 'utf8')).toBe(content);
+    }
+    await rm(lockPath);
+    await writeFile(path.join(store.dir, 'runner.recovery'), 'unknown recovery owner');
+    await expect(store.lock()).rejects.toThrow('active runner');
+    expect(await readFile(path.join(store.dir, 'runner.recovery'), 'utf8')).toBe('unknown recovery owner');
+  });
+});
+
 describe('planning policy completion', () => {
   it('adds universal and tagged rules before freezing without changing requirements, tests, scopes or caller input', () => {
     const proposal = plan('a'.repeat(40));
@@ -392,6 +459,8 @@ describe('shared dependency initialization', () => {
     expect(first.npm_config_store_dir).toBe(second.npm_config_store_dir);
     expect(first.electron_config_cache).toBe(cache.electronCacheDir);
     expect(first.YYCLAW_RELEASE_CACHE_DIR).toBe(cache.releaseCacheDir);
+    expect(first.SHARP_IGNORE_GLOBAL_LIBVIPS).toBe('1');
+    expect(first.SHARP_FORCE_GLOBAL_LIBVIPS).toBeUndefined();
     expect(first.HOME).not.toBe(second.HOME);
     expect(first.HTTPS_PROXY).toBe('http://proxy.invalid');
     expect(first.SSL_CERT_FILE).toBe('/cert.pem');
@@ -417,6 +486,18 @@ describe('shared dependency initialization', () => {
     await expect(resolveDependencyCache(repo, artifactRoot)).rejects.toThrow('symlinks');
     expect(DEFAULT_BUDGET.initTimeoutMs).toBe(30 * 60000);
     for (const value of ['0', '-1', 'NaN', true]) await expect(autopilotCommand({ _: ['autopilot', 'run'], 'init-timeout-minutes': value })).rejects.toThrow('positive number');
+  });
+
+  it('loads the locked prebuilt sharp module and performs real image processing without global libvips', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'yyclaw-sharp-'));
+    roots.push(root);
+    const cache = sharedCache(root);
+    const env = dependencyEnvironment(root, cache, {});
+    await mkdir(env.TMPDIR, { recursive: true });
+    const logPath = path.join(root, 'native-image.log');
+    const result = await runStep({ command: process.execPath, args: ['--input-type=module', '-e', `import sharp from 'sharp'; const buffer = await sharp({ create: { width: 2, height: 3, channels: 4, background: '#ff0000' } }).png().toBuffer(); const metadata = await sharp(buffer).metadata(); console.log(JSON.stringify({ width: metadata.width, height: metadata.height, format: metadata.format }));`] }, { cwd: process.cwd(), env, timeoutMs: 15000, logPath });
+    expect(result.status).toBe('pass');
+    expect(JSON.parse((await readFile(logPath, 'utf8')).trim())).toEqual({ width: 2, height: 3, format: 'png' });
   });
 
   it('serializes initialization without serializing coding, and records bounded stages and heartbeats', async () => {
@@ -537,6 +618,7 @@ describe('shared dependency initialization', () => {
     try {
       const address = server.address();
       if (!address || typeof address === 'string') throw new Error('Test registry is unavailable');
+      await writeFile(path.join(repo, 'pnpm-workspace.yaml'), "packages:\n  - '.'\n");
       await writeFile(path.join(repo, '.npmrc'), `registry=http://127.0.0.1:${address.port}/\npackage-import-method=copy\n`);
       const env = dependencyEnvironment(path.join(root, 'controller-home'), cache, {});
       await mkdir(env.TMPDIR, { recursive: true });
@@ -544,8 +626,8 @@ describe('shared dependency initialization', () => {
       for (const version of ['1.0.0', '2.0.0']) {
         await writeFile(path.join(repo, 'package.json'), JSON.stringify({ name: 'cache-fixture-consumer', private: true, dependencies: { 'yyclaw-cache-fixture': `http://127.0.0.1:${address.port}/fixture-${version}.tgz` }, scripts: { postinstall: 'node -e "require(\'fs\').writeFileSync(\'lifecycle.txt\', \'ran\')"' } }));
         const result = await runStep({ name: 'Freeze controlled fixture', command: 'pnpm', args: ['install', '--lockfile-only', '--store-dir', cache.storeDir, '--ignore-scripts'] }, { cwd: repo, env, timeoutMs: 20000, logPath: path.join(root, `freeze-${version}.log`) });
-        expect(result.status).toBe('pass');
-        await git(repo, ['add', 'package.json', 'pnpm-lock.yaml', '.npmrc']);
+        expect(result.status, await readFile(path.join(root, `freeze-${version}.log`), 'utf8')).toBe('pass');
+        await git(repo, ['add', 'package.json', 'pnpm-lock.yaml', '.npmrc', 'pnpm-workspace.yaml']);
         await git(repo, ['commit', '-m', `Freeze fixture ${version}`]);
         revisions.push(await git(repo, ['rev-parse', 'HEAD']));
       }
@@ -786,6 +868,26 @@ describe('owned workspace lifecycle', () => {
 });
 
 describe('autonomous development integration', () => {
+  it('distinguishes stale plans, unpublished baselines and task budgets before allocating resources', async () => {
+    const { repo, artifactRoot, sha } = await repository();
+    const coding = adapter();
+    const publishing = publisher(repo);
+    const engine = new AutopilotEngine({ repo, artifactRoot, adapter: coding, publisher: publishing, requiredCiChecks: ['test'] });
+    await writeFile(path.join(repo, 'sample.txt'), 'reviewed baseline repair\n');
+    await expect(engine.start(plan(sha))).rejects.toThrow('sample.txt');
+    await git(repo, ['add', 'sample.txt']);
+    await git(repo, ['commit', '-m', 'Repair committed fixture baseline']);
+    const currentSha = await git(repo, ['rev-parse', 'HEAD']);
+    await expect(engine.start(plan(sha))).rejects.toThrow(`plan base SHA ${sha}, current HEAD ${currentSha}`);
+    await expect(engine.start(plan(currentSha))).rejects.toThrow(`plan base SHA ${currentSha}, remote SHA ${sha}`);
+    const bounded = new AutopilotEngine({ repo, artifactRoot, adapter: coding, publisher: publishing, budget: { maxTasks: 1 }, requiredCiChecks: ['test'] });
+    await expect(bounded.start(plan(currentSha, [task(), task('other', 'other.txt')]))).rejects.toThrow('2 tasks but the run budget allows 1');
+    expect(coding.execute).not.toHaveBeenCalled();
+    expect(publishing.publish).not.toHaveBeenCalled();
+    await expect(access(artifactRoot)).rejects.toThrow();
+    expect((await git(repo, ['worktree', 'list', '--porcelain'])).split('\n').filter((line) => line.startsWith('worktree '))).toHaveLength(1);
+  });
+
   it('publishes a per-task stack and cleans each worktree before any CI poll', async () => {
     const { repo, artifactRoot, sha } = await repository();
     const publishing = publisher(repo);
@@ -812,7 +914,7 @@ describe('autonomous development integration', () => {
     expect(result.tasks.sample.workspaces.length).toBeGreaterThan(1);
     expect(result.tasks.other.evidence.sha).toBe(result.tasks.other.publication.sha);
     expect(await engine.resume(result.runId)).toMatchObject({ status: 'complete' });
-  });
+  }, 30000);
 
   it('blocks absent external acceptance and refuses dirty input without publishing', async () => {
     const { repo, artifactRoot, sha } = await repository();
@@ -861,5 +963,61 @@ describe('autonomous development integration', () => {
     expect(evidence.status).toBe('fail');
     const archive = await manager.archive(workspace, path.join(store.dir, 'archive'));
     await manager.cleanup(workspace, archive);
+  });
+
+  it.each([
+    { testCommand: 'tests/e2e/example.spec.ts', kind: 'ui', reportCase: 'passed', expected: 'pass' },
+    { testCommand: 'pnpm run test:e2e', kind: 'ui', reportCase: 'passed', expected: 'pass' },
+    { testCommand: 'pnpm run test:e2e', kind: 'ui', reportCase: 'skipped', expected: 'fail' },
+    { testCommand: 'pnpm run test:e2e', kind: 'quality', reportCase: 'platform-skipped', expected: 'fail' },
+    { testCommand: 'pnpm run test:e2e', kind: 'quality', reportCase: 'platform-skipped', baselineOnly: true, expected: 'pass' },
+    { testCommand: 'pnpm run test:e2e', kind: 'quality', reportCase: 'flaky', expected: 'fail' },
+    { testCommand: 'pnpm run perf:chat', kind: 'quality', reportCase: 'missing', expected: 'fail' },
+    { testCommand: 'tests/e2e/example.spec.ts', kind: 'ui', reportCase: 'empty', expected: 'fail' },
+    { testCommand: 'tests/e2e/example.spec.ts', kind: 'ui', reportCase: 'failed', expected: 'fail' },
+    { testCommand: 'tests/e2e/example.spec.ts', kind: 'ui', reportCase: 'invalid', expected: 'fail' },
+    { testCommand: 'tests/e2e/example.spec.ts', kind: 'ui', reportCase: 'stale', expected: 'fail' },
+    { testCommand: 'tests/e2e/example.spec.ts', kind: 'quality', reportCase: 'skipped', expected: 'fail' },
+  ])('validates $testCommand $kind structured UI evidence: $reportCase', async ({ testCommand, kind, reportCase, baselineOnly, expected }) => {
+    const { repo, artifactRoot, sha } = await repository();
+    const store = new RunStore(artifactRoot, 'run-ui-report');
+    const manager = new WorkspaceManager(repo, store);
+    const workspace = await manager.create('sample', sha);
+    const artifactDir = path.join(store.dir, 'acceptance');
+    await writeFile(path.join(workspace.path, 'sample.txt'), 'implemented\n');
+    await mkdir(path.join(workspace.path, 'tests/e2e'), { recursive: true });
+    await writeFile(path.join(workspace.path, 'tests/e2e/example.spec.ts'), "test('works', () => { expect(true).toBe(true); });\n");
+    await git(workspace.path, ['add', 'tests/e2e/example.spec.ts']);
+    await git(workspace.path, ['commit', '-m', 'Seed controlled UI report fixture']);
+    const stats = { expected: reportCase === 'empty' ? 0 : 1, unexpected: reportCase === 'failed' ? 1 : 0,
+      skipped: reportCase.includes('skipped') ? 1 : 0, flaky: reportCase === 'flaky' ? 1 : 0 };
+    if (reportCase === 'stale') {
+      await mkdir(artifactDir, { recursive: true });
+      await writeFile(path.join(artifactDir, 'ui-check.playwright.json'), JSON.stringify({ stats }));
+    }
+    const executeStep = vi.fn(async (step: { args: string[] }, options: { env: Record<string, string> }) => {
+      const unitReport = step.args.find((argument) => argument.startsWith('--outputFile='));
+      if (unitReport) await writeFile(unitReport.slice('--outputFile='.length), JSON.stringify({ numTotalTests: 1, numFailedTests: 0, numPendingTests: 0, numTodoTests: 0 }));
+      const reportFile = options.env.PLAYWRIGHT_JSON_OUTPUT_NAME;
+      if (reportFile) {
+        expect(step.args).toContain('--reporter=json');
+        await expect(access(reportFile)).rejects.toThrow();
+        if (!['missing', 'stale'].includes(reportCase)) await writeFile(reportFile, reportCase === 'invalid' ? 'not-json' : JSON.stringify({ stats }));
+      }
+      return { status: 'pass', exitCode: 0 };
+    });
+    const reviewed = adapter();
+    const taskWithUi = baselineOnly ? { ...task(), changeTags: ['performance'] } : { ...task(), checks: [{ id: 'ui-check', kind, test: testCommand, prerequisites: [] }],
+      acceptance: [{ id: 'behavior', description: 'UI behavior is actually tested', checks: ['ui-check'] }] };
+    try {
+      const evidence = await runAcceptance({ task: taskWithUi, workspace, artifactDir, adapter: reviewed, executeStep });
+      expect(evidence.status).toBe(expected);
+      const uiEvidence = evidence.steps.find((step: { report?: string }) => step.report?.endsWith('.playwright.json'));
+      expect(uiEvidence?.report).toBe(path.join(artifactDir, baselineOnly ? 'baseline-5.playwright.json' : 'ui-check.playwright.json'));
+      expect(reviewed.execute).toHaveBeenCalledTimes(expected === 'pass' ? 1 : 0);
+    } finally {
+      const archive = await manager.archive(workspace, path.join(store.dir, 'archive'));
+      await manager.cleanup(workspace, archive);
+    }
   });
 });

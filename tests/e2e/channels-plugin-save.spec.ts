@@ -1,4 +1,4 @@
-import { completeSetup, expect, test } from './fixtures/electron';
+import { openSettingsTab, completeSetup, expect, test } from './fixtures/electron';
 
 const responses = {
   channels: { success: true, channels: [] },
@@ -46,9 +46,9 @@ test.describe('Plugin-backed channel save', () => {
     }, responses);
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
+    await openSettingsTab(page, 'channels');
 
-    const channelsPage = page.getByTestId('channels-page');
+    const channelsPage = page.getByTestId('channels-tab');
     await expect(channelsPage).toBeVisible();
     await channelsPage.getByRole('button', { name: /QQ Bot/ }).click();
 

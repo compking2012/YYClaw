@@ -85,11 +85,12 @@ async function installWorkspaceTreeMock(app: ElectronApplication) {
 }
 
 async function getWorkspaceTreeRequests(app: ElectronApplication) {
-  return await app.evaluate(async ({ app: _app }) => {
-    return (globalThis as unknown as {
-      __workspaceListTreeRequests?: Array<{ path: string; includeHidden?: boolean }>;
-    }).__workspaceListTreeRequests ?? [];
-  });
+  return (await getRecordedHostInvocations(app))
+    .filter((entry) => entry.module === 'files' && entry.action === 'listTree')
+    .map((entry) => ({
+      path: entry.payload?.path,
+      includeHidden: (entry.payload?.opts as { includeHidden?: boolean } | undefined)?.includeHidden,
+    }));
 }
 
 type WorkspaceMockOptions = {
@@ -259,6 +260,7 @@ test.describe('ClawX chat workspace context', () => {
       const defaultGroup = page.getByTestId(workspaceSessionGroupTestId(DEFAULT_WORKSPACE));
       await expect(defaultGroup).toBeVisible({ timeout: 30_000 });
       await expect(defaultGroup.getByTestId(`sidebar-session-${DEFAULT_SESSION_KEY}`)).toContainText('AAB');
+      await defaultGroup.getByTestId(`sidebar-session-${DEFAULT_SESSION_KEY}`).click();
       await expect(page.getByTestId(workspaceSessionGroupTestId(GLOBAL_WORKSPACE))).toHaveCount(0);
       await expect(page.getByTestId('chat-workspace-selector')).toHaveAttribute('title', DEFAULT_WORKSPACE);
 
@@ -295,7 +297,7 @@ test.describe('ClawX chat workspace context', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
-
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       const workspaceSelector = page.getByTestId('chat-workspace-selector');
       await expect(workspaceSelector).toBeVisible({ timeout: 30_000 });
       await expect(workspaceSelector).toContainText('ClawX');
@@ -369,6 +371,7 @@ test.describe('ClawX chat workspace context', () => {
         }
       }
 
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       const workspaceSelector = page.getByTestId('chat-workspace-selector');
       const composerInput = page.getByTestId('chat-composer-input');
       await expect(workspaceSelector).toHaveText(SESSION_WORKSPACE_LABEL, { timeout: 30_000 });
@@ -439,6 +442,7 @@ test.describe('ClawX chat workspace context', () => {
         if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
       }
 
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       const chatTitle = page.getByTestId('chat-session-title');
       await expect(chatTitle).toHaveText('Workspace chat', { timeout: 30_000 });
 
@@ -472,6 +476,7 @@ test.describe('ClawX chat workspace context', () => {
         }
       }
 
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       const workspaceSelector = page.getByTestId('chat-workspace-selector');
       await expect(workspaceSelector).toHaveText(SESSION_WORKSPACE_LABEL, { timeout: 30_000 });
       await page.getByTestId('sidebar-new-chat').click();
@@ -631,7 +636,7 @@ test.describe('ClawX chat workspace context', () => {
     }
   });
 
-  test('new unbound chat stays hidden until it has content and prefers the selected conversation workspace over the global workspace', async ({ launchElectronApp }) => {
+  test('new unbound chat stays hidden until it has content and permits selecting the previous conversation workspace', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -649,6 +654,7 @@ test.describe('ClawX chat workspace context', () => {
         }
       }
 
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       const workspaceSelector = page.getByTestId('chat-workspace-selector');
       await expect(workspaceSelector).toHaveText(SESSION_WORKSPACE_LABEL, { timeout: 30_000 });
 
@@ -662,6 +668,10 @@ test.describe('ClawX chat workspace context', () => {
 
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
 
+      await expect(workspaceSelector).toHaveText('Default workspace');
+      await workspaceSelector.click();
+      await page.getByTestId(`chat-workspace-option-${encodeURIComponent(SESSION_WORKSPACE)}`).click();
+
       await expect(workspaceSelector).toHaveText(SESSION_WORKSPACE_LABEL);
       await expect(workspaceSelector).toHaveAttribute('title', SESSION_WORKSPACE);
       await expect(workspaceSelector).not.toHaveAttribute('aria-disabled', 'true');
@@ -674,7 +684,7 @@ test.describe('ClawX chat workspace context', () => {
     }
   });
 
-  test('missing inherited workspace prompts for another folder without attempting ACP creation', async ({ launchElectronApp }) => {
+  test('selecting a missing previous workspace prompts for another folder without attempting ACP creation', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -691,15 +701,15 @@ test.describe('ClawX chat workspace context', () => {
         if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
       }
 
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       await expect(page.getByTestId('chat-workspace-selector')).toHaveText(SESSION_WORKSPACE_LABEL, {
         timeout: 30_000,
       });
-      await expect(async () => {
-        await page.getByTestId('sidebar-new-chat').click();
-        await expect(page.getByTestId('chat-workspace-selector')).toHaveText(SESSION_WORKSPACE_LABEL, {
-          timeout: 1_000,
-        });
-      }).toPass({ timeout: 30_000 });
+      await page.getByTestId('sidebar-new-chat').click();
+      await expect(page.getByTestId('chat-workspace-selector')).toHaveText('Default workspace');
+      await page.getByTestId('chat-workspace-selector').click();
+      await page.getByTestId(`chat-workspace-option-${encodeURIComponent(SESSION_WORKSPACE)}`).click();
+      await expect(page.getByTestId('chat-workspace-selector')).toHaveText(SESSION_WORKSPACE_LABEL);
 
       const banner = page.getByTestId('workspace-unavailable-banner');
       await expect(banner).toBeVisible();
@@ -736,6 +746,7 @@ test.describe('ClawX chat workspace context', () => {
       }
 
       const workspaceSelector = page.getByTestId('chat-workspace-selector');
+      await page.getByTestId(`sidebar-session-${SESSION_KEY}`).click();
       await expect(workspaceSelector).toHaveText(SESSION_WORKSPACE_LABEL, { timeout: 30_000 });
 
       // Start a new chat so the effective workspace resets to the default managed

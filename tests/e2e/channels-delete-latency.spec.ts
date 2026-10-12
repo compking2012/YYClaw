@@ -1,4 +1,4 @@
-import { completeSetup, expect, test } from './fixtures/electron';
+import { openSettingsTab, completeSetup, expect, test } from './fixtures/electron';
 
 const configuredChannels = {
   success: true,
@@ -59,9 +59,9 @@ test.describe('Channel deletion responsiveness', () => {
     }, configuredChannels);
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
+    await openSettingsTab(page, 'channels');
 
-    const channelsPage = page.getByTestId('channels-page');
+    const channelsPage = page.getByTestId('channels-tab');
     await expect(channelsPage.getByTitle('Delete channel')).toBeVisible();
     await channelsPage.getByTitle('Delete channel').click();
     await page.getByTestId('confirm-dialog-confirm-button').click();

@@ -1,4 +1,4 @@
-import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
+import { closeElectronApp, expect, getStableWindow, openSettingsTab, test } from './fixtures/electron';
 
 /**
  * Chromium paints native <select> dropdown popups with the select's own
@@ -36,7 +36,7 @@ async function expectSelectThemed(page: import('@playwright/test').Page, testId:
 }
 
 test.describe('native select theming', () => {
-  test('speech-to-text provider select uses the opaque themed background in both schemes', async ({ launchElectronApp }) => {
+  test('voice input mode select uses the opaque themed background in both schemes', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -44,31 +44,26 @@ test.describe('native select theming', () => {
       await expect(page.getByTestId('main-layout')).toBeVisible();
 
       // Switch the app to dark mode via Settings > Appearance.
-      await page.getByTestId('sidebar-nav-settings').click();
-      await expect(page.getByTestId('settings-page')).toBeVisible();
-      const devModeSwitch = page.getByTestId('settings-dev-mode-switch');
-      if (await devModeSwitch.getAttribute('data-state') !== 'checked') await devModeSwitch.click();
-      await expect(devModeSwitch).toHaveAttribute('data-state', 'checked');
+      await openSettingsTab(page, 'general');
+      await expect(page.getByTestId('settings-tab')).toBeVisible();
       await page.getByRole('button', { name: 'Dark', exact: true }).click();
       await expect(page.evaluate(() => document.documentElement.classList.contains('dark'))).resolves.toBe(true);
 
       // The Models > Voice (speech-to-text) provider select must resolve the
       // dark opaque background so its popup options stay readable.
-      await page.getByTestId('sidebar-nav-models').click();
-      await page.getByTestId('models-tab-voice').click();
-      await expect(page.getByTestId('asr-preset-select')).toBeVisible();
-      await expectSelectThemed(page, 'asr-preset-select');
+      await page.getByTestId('settings-tab-voice').click();
+      await expect(page.getByTestId('settings-voice-input-mode')).toBeVisible();
+      await expectSelectThemed(page, 'settings-voice-input-mode');
 
       // Switching back to light keeps the select on the (now white) token.
-      await page.getByTestId('sidebar-nav-settings').click();
-      await expect(page.getByTestId('settings-page')).toBeVisible();
+      await openSettingsTab(page, 'general');
+      await expect(page.getByTestId('settings-tab')).toBeVisible();
       await page.getByRole('button', { name: 'Light', exact: true }).click();
       await expect(page.evaluate(() => document.documentElement.classList.contains('light'))).resolves.toBe(true);
 
-      await page.getByTestId('sidebar-nav-models').click();
-      await page.getByTestId('models-tab-voice').click();
-      await expect(page.getByTestId('asr-preset-select')).toBeVisible();
-      await expectSelectThemed(page, 'asr-preset-select');
+      await page.getByTestId('settings-tab-voice').click();
+      await expect(page.getByTestId('settings-voice-input-mode')).toBeVisible();
+      await expectSelectThemed(page, 'settings-voice-input-mode');
     } finally {
       await closeElectronApp(app);
     }
@@ -82,7 +77,7 @@ test.describe('native select theming', () => {
       await expect(page.getByTestId('main-layout')).toBeVisible();
 
       await page.getByTestId('sidebar-nav-settings').click();
-      await expect(page.getByTestId('settings-page')).toBeVisible();
+      await expect(page.getByTestId('settings-tab')).toBeVisible();
 
       const rootThemeClass = () => page.evaluate(() => document.documentElement.classList.contains('dark') ? 'dark' : 'light');
 

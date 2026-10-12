@@ -1,15 +1,13 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
-import { completeSetup, expect, test } from './fixtures/electron';
+import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
 
 const TEST_AGENT_ID = 'agent';
 const ZERO_TOKEN_SESSION_ID = 'agent-session-zero-token';
 const NONZERO_TOKEN_SESSION_ID = 'agent-session-nonzero-token';
 const GATEWAY_INJECTED_SESSION_ID = 'agent-session-gateway-injected';
 const DELIVERY_MIRROR_SESSION_ID = 'agent-session-delivery-mirror';
-// A model that is NOT in any configured provider account — the Models page
-// (renderer-side) must hide its usage, while the backend must still surface it.
 const UNCONFIGURED_MODEL = 'ghost-model-xyz';
 const UNCONFIGURED_MODEL_SESSION_ID = 'agent-session-unconfigured-model';
 
@@ -126,6 +124,12 @@ async function seedTokenUsageTranscripts(homeDir: string): Promise<void> {
 }
 
 test.describe('ClawX token usage history', () => {
+  test.beforeEach(async ({ electronApp, page }) => {
+    await installIpcMocks(electronApp, {
+      gatewayStatus: { state: 'running', port: 18789, pid: 12345, gatewayReady: true },
+    });
+    await page.reload();
+  });
 
   async function validateUsageHistory(page: Page): Promise<void> {
     const usageHistory = await page.evaluate(async () => {
@@ -166,57 +170,47 @@ test.describe('ClawX token usage history', () => {
     expect(zeroEntry?.provider).toBe('kimi');
     expect(nonzeroEntry?.provider).toBe('kimi');
 
-    // Regression guard: the backend must still surface usage for models that are
-    // no longer configured — the configured-model filter is renderer-side only
-    // (see usage-history.ts `isUnconfiguredModelEntry`). If this ever moves to
-    // the backend, the "re-add → re-count" contract breaks.
     const unconfiguredEntry = usageHistory.find((entry) => entry?.sessionId === UNCONFIGURED_MODEL_SESSION_ID);
     expect(unconfiguredEntry).toBeTruthy();
     expect(unconfiguredEntry?.model).toBe(UNCONFIGURED_MODEL);
     expect(unconfiguredEntry?.totalTokens).toBe(42);
   });
 
-  // TODO: This test needs a reliable way to inject mocked gateway status into
-  // the renderer's Zustand store in CI (where no real OpenClaw runtime exists).
-  // The IPC mock + page.reload approach fails because the reload
-  // re-triggers setup flow. Skipping until we add an E2E-aware store hook.
-  test.skip('hides gateway internal usage rows from the usage list overview', async ({ page, homeDir }) => {
+  test('hides gateway internal usage rows from the usage list overview', async ({ page, homeDir }) => {
     await seedTokenUsageTranscripts(homeDir);
     await completeSetup(page);
     await validateUsageHistory(page);
 
     await page.getByTestId('sidebar-nav-settings').click();
 
-    await page.getByTestId('settings-tab-models').click();
-    await expect(page.getByTestId('models-tab')).toBeVisible();
+    await page.getByTestId('settings-tab-usage').click();
+    await expect(page.getByTestId('usage-tab')).toBeVisible();
 
     const usageEntryRows = page.getByTestId('token-usage-entry');
-    await expect.poll(async () => await usageEntryRows.count()).toBe(2);
+    await expect.poll(async () => await usageEntryRows.count()).toBe(3);
+    await expect(page.locator('[data-testid="token-usage-entry"]', { hasText: ZERO_TOKEN_SESSION_ID })).toHaveCount(1);
+    await expect(page.locator('[data-testid="token-usage-entry"]', { hasText: NONZERO_TOKEN_SESSION_ID })).toHaveCount(1);
 
     await expect(page.locator('[data-testid="token-usage-entry"]', { hasText: GATEWAY_INJECTED_SESSION_ID })).toHaveCount(0);
     await expect(page.locator('[data-testid="token-usage-entry"]', { hasText: DELIVERY_MIRROR_SESSION_ID })).toHaveCount(0);
   });
 
-  // Configured-model filter contract: usage attributed to a model that is no
-  // longer in any provider account must NOT appear in the Models page list,
-  // while a still-configured model (`kimi-k2.6`) must. The filter itself is
-  // covered by `tests/unit/usage-history-configured-filter.test.ts`; this spec
-  // exercises the wired UI. Skipped for the same reason as the gateway-injected
-  // test above — the renderer only renders usage while `gatewayStatus.state ===
-  // 'running'`, and the hostapi:fetch / gateway:status mock + reload approach
-  // re-triggers the setup flow. Re-enable once an E2E-aware store hook lands.
-  test.skip('hides token usage for models no longer configured', async ({ page, homeDir }) => {
+  test('preserves historical usage for models absent from current provider accounts', async ({ page, homeDir }) => {
     await seedTokenUsageTranscripts(homeDir);
     await completeSetup(page);
 
     await page.getByTestId('sidebar-nav-settings').click();
 
-    await page.getByTestId('settings-tab-models').click();
-    await expect(page.getByTestId('models-tab')).toBeVisible();
+    const accounts = await page.evaluate(() => window.electron.ipcRenderer.invoke('provider:list'));
+    expect(accounts.some((account: { model?: string | string[] }) => String(account.model ?? '').includes(UNCONFIGURED_MODEL))).toBe(false);
+    await page.getByTestId('settings-tab-usage').click();
+    await expect(page.getByTestId('usage-tab')).toBeVisible();
 
-    // Configured model's usage is visible; the unconfigured model's is hidden.
     await expect.poll(async () => page.getByTestId('token-usage-entry').count()).toBeGreaterThan(0);
     await expect(page.locator('[data-testid="token-usage-entry"]', { hasText: NONZERO_TOKEN_SESSION_ID })).toHaveCount(1);
-    await expect(page.locator('[data-testid="token-usage-entry"]', { hasText: UNCONFIGURED_MODEL_SESSION_ID })).toHaveCount(0);
+    const historicalRow = page.locator('[data-testid="token-usage-entry"]', { hasText: UNCONFIGURED_MODEL_SESSION_ID });
+    await expect(historicalRow).toHaveCount(1);
+    await expect(historicalRow).toContainText(UNCONFIGURED_MODEL);
+    await expect(historicalRow).toContainText('42');
   });
 });

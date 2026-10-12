@@ -1,4 +1,4 @@
-import { readFile, access, lstat, realpath } from 'node:fs/promises';
+import { readFile, access, lstat, realpath, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { requiredTestStep } from '../validation.mjs';
 import { runStep } from '../runner.mjs';
@@ -77,15 +77,20 @@ export async function runAcceptance({ task, workspace, artifactDir, signal, time
     for (const file of step.args.filter((arg) => arg.startsWith('tests/'))) await access(path.join(workspace.path, file));
     const args = [...step.args];
     let report;
+    const playwright = args[0] === 'exec' && args[1] === 'playwright';
+    const uiScript = args[0] === 'run' && ['test:e2e', 'perf:chat'].includes(args[1]);
+    const mappedRequirement = task.acceptance.some((criterion) => criterion.checks.includes(step.id));
+    const uiReport = playwright || uiScript ? path.join(artifactDir, `${step.id}.playwright.json`) : null;
     if (args[0] === 'exec' && args[1] === 'vitest') {
       report = path.join(artifactDir, `${step.id}.vitest.json`);
       args.push('--reporter=json', `--outputFile=${report}`);
     }
-    if (step.kind === 'ui' && args[0] === 'exec' && args[1] === 'playwright') args.push('--reporter=json');
+    if (uiReport) args.push('--reporter=json');
+    if (uiReport) await rm(uiReport, { force: true });
     const result = await executeStep({ ...step, args }, {
       cwd: workspace.path, signal, timeoutMs, logPath: path.join(artifactDir, `${step.id}.log`),
       env: { ...env, ...Object.fromEntries(step.prerequisites.map((name) => [name, externalEnv[name]])),
-        ...(step.kind === 'ui' ? { PLAYWRIGHT_JSON_OUTPUT_NAME: path.join(artifactDir, `${step.id}.playwright.json`) } : {}),
+        ...(uiReport ? { PLAYWRIGHT_JSON_OUTPUT_NAME: uiReport } : {}),
       },
       ...processHooks,
     });
@@ -95,10 +100,21 @@ export async function runAcceptance({ task, workspace, artifactDir, signal, time
       if (!json.numTotalTests || json.numFailedTests || json.numPendingTests || json.numTodoTests) result.status = 'fail';
       result.report = report;
     }
-    if (step.kind === 'ui' && result.status === 'pass') {
-      const json = JSON.parse(await readFile(path.join(artifactDir, `${step.id}.playwright.json`), 'utf8'));
-      if (!json.stats?.expected || json.stats.unexpected || json.stats.skipped || json.stats.flaky) result.status = 'fail';
-      result.report = path.join(artifactDir, `${step.id}.playwright.json`);
+    if (uiReport && result.status === 'pass') {
+      result.report = uiReport;
+      try {
+        const json = JSON.parse(await readFile(uiReport, 'utf8'));
+        const stats = json.stats;
+        if (!Number.isSafeInteger(stats?.expected) || stats.expected <= 0
+          || !['unexpected', 'skipped', 'flaky'].every((key) => Number.isSafeInteger(stats[key]) && stats[key] >= 0)
+          || stats.unexpected || stats.flaky || (!uiScript || mappedRequirement || step.kind === 'ui') && stats.skipped) {
+          result.status = 'fail';
+          result.error = `${task.id} acceptance test ${step.id}: UI report has empty, failed, flaky or skipped required tests; log: ${result.logPath}`;
+        }
+      } catch (error) {
+        result.status = 'fail';
+        result.error = `${task.id} acceptance test ${step.id}: UI report is missing or invalid (${error.code ?? error.name}); report: ${uiReport}`;
+      }
     }
     steps.push({ ...result, id: step.id, kind: step.kind });
     await onProgress?.(steps);

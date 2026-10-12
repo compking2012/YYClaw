@@ -70,6 +70,7 @@ vi.mock('@/stores/artifact-panel', () => ({
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: hostApiFetchMock,
   hostApi: {
+    gateway: { status: vi.fn().mockResolvedValue({ state: 'stopped', port: 18789 }) },
     asr: microphoneMocks,
     files: {
       stagePaths: (input: unknown) => hostApiFetchMock('/api/files/stage-paths', {
@@ -323,6 +324,30 @@ describe('ChatInput agent targeting', () => {
     vi.mocked(hostApiDialogOpenMock).mockReset();
     toastErrorMock.mockReset();
     artifactPanelMocks.openPreview.mockReset();
+  });
+
+  it('does not report a disconnected Gateway during local composer initialization', () => {
+    configureSingleAgent();
+    const view = render(
+      <TooltipProvider><ChatInput onSend={vi.fn()} disabled /></TooltipProvider>,
+    );
+    expect(screen.getByTestId('chat-composer-input')).toBeDisabled();
+    expect(screen.getByTestId('chat-composer-input')).toHaveAttribute('placeholder', '');
+    gatewayState.status = { state: 'stopped', port: 18789 };
+    view.rerender(<TooltipProvider><ChatInput onSend={vi.fn()} disabled /></TooltipProvider>);
+    expect(screen.getByTestId('chat-composer-input')).toHaveAttribute('placeholder', 'Gateway not connected...');
+  });
+
+  it('shows thinking and prevents duplicate submission while workflow triage is pending', () => {
+    configureSingleAgent();
+    const view = render(<TooltipProvider><ChatInput onSend={vi.fn()} routing /></TooltipProvider>);
+    expect(screen.getByTestId('chat-composer-working-indicator')).toHaveTextContent('Thinking…');
+    expect(screen.getByTestId('chat-composer-input')).toBeDisabled();
+    expect(screen.getByTestId('chat-composer-input')).toHaveAttribute('placeholder', '');
+    expect(screen.getByTestId('chat-composer-send')).toBeDisabled();
+    view.rerender(<TooltipProvider><ChatInput onSend={vi.fn()} /></TooltipProvider>);
+    expect(screen.queryByTestId('chat-composer-working-indicator')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-composer-input')).toBeEnabled();
   });
 
   it('shows active ACP context usage in an accessible tooltip', async () => {

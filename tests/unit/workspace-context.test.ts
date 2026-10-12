@@ -52,6 +52,18 @@ describe('workspace context helpers', () => {
     })).toEqual({ cwd: '/repo/from-openclaw', source: 'session', readOnly: true });
   });
 
+  it('pins the canonical session without an explicit default override', () => {
+    expect(resolveEffectiveWorkspace({
+      session: { key: 'agent:main:main', workspacePath: '/repo/stale' },
+      agentWorkspace: '/repo/agent',
+      globalWorkspace: '/repo/global',
+    })).toEqual({ cwd: DEFAULT_WORKSPACE_CWD, source: 'default', readOnly: true });
+    expect(resolveEffectiveWorkspace({
+      session: { key: 'agent:main:main' },
+      defaultWorkspace: '/repo/default',
+    })).toEqual({ cwd: '/repo/default', source: 'default', readOnly: true });
+  });
+
   it('uses global workspace for unbound local sessions', () => {
     expect(resolveEffectiveWorkspace({
       session: { createdLocally: true },

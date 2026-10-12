@@ -134,6 +134,7 @@ function productionAttachmentBundle(): Promise<string> {
     bundle: true,
     define: {
       'import.meta.url': JSON.stringify(pathToFileURL(join(repoRoot, 'electron/utils/paths.ts')).href),
+      __dirname: JSON.stringify(join(repoRoot, 'dist-electron/main')),
     },
     external: ['electron'],
     format: 'cjs',
@@ -288,7 +289,7 @@ async function launchClawXElectron(
   delete launchEnv.CLAWX_E2E_SKIP_SETUP;
   delete launchEnv.CLAWX_REMOTE_DEBUGGING_PORT;
   delete launchEnv.VITE_DEV_SERVER_URL;
-  return await electron.launch({
+  const app = await electron.launch({
     // The `electron` package's default export is the binary path at runtime, but
     // its bundled types describe the Electron API namespace instead.
     executablePath: electronBinaryPath as unknown as string,
@@ -313,6 +314,14 @@ async function launchClawXElectron(
     } as Record<string, string>,
     timeout: 90_000,
   });
+  try {
+    const page = await getStableWindow(app);
+    await page.locator('[data-testid="main-layout"], [data-testid="setup-page"]').waitFor({ state: 'visible' });
+    return app;
+  } catch (error) {
+    await closeElectronApp(app);
+    throw error;
+  }
 }
 
 export const test = base.extend<ElectronFixtures>({
@@ -367,6 +376,14 @@ export async function completeSetup(page: Page): Promise<void> {
   await expect(page.getByTestId('setup-page')).toBeVisible();
   await page.getByTestId('setup-skip-button').click();
   await expect(page.getByTestId('main-layout')).toBeVisible();
+}
+
+export async function openSettingsTab(page: Page, tab: 'general' | 'models' | 'channels' | 'skills'): Promise<void> {
+  if (!await page.getByTestId('settings-tab-general').isVisible()) {
+    await page.getByTestId('sidebar-nav-settings').click();
+  }
+  await page.getByTestId(`settings-tab-${tab}`).click();
+  await expect(page.getByTestId(`settings-tab-${tab}`)).toHaveAttribute('data-state', 'active');
 }
 
 export { closeElectronApp };
@@ -674,10 +691,21 @@ export async function installIpcMocks(
               return respond(request.id, unwrapLegacyResponse(mockConfig.hostApi[typedKey]));
             }
 
+            if (request.module === 'agents' && request.action === 'list') {
+              const legacyKey = stableStringify(['agents', 'list', null]);
+              if (legacyKey in mockConfig.hostApi) {
+                return respond(request.id, unwrapLegacyResponse(mockConfig.hostApi[legacyKey]));
+              }
+            }
+
             const legacyPath = legacyPathForHostRequest(request ?? {});
             if (legacyPath) {
               const key = stableStringify(legacyPath);
               if (key in mockConfig.hostApi) {
+                const delayMs = mockConfig.hostApiDelayMs?.[key];
+                if (typeof delayMs === 'number' && delayMs > 0) {
+                  await new Promise((resolveDelay) => setTimeout(resolveDelay, delayMs));
+                }
                 return respond(request.id, unwrapLegacyResponse(mockConfig.hostApi[key]));
               }
             }

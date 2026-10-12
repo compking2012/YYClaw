@@ -85,6 +85,7 @@ test.describe('Markdown file preview', { tag: E2E_EXCLUSIVE_TAG }, () => {
       await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
 
       const page = await openChat(app);
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
       await page.getByTestId('chat-toolbar-workspace').click();
 
       const panel = page.getByTestId('artifact-panel');

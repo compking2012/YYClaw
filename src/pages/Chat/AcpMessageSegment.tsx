@@ -253,7 +253,7 @@ export const AcpRenderPart = memo(function AcpRenderPart({
     if (tone === 'user') {
       return (
         <div className="min-w-0 max-w-full rounded-2xl bg-primary/10 px-4 py-3 text-foreground shadow-sm [overflow-wrap:anywhere]">
-          <p className="whitespace-pre-wrap break-words">{part.text}</p>
+          <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{part.text}</p>
         </div>
       );
     }

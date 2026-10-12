@@ -199,6 +199,10 @@ On packaged Windows builds, the bundled `openclaw` CLI/TUI runs via the shipped
 
 ### Autonomous Development Tooling
 
+UI acceptance requires fresh structured reports for Playwright files and registered E2E/performance scripts. Missing, empty, failed or flaky evidence fails even when the command exits successfully; directed or acceptance-mapped checks reject skipped requirements regardless of their declared kind. Only controller-added whole-suite quality checks retain platform exclusions, without certifying a requirement.
+
+Baseline fixtures isolate personal configuration and declare their own pnpm workspace roots, including when TMPDIR is inside a worktree. Resource leases publish complete ownership atomically and release idempotently; unknown leases are preserved. Commit and push reviewed baseline repairs before generating a new plan, never rewrite its frozen input SHA.
+
 The repository harness provides bounded automatic planning, isolated Codex implementation, independent test acceptance, per-task draft PRs, and immediate cleanup of owned workspaces. CI repairs recreate temporary workspaces; merge and release remain manual. Start with `pnpm harness autopilot plan --feature <id> --goal "<goal>"`, then `pnpm harness autopilot run --plan <plan-file>`. A clean committed repository, authenticated Codex and GitHub CLI, and test dependencies are required. External services need dedicated sandbox credentials; missing conditions block acceptance. Defaults are 8 tasks, 2 workers, 3 repairs and 6 hours. See the development harness guide for exact safety and deployment limitations.
 
 Autopilot uses the local Codex model/provider connection, including cc-switch, while keeping task credentials and configuration isolated. Keep the configured local proxy running; `--model` overrides the model without changing the provider.
@@ -208,3 +212,5 @@ Autopilot uses the local Codex model/provider connection, including cc-switch, w
 Planning adds missing mandatory rules before freezing, including documentation review for test-only tasks, without changing acceptance or write scopes. Frozen plans remain strictly validated.
 
 Autopilot workspaces reuse one incremental pnpm package store and persistent download caches under the project's `node_modules/.autopilot-cache/`, with independent dependency trees and safe cleanup. This dedicated cache is not the primary workspace's installed dependency tree; its first use downloads missing packages. A matching native uv installation is verified and copied into each task before install; unavailable required GitHub downloads are explicit environment blockers. Initialization reports its stage/log path every minute; `--init-timeout-minutes` defaults to 30, within the total run deadline.
+
+Dependency initialization uses the locked prebuilt sharp module without probing global Homebrew/libvips; installation scripts still run. POSIX integration tests use owned short socket paths so long worktree directories cannot cause endpoint truncation.

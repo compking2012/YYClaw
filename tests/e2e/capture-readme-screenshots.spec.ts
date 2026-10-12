@@ -423,14 +423,15 @@ function baseHostApi(localeDir: keyof typeof CRON_CONTENT) {
     [stableStringify(['skills', 'local', null])]: SKILLS,
     // Accept the ACP session load for whichever workspace the renderer resolves,
     // so the seeded conversation has a live generation to attach to.
-    ...Object.fromEntries([MAIN_WORKSPACE, '/', '~/.openclaw/workspace'].map((root) => [
+    ...Object.fromEntries([MAIN_WORKSPACE, '/', '~/.openclaw/workspace'].flatMap((root) => [false, true].map((createIfMissing) => [
       stableStringify(['chat', 'loadAcpSession', {
         sessionKey: MAIN_SESSION_KEY,
         workspaceRoot: root,
         cwd: root,
+        ...(createIfMissing ? { createIfMissing: true } : {}),
       }]),
       { success: true, generation: 1 },
-    ])),
+    ]))),
     [stableStringify(['sessions', 'summaries', { sessionKeys: [MAIN_SESSION_KEY] }])]: { summaries: [] },
   };
 }
@@ -478,6 +479,7 @@ for (const locale of LOCALES) {
       },
       hostApi: baseHostApi(locale.dir),
     });
+    await page.reload();
 
     await expect(page.getByTestId('setup-page')).toBeVisible();
     await chooseLocale(page, locale.label);
@@ -490,6 +492,7 @@ for (const locale of LOCALES) {
       call.module === 'chat' && call.action === 'loadAcpSession'
       && (call.payload as { sessionKey?: string } | null)?.sessionKey === MAIN_SESSION_KEY
     ))).toBe(true);
+    await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
 
     // 1. Chat (default landing surface) with a seeded conversation
     await seedConversation(electronApp, locale.dir);

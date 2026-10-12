@@ -202,6 +202,7 @@ export function Chat() {
   const failObservedWorkflow = useChatStore((s) => s.failObservedWorkflow);
   const healStaleObservedWorkflows = useChatStore((s) => s.healStaleObservedWorkflows);
   const workflowCards = useChatStore((s) => s.workflowCardsBySession[currentSessionKey]);
+  const workflowRoutingSessionKey = useChatStore((state) => state.workflowRoutingSessionKey);
   const getWorkflowSkillByReadPath = useSkillWorkflowStore((s) => s.getWorkflowSkillByReadPath);
   const workflowSkillsByName = useSkillWorkflowStore((s) => s.byName);
   const setVisibleSession = useSessionAttentionStore((s) => s.setVisibleSession);
@@ -308,6 +309,7 @@ export function Chat() {
       agentWorkspace: currentAgent?.workspace,
       globalWorkspace: chatWorkspacePath,
       explicitWorkspace: workspaceOverride,
+      defaultWorkspace: currentAgent?.workspace,
     }),
     [chatWorkspacePath, currentSession, currentAgent, workspaceOverride],
   );
@@ -1056,6 +1058,7 @@ export function Chat() {
           }}
           disabled={acpLoading || acpCancelling || !cwd || !workspaceContextAvailable}
           sending={isCurrentSessionSubagent ? currentSubagentBusy : acpSending || acpCancelling}
+          routing={workflowRoutingSessionKey === currentSessionKey}
           statusOnly={isCurrentSessionSubagent}
           imageGenerating={imageGenerationPending}
           workspaceLabel={workspaceLabel}

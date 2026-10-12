@@ -15,6 +15,7 @@ describe.skipIf(process.platform === 'win32')('CUA CLI through pinned OpenClaw e
 
   beforeAll(async () => {
     const home = await realpath(await mkdtemp(join(tmpdir(), 'cua cli ')));
+    const socketDirectory = await realpath(await mkdtemp('/tmp/yyclaw-cua-'));
     try {
       const { stdout } = await promisify(execFile)(process.execPath, [
         resolve('tests/fixtures/cua-cli/openclaw-integration.mjs'),
@@ -26,6 +27,7 @@ describe.skipIf(process.platform === 'win32')('CUA CLI through pinned OpenClaw e
           // Exercise the supported POSIX launch policy even on Linux CI, which does not ship CUA.
           ...withCuaConnectionFileEnv({ CUA_DRIVER_RS_TELEMETRY_ENABLED: 'true' }, 'darwin', home),
           HOME: home, TMPDIR: home, XDG_CONFIG_HOME: home, XDG_CACHE_HOME: home,
+          CUA_INTEGRATION_SOCKET_DIR: socketDirectory,
           OPENCLAW_HOME: home, OPENCLAW_STATE_DIR: join(home, '.openclaw'),
           OPENCLAW_CONFIG_PATH: join(home, '.openclaw', 'openclaw.json'),
           SHELL: '/bin/sh', PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
@@ -36,6 +38,7 @@ describe.skipIf(process.platform === 'win32')('CUA CLI through pinned OpenClaw e
       report = JSON.parse(line!.slice('CUA_INTEGRATION_RESULT='.length));
     } finally {
       await rm(home, { recursive: true, force: true });
+      await rm(socketDirectory, { recursive: true, force: true });
     }
   }, 70000);
 
@@ -44,6 +47,7 @@ describe.skipIf(process.platform === 'win32')('CUA CLI through pinned OpenClaw e
     expect(report.descriptor).toMatchObject({ v: 2, driverVersion: '0.25.0', generation: 'synthetic-generation-1' });
     expect(report.descriptor.binaryPath).toContain("bundled driver's CLI.mjs");
     expect(report.descriptor.socketPath).toContain('host endpoint.sock');
+    expect(Buffer.byteLength(report.descriptor.socketPath)).toBeLessThan(104);
     expect(report.calls.map((call: { tool: string }) => call.tool)).toEqual([
       'list_windows', 'get_window_state', 'verify_state', 'get_window_state', 'end_session',
     ]);

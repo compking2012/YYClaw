@@ -118,11 +118,11 @@ test.describe('Agent deletion session reconciliation', () => {
       const agentCard = page.getByTestId('agent-card-test1');
       await expect(agentCard).toBeVisible();
       await agentCard.hover();
-      await page.getByTestId('agent-delete-test1').click();
+      await page.getByTestId('agent-card-delete-test1').click();
 
       await expect(page.getByText('Permanently delete Agent?')).toBeVisible();
-      await expect(page.getByText(/all associated chat history/i)).toBeVisible();
-      await expect(page.getByText(/cannot be undone/i)).toBeVisible();
+      await expect(page.getByText(/permanently deletes the agent/i)).toBeVisible();
+      await expect(page.getByText(/workspace, runtime, and session files from disk/i)).toBeVisible();
       await page.getByTestId('confirm-dialog-confirm-button').click();
 
       await expect(agentCard).toHaveCount(0);

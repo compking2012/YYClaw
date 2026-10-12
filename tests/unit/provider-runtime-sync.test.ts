@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => ({
   getProviderApiKeyFromOpenClaw: vi.fn(),
   listAgentsSnapshot: vi.fn(),
   listAgentsSnapshotReadOnly: vi.fn(),
+  removeVoiceProviderFromOpenClaw: vi.fn(),
+  listConfiguredVoiceProviderKinds: vi.fn(),
 }));
 
 vi.mock('@electron/services/providers/provider-store', () => ({
@@ -73,6 +75,14 @@ vi.mock('@electron/utils/openclaw-auth', () => ({
 vi.mock('@electron/utils/agent-config', () => ({
   listAgentsSnapshot: mocks.listAgentsSnapshot,
   listAgentsSnapshotReadOnly: mocks.listAgentsSnapshotReadOnly,
+}));
+
+vi.mock('@electron/utils/openclaw-voice', () => ({
+  syncTtsConfigToOpenClaw: vi.fn().mockResolvedValue(undefined),
+  syncTranscriptionConfigToOpenClaw: vi.fn().mockResolvedValue(undefined),
+  syncRealtimeConfigToOpenClaw: vi.fn().mockResolvedValue(undefined),
+  removeVoiceProviderFromOpenClaw: mocks.removeVoiceProviderFromOpenClaw,
+  listConfiguredVoiceProviderKinds: mocks.listConfiguredVoiceProviderKinds,
 }));
 
 vi.mock('@electron/utils/logger', () => ({
@@ -149,6 +159,8 @@ describe('provider-runtime-sync config delivery', () => {
     mocks.listProviderAccounts.mockResolvedValue([]);
     mocks.listAgentsSnapshot.mockResolvedValue({ agents: [] });
     mocks.listAgentsSnapshotReadOnly.mockResolvedValue({ agents: [] });
+    mocks.removeVoiceProviderFromOpenClaw.mockResolvedValue(undefined);
+    mocks.listConfiguredVoiceProviderKinds.mockResolvedValue(new Map());
   });
 
   it.each(['anthropic', 'google'])('syncs %s local model slots using its actual bundled connection preset', async (type) => {
@@ -248,6 +260,7 @@ describe('provider-runtime-sync config delivery', () => {
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('custom-moonshot');
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('moonshot-cn');
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledTimes(2);
+    expect(mocks.removeVoiceProviderFromOpenClaw).toHaveBeenCalled();
     expectNoGatewayLifecycleCalls(gateway);
   });
 

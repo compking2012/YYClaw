@@ -20,6 +20,24 @@ async function seedTestProvider(page: Parameters<typeof completeSetup>[0]): Prom
 }
 
 test.describe('ClawX provider lifecycle', () => {
+  test.beforeEach(async ({ electronApp, page }) => {
+    await electronApp.evaluate(({ app: _app }) => {
+      const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+      const handlers = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers;
+      const original = handlers?.get('host:invoke');
+      if (!original) throw new Error('host:invoke handler unavailable');
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', (event: unknown, request: { id?: string; module?: string; action?: string }) => {
+        if (request.module === 'providers' && request.action === 'catalogSource') {
+          return { id: request.id, ok: true, data: { source: 'local', baseUrl: null } };
+        }
+        return original(event, request);
+      });
+    });
+    await page.reload();
+  });
   test('promotes a remaining provider after deleting the default provider', async ({ page }) => {
     await completeSetup(page);
 
@@ -263,8 +281,7 @@ test.describe('ClawX provider lifecycle', () => {
     await page.getByTestId('providers-add-button').click();
     await expect(page.getByTestId('add-provider-type-tokendance')).toHaveCount(0);
     await page.getByTestId('add-provider-close-button').click();
-
-    await page.getByTestId('sidebar-nav-settings').click();
+    await expect(page.getByTestId('add-provider-dialog')).toHaveCount(0);
     await page.getByTestId('settings-tab-general').click();
     await page.getByRole('button', { name: '中文' }).click();
     await page.getByTestId('settings-tab-models').click();
@@ -280,7 +297,8 @@ test.describe('ClawX provider lifecycle', () => {
     await tokenDanceType.click();
     await expect(page.getByTestId('add-provider-auth-oauth-tab')).toBeVisible();
     await expect(page.getByTestId('add-provider-auth-apikey-tab')).toBeVisible();
-    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('qwen3.8-max');
+    await expect(page.getByTestId('add-provider-model-id-input-text')).toHaveValue('qwen3.8-max');
+    await page.getByTestId('add-provider-auth-oauth-tab').click();
     await expect(page.getByTestId('add-provider-oauth-login-button')).toBeVisible();
 
     await page.getByTestId('add-provider-auth-apikey-tab').click();
@@ -299,6 +317,7 @@ test.describe('ClawX provider lifecycle', () => {
 
     await page.getByTestId('providers-add-button').click();
     await page.getByTestId('add-provider-type-tokendance').click();
+    await page.getByTestId('add-provider-auth-oauth-tab').click();
     await page.getByTestId('add-provider-oauth-login-button').click();
     await expect.poll(() => electronApp.evaluate(() => (
       (globalThis as typeof globalThis & {
@@ -448,7 +467,7 @@ test.describe('ClawX provider lifecycle', () => {
     await page.getByTestId('add-provider-name-input').fill('LM Studio Local');
     await page.getByTestId('add-provider-api-key-input').fill('  sk-lm-test \n');
     await page.getByTestId('add-provider-base-url-input').fill('http://127.0.0.1:1234/v1');
-    await page.getByTestId('add-provider-model-id-input').fill('local-model');
+    await page.getByTestId('add-provider-model-id-input-text').fill('local-model');
     await page.getByTestId('add-provider-submit-button').click();
 
     await expect(page.getByTestId('provider-card-custom')).toContainText('LM Studio Local');
@@ -540,11 +559,8 @@ test.describe('ClawX provider lifecycle', () => {
     await page.getByTestId('provider-card-moonshot-edit').hover();
     await page.getByTestId('provider-edit-moonshot-edit').click();
 
-    await expect(page.getByTestId('provider-edit-model-id-moonshot-edit')).toBeDisabled();
-    await expect(page.getByTestId('provider-edit-model-id-moonshot-edit')).toHaveValue('kimi-k2.6');
-    await expect(page.getByTestId('provider-edit-model-id-help-moonshot-edit')).toContainText(
-      'The model ID cannot be changed after creation.',
-    );
+    await expect(page.getByTestId('provider-edit-model-id-moonshot-edit-text')).toBeEnabled();
+    await expect(page.getByTestId('provider-edit-model-id-moonshot-edit-text')).toHaveValue('kimi-k2.6');
 
     await page.getByTestId('provider-edit-key-input-moonshot-edit').fill('sk-bad');
     await page.getByTestId('provider-edit-save-moonshot-edit').click();
@@ -628,7 +644,7 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(addButton).toBeVisible();
   });
 
-  test('prefills the image-capable DeepSeek default model', async ({ page }) => {
+  test('prefills the committed DeepSeek default model', async ({ page }) => {
     await completeSetup(page);
 
     await page.getByTestId('sidebar-nav-settings').click();
@@ -639,12 +655,12 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
 
     await page.getByTestId('add-provider-type-deepseek').click();
-    const modelIdInput = page.getByTestId('add-provider-model-id-input');
-    await expect(modelIdInput).toHaveValue('deepseek-flash');
-    await expect(modelIdInput).toHaveAttribute('placeholder', 'deepseek-flash');
+    const modelIdInput = page.getByTestId('add-provider-model-id-input-text');
+    await expect(modelIdInput).toHaveValue('deepseek-v4-pro');
+    await expect(modelIdInput).toHaveAttribute('placeholder', 'deepseek-v4-pro');
   });
 
-  test('prefills the refreshed million-token default model per provider', async ({ page }) => {
+  test('prefills the committed per-kind default model per provider', async ({ page }) => {
     await completeSetup(page);
 
     await page.getByTestId('sidebar-nav-settings').click();
@@ -655,14 +671,12 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
 
     const expectedDefaults: Array<[string, string]> = [
-      ['anthropic', 'claude-opus-5'],
-      ['google', 'gemini-3.8-flash'],
-      ['moonshot', 'kimi-k3'],
-      ['moonshot-global', 'kimi-k3'],
-      // OpenRouter floating aliases carry a `~` prefix in their catalog.
-      ['openrouter', '~deepseek/deepseek-flash-latest'],
-      // SiliconFlow's GLM-5.3 is 1M-context but text-only.
-      ['siliconflow', 'zai-org/GLM-5.3'],
+      ['anthropic', 'claude-opus-4-8'],
+      ['google', 'gemini-3.1-pro-preview'],
+      ['moonshot', 'kimi-k2.6'],
+      ['moonshot-global', 'kimi-k2.6'],
+      ['openrouter', ''],
+      ['siliconflow', 'deepseek-ai/DeepSeek-V4-Flash'],
     ];
 
     for (const [index, [providerId, expectedModelId]] of expectedDefaults.entries()) {
@@ -670,9 +684,9 @@ test.describe('ClawX provider lifecycle', () => {
         await page.getByTestId('add-provider-change-type').click();
       }
       await page.getByTestId(`add-provider-type-${providerId}`).click();
-      const modelIdInput = page.getByTestId('add-provider-model-id-input');
+      const modelIdInput = page.getByTestId('add-provider-model-id-input-text');
       await expect(modelIdInput).toHaveValue(expectedModelId);
-      await expect(modelIdInput).toHaveAttribute('placeholder', expectedModelId);
+      if (expectedModelId) await expect(modelIdInput).toHaveAttribute('placeholder', expectedModelId);
     }
   });
 
@@ -698,7 +712,7 @@ test.describe('ClawX provider lifecycle', () => {
           const options = request.payload?.options as Record<string, unknown> | undefined;
           // Main compares the prefilled model against Google's listing, so the
           // form's model id has to reach validation for the check to exist.
-          if (options?.modelId !== 'gemini-3.8-flash') {
+          if (options?.modelId !== 'gemini-3.1-pro-preview') {
             return {
               id: request.id,
               ok: true,
@@ -710,7 +724,7 @@ test.describe('ClawX provider lifecycle', () => {
             ok: true,
             data: {
               valid: false,
-              error: 'Model "gemini-3.8-flash" is not available for this API key. Choose one of the models this key can reach, for example gemini-3.5-flash.',
+              error: 'Model "gemini-3.1-pro-preview" is not available for this API key. Choose one of the models this key can reach, for example gemini-2.5-flash.',
             },
           };
         }
@@ -726,6 +740,6 @@ test.describe('ClawX provider lifecycle', () => {
     await page.getByTestId('add-provider-submit-button').click();
 
     await expect(page.getByText(/is not available for this API key/)).toBeVisible();
-    await expect(page.getByText(/gemini-3\.8-flash/)).toBeVisible();
+    await expect(page.getByText(/gemini-3\.1-pro-preview/)).toBeVisible();
   });
 });

@@ -94,6 +94,7 @@ async function installSubagentFixture(app: ElectronApplication): Promise<void> {
       [stableStringify(['settings', 'getAll', null])]: {
         language: 'en',
         setupComplete: true,
+        devModeUnlocked: true,
         chatWorkspacePath: WORKSPACE,
         recentWorkspacePaths: [WORKSPACE],
       },
@@ -196,6 +197,9 @@ async function reloadStableWindow(app: ElectronApplication): Promise<Page> {
     if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
   }
   await expect(page.getByTestId('main-layout')).toBeVisible({ timeout: 30_000 });
+  const parent = page.getByTestId(`sidebar-session-${PARENT_KEY}`);
+  await parent.click();
+  await expect(parent).toHaveAttribute('aria-current', 'page');
   return page;
 }
 

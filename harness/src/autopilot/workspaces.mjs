@@ -19,7 +19,8 @@ export async function dirtyFiles(root) {
 }
 
 export async function assertClean(root) {
-  if ((await git(root, ['status', '--porcelain', '--untracked-files=all'])).trim()) throw new Error('Autopilot requires committed, clean inputs; user changes are never stashed or committed');
+  const changes = await dirtyFiles(root);
+  if (changes.length) throw new Error(`Autopilot requires committed, clean inputs; user changes are never stashed or committed. Review and commit the intended changes before planning (${changes.length} changed files): ${changes.slice(0, 10).join(', ')}${changes.length > 10 ? ', ...' : ''}`);
 }
 
 async function present(file) {

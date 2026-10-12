@@ -1,4 +1,4 @@
-import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
+import { openSettingsTab, completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -55,8 +55,8 @@ test.describe('Plugin channel activation status', () => {
     });
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
-    await expect(page.getByTestId('channels-page')).toBeVisible();
+    await openSettingsTab(page, 'channels');
+    await expect(page.getByTestId('channels-tab')).toBeVisible();
     await expect(page.getByTestId('channel-status-dingtalk')).toHaveText(/Connecting|连接中|接続中|Подключение/);
     await expect(page.getByTestId('channel-status-dingtalk')).not.toHaveText(/Disconnected|未连接|未接続|Отключён/);
   });

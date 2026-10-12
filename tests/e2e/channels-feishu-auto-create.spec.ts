@@ -34,19 +34,19 @@ async function installFeishuMocks(
   responses: typeof baseResponses,
 ) {
   await electronApp.evaluate(({ ipcMain }, payload) => {
-    ipcMain.removeHandler('hostapi:fetch');
-    ipcMain.handle('hostapi:fetch', async (_event, request: { path?: string; method?: string }) => {
-      const method = request?.method ?? 'GET';
-      const path = request?.path ?? '';
-      const ok = (json: unknown) => ({ ok: true, data: { status: 200, ok: true, json } });
-
-      if (path === '/api/channels/accounts' && method === 'GET') return ok(payload.responses.channelsAccounts);
-      if (path === '/api/agents' && method === 'GET') return ok(payload.responses.agents);
-      if (path === '/api/channels/feishu/candidate-icons' && method === 'GET') return ok(payload.responses.candidateIcons);
-      if (path === '/api/channels/feishu/auto-create' && method === 'POST') return ok(payload.autoCreateResponse);
-      if (path.startsWith('/api/channels/config/') && method === 'GET') return ok({ success: true, values: {} });
-      if (path === '/api/channels/config' && method === 'POST') return ok({ success: true });
-      return { ok: false, error: { message: `Unexpected hostapi:fetch request: ${method} ${path}` } };
+    const originalHostInvoke = (ipcMain as unknown as {
+      _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+    })._invokeHandlers?.get('host:invoke');
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event, request: { id?: string; module?: string; action?: string }) => {
+      const respond = (data: unknown) => ({ id: request.id, ok: true, data });
+      if (request.module === 'channels' && request.action === 'accounts') return respond(payload.responses.channelsAccounts);
+      if (request.module === 'agents' && request.action === 'list') return respond(payload.responses.agents);
+      if (request.module === 'channels' && request.action === 'formValues') return respond({ success: true, values: {} });
+      if (request.module === 'channels' && request.action === 'feishuCandidateIcons') return respond(payload.responses.candidateIcons);
+      if (request.module === 'channels' && request.action === 'feishuAutoCreate') return respond(payload.autoCreateResponse);
+      if (request.module === 'channels' && request.action === 'saveConfig') return respond({ success: true });
+      return originalHostInvoke?.(event, request) ?? respond({});
     });
   }, { autoCreateResponse, responses });
 }

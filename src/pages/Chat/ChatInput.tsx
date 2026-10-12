@@ -92,6 +92,7 @@ interface ChatInputProps {
   onDraftChange?: (update: SetStateAction<string>) => void;
   disabled?: boolean;
   sending?: boolean;
+  routing?: boolean;
   statusOnly?: boolean;
   imageGenerating?: boolean;
   workspaceLabel?: string;
@@ -339,6 +340,7 @@ export function ChatInput({
   onDraftChange,
   disabled = false,
   sending = false,
+  routing = false,
   statusOnly = false,
   imageGenerating = false,
   workspaceLabel,
@@ -496,7 +498,7 @@ export function ChatInput({
   const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
   const hasAgents = (agents ?? []).length > 0;
   const showModelPicker = hasAgents && textModelOptions.length > 0;
-  const inputDisabled = disabled || !isGatewayUsable || !hasAgents || !!switchingModelRef;
+  const inputDisabled = disabled || routing || !isGatewayUsable || !hasAgents || !!switchingModelRef;
   const attachmentsLocked = inputDisabled;
   const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
@@ -1284,10 +1286,10 @@ export function ChatInput({
   const activeComposerPanel = expandedComposerPanel.sessionKey === composerSessionKey
     ? expandedComposerPanel.panel
     : null;
-  const showWorkingIndicator = sending || hasWorkingSubagents;
+  const showWorkingIndicator = sending || routing || hasWorkingSubagents;
   const showSubagentControl = typeof onSelectSubagent === 'function' && subagentSessions.length > 0;
   const showStatusRow = showWorkingIndicator || showSubagentControl || currentPlan != null;
-  const workingLabel = sending ? t('composer.thinking') : t('composer.subagentsWorking');
+  const workingLabel = sending || routing ? t('composer.thinking') : t('composer.subagentsWorking');
 
   if (statusOnly) {
     return (
@@ -1466,7 +1468,7 @@ export function ChatInput({
               placeholder={
                 !hasAgents
                   ? t('composer.noAgentPlaceholder')
-                  : inputDisabled
+                  : !isGatewayUsable
                     ? t('composer.gatewayDisconnectedPlaceholder')
                     : ''
               }

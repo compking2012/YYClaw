@@ -163,6 +163,9 @@ async function openChat(app: ElectronApplication): Promise<Page> {
     if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
   }
   await expect(page.getByTestId('main-layout')).toBeVisible();
+  const sessionRow = page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`);
+  await sessionRow.click();
+  await expect(sessionRow).toHaveAttribute('aria-current', 'page');
   return page;
 }
 
@@ -239,6 +242,7 @@ test.describe('Observed workflow restart heal', () => {
       await seedStaleObservedCard(page);
       await page.reload();
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
 
       await expect
         .poll(async () =>

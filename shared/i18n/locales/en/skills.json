@@ -66,6 +66,7 @@
         "pathUnavailable": "Path not available",
         "configurable": "Configurable",
         "uninstall": "Uninstall",
+        "uninstalling": "Uninstalling...",
         "enable": "Enable",
         "disable": "Disable"
     },

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const statusMock = vi.fn();
 const localMock = vi.fn();
+const uninstallMock = vi.fn();
 
 // fetchSkills() pulls gateway skills via useGatewayStore.rpc('skills.status')
 vi.mock('@/stores/gateway', () => ({
@@ -17,6 +18,7 @@ vi.mock('@/lib/host-api', () => ({
       marketplaceSearch: vi.fn(),
       marketplaceInstall: vi.fn(),
       clawhubUninstall: vi.fn(),
+      marketplaceUninstall: (...args: unknown[]) => uninstallMock(...args),
       updateConfigs: vi.fn(),
     },
   },
@@ -36,6 +38,32 @@ describe('skills store local-first fetch', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+  });
+
+  it('removes only a confirmed uninstall even when the refreshed local catalog is empty', async () => {
+    const operation = deferred<{ success: boolean }>();
+    uninstallMock.mockReturnValueOnce(operation.promise);
+    statusMock.mockResolvedValue({ skills: [] });
+    localMock.mockResolvedValue({ success: true, skills: [] });
+    const { useSkillsStore } = await import('@/stores/skills');
+    useSkillsStore.setState({ skills: [{ id: 'demo', slug: 'demo', name: 'Demo', enabled: true, description: '' }] });
+    const pending = useSkillsStore.getState().uninstallSkill('demo');
+    expect(useSkillsStore.getState().installing.demo).toBe(true);
+    expect(useSkillsStore.getState().skills).toHaveLength(1);
+    operation.resolve({ success: true });
+    await pending;
+    expect(useSkillsStore.getState().skills).toEqual([]);
+    expect(useSkillsStore.getState().installing.demo).toBeUndefined();
+  });
+
+  it('retains a failed uninstall and releases its busy state for retry', async () => {
+    uninstallMock.mockResolvedValueOnce({ success: false, error: 'Permission denied' });
+    const { useSkillsStore } = await import('@/stores/skills');
+    useSkillsStore.setState({ skills: [{ id: 'demo', slug: 'demo', name: 'Demo', enabled: true, description: '' }] });
+    await expect(useSkillsStore.getState().uninstallSkill('demo')).rejects.toThrow('Permission denied');
+    expect(useSkillsStore.getState().skills).toHaveLength(1);
+    expect(useSkillsStore.getState().installing.demo).toBeUndefined();
+    expect(localMock).not.toHaveBeenCalled();
   });
 
   it('starts local and gateway requests together, then returns after local skills load', async () => {

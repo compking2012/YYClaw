@@ -36,9 +36,11 @@ test.describe('Session auto-cleanup maintenance settings', () => {
     await page.getByTestId('settings-maintenance-prune-after').fill('30d');
     await page.getByTestId('settings-maintenance-max-entries').fill('500');
     await page.getByTestId('settings-maintenance-save').click();
+    await expect(page.locator('[data-sonner-toast]')).toContainText('Auto-cleanup policy saved');
 
     // Navigate away and back so the form reloads its value from disk, proving the
     // save round-tripped through the host API into openclaw.json.
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
     await page.getByTestId('sidebar-nav-agents').click();
     await page.getByTestId('sidebar-nav-settings').click();
     await expect(page.getByTestId('settings-tab')).toBeVisible();
@@ -46,5 +48,7 @@ test.describe('Session auto-cleanup maintenance settings', () => {
     const modeSelect = page.getByTestId('settings-maintenance-mode');
     await modeSelect.scrollIntoViewIfNeeded();
     await expect(modeSelect).toHaveValue('warn');
+    await expect(page.getByTestId('settings-maintenance-prune-after')).toHaveValue('30d');
+    await expect(page.getByTestId('settings-maintenance-max-entries')).toHaveValue('500');
   });
 });

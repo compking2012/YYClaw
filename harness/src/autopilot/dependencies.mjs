@@ -69,6 +69,7 @@ export function dependencyEnvironment(home, cache, source = process.env) {
     PATH: [path.join(home, 'bin'), process.env.PATH].filter(Boolean).join(path.delimiter),
     ...network, npm_config_store_dir: cache.storeDir,
     npm_config_package_import_method: 'copy', npm_config_side_effects_cache: 'false',
+    SHARP_IGNORE_GLOBAL_LIBVIPS: '1',
     YYCLAW_RELEASE_CACHE_DIR: cache.releaseCacheDir,
     electron_config_cache: cache.electronCacheDir,
     npm_config_userconfig: path.join(home, '.npmrc'),

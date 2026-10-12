@@ -16,8 +16,8 @@ type AgentSummary = {
 };
 
 const initialAgents: AgentSummary[] = [
-  { id: 'main', name: 'Main', skills: [] },
-  { id: 'bot-a', name: 'Bot A', skills: ['skill-beta'] },
+  { id: 'main', name: 'Main', skills: [], channelTypes: [] },
+  { id: 'bot-a', name: 'Bot A', skills: ['skill-beta'], channelTypes: [] },
 ];
 
 const localSkills = [
@@ -148,6 +148,10 @@ test.describe('Agents skill selection', () => {
           return respond(request.id, { success: true, selections: {} });
         }
 
+        if (request?.module === 'skills' && request.action === 'local') {
+          return respond(request.id, { success: true, skills: payload.skills });
+        }
+
         return originalHostInvoke?.(event, request) ?? respond(request?.id, { success: true });
       });
 
@@ -206,13 +210,18 @@ test.describe('Agents skill selection', () => {
     await page.getByTestId('agent-settings-skills-other-bulk-select-all').click();
     await page.getByTestId('agent-settings-skills-other-bulk-disable').click();
     await page.getByTestId('agent-settings-skills-other-search').fill('');
-    await page.getByRole('button', { name: /save skills|保存技能/i }).click();
+    await page.getByTestId('agent-settings-save-all').click();
 
     const saved = await electronApp.evaluate(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (globalThis as any).__clawxE2eLastSkillsUpdate as string[] | null;
     });
-    expect(saved).toEqual(['skill-alpha']);
+    expect(saved).toEqual(['alpha skill']);
+    const savedAgents = await electronApp.evaluate(() => {
+      return (globalThis as typeof globalThis & { __clawxE2eAgents: AgentSummary[] }).__clawxE2eAgents;
+    });
+    expect(savedAgents.find((agent) => agent.id === 'bot-a')?.skills).toEqual(['alpha skill']);
+    expect(savedAgents.find((agent) => agent.id === 'main')?.skills).toEqual([]);
   });
 
   test('allows deleting the last agent and creating a new first default agent', async ({ electronApp, page }) => {
@@ -262,6 +271,10 @@ test.describe('Agents skill selection', () => {
           return respond(request.id, { success: true, selections: {} });
         }
 
+        if (request?.module === 'skills' && request.action === 'local') {
+          return respond(request.id, { success: true, skills: [] });
+        }
+
         return originalHostInvoke?.(event, request) ?? respond(request?.id, { success: true });
       });
 
@@ -281,7 +294,7 @@ test.describe('Agents skill selection', () => {
 
     await completeSetup(page);
     await page.getByTestId('sidebar-nav-agents').click();
-    await expect(page.getByText('Main')).toBeVisible();
+    await expect(page.getByTestId('agent-card-main').getByRole('heading', { name: 'Main', exact: true })).toBeVisible();
 
     await page.getByTestId('agent-card-delete-main').click();
     await page.getByRole('button', { name: /delete|删除|削除|удалить/i }).last().click();
@@ -291,7 +304,7 @@ test.describe('Agents skill selection', () => {
     await page.locator('#agent-name').fill('New Agent');
     await page.getByTestId('agent-create-save').click();
 
-    await expect(page.getByText('New Agent')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'New Agent', exact: true })).toBeVisible();
     await expect(page.getByText(/default|默认|по умолчанию/i)).toBeVisible();
   });
 

@@ -44,14 +44,14 @@ test.describe('Skills page gateway readiness', () => {
     await expect(page.getByTestId('skills-tab')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'PDF' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'XLSX' })).toBeVisible();
-    await expect(page.getByTestId('skills-gateway-banner')).toHaveAttribute('data-state', 'stopped', { timeout: 3_500 });
+    await expect(page.getByTestId('skills-gateway-banner')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Install Skills/i })).toHaveCount(0);
 
-    await page.getByTestId('skills-filter-enabled').click();
+    await page.getByTestId('skills-tab').getByRole('textbox').fill('PDF');
     await expect(page.getByRole('heading', { name: 'PDF' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'XLSX' })).toHaveCount(0);
 
-    await page.getByTestId('skills-filter-disabled').click();
+    await page.getByTestId('skills-tab').getByRole('textbox').fill('XLSX');
     await expect(page.getByRole('heading', { name: 'PDF' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'XLSX' })).toBeVisible();
   });
@@ -79,6 +79,7 @@ test.describe('Skills page gateway readiness', () => {
             description: 'Plugin skill',
             enabled: true,
             source: 'openclaw-plugin',
+            isBundled: true,
             baseDir: '/tmp/.openclaw/plugin-skills/browser-automation',
           }],
         },
@@ -91,7 +92,7 @@ test.describe('Skills page gateway readiness', () => {
     await expect(page.getByRole('heading', { name: 'Browser Automation' })).toBeVisible();
     await page.getByText('Browser Automation').click();
     await expect(page.getByRole('button', { name: /Uninstall|卸载|アンインストール|Удалить/i })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /Disable|禁用|無効化|Выключить/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Enable|启用|有効化|Включить/i })).toBeVisible();
   });
 
   test('clears stale startup banner once local skills load while runtime rpc is still starting', async ({ electronApp, page }) => {
@@ -118,7 +119,7 @@ test.describe('Skills page gateway readiness', () => {
 
     await page.getByTestId('settings-tab-skills').click();
     await expect(page.getByTestId('skills-tab')).toBeVisible();
-    await expect(page.getByTestId('skills-gateway-banner')).toHaveAttribute('data-state', 'stopped', { timeout: 3_500 });
+    await expect(page.getByTestId('skills-gateway-banner')).toHaveCount(0);
 
     await electronApp.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];

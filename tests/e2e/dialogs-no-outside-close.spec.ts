@@ -25,18 +25,18 @@ const channelResponses = {
 
 async function installChannelMocks(electronApp: import('@playwright/test').ElectronApplication) {
   await electronApp.evaluate(({ ipcMain }, responses) => {
-    ipcMain.removeHandler('hostapi:fetch');
-    ipcMain.handle('hostapi:fetch', async (_event, request: { path?: string; method?: string }) => {
-      const method = request?.method ?? 'GET';
-      const path = request?.path ?? '';
-      const ok = (json: unknown) => ({ ok: true, data: { status: 200, ok: true, json } });
-
-      if (path.startsWith('/api/channels/accounts') && method === 'GET') return ok(responses.channelsAccounts);
-      if (path === '/api/agents' && method === 'GET') return ok(responses.agents);
-      if (path === '/api/channels/feishu/candidate-icons' && method === 'GET') return ok(responses.candidateIcons);
-      if (path.startsWith('/api/channels/config/') && method === 'GET') return ok({ success: true, values: {} });
-      if (path === '/api/channels/config' && method === 'POST') return ok({ success: true });
-      return { ok: false, error: { message: `Unexpected hostapi:fetch request: ${method} ${path}` } };
+    const originalHostInvoke = (ipcMain as unknown as {
+      _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+    })._invokeHandlers?.get('host:invoke');
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event, request: { id?: string; module?: string; action?: string }) => {
+      const respond = (data: unknown) => ({ id: request.id, ok: true, data });
+      if (request.module === 'channels' && request.action === 'accounts') return respond(responses.channelsAccounts);
+      if (request.module === 'agents' && request.action === 'list') return respond(responses.agents);
+      if (request.module === 'channels' && request.action === 'formValues') return respond({ success: true, values: {} });
+      if (request.module === 'channels' && request.action === 'feishuCandidateIcons') return respond(responses.candidateIcons);
+      if (request.module === 'channels' && request.action === 'saveConfig') return respond({ success: true });
+      return originalHostInvoke?.(event, request) ?? respond({});
     });
   }, channelResponses);
 }
@@ -99,7 +99,7 @@ test.describe('Dialog dismiss behavior', () => {
     }
   });
 
-  test('agent selector opens above an open skills side sheet', async ({ launchElectronApp }) => {
+  test('agent selector remains interactive after closing the skills side sheet', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     try {
       const page = await getStableWindow(app);
@@ -113,6 +113,8 @@ test.describe('Dialog dismiss behavior', () => {
 
       await page.getByTestId('skills-install-button').click();
       await expect(page.getByTestId('skills-server-install-sheet')).toBeVisible();
+      await page.getByTestId('skills-install-sheet-exit').click();
+      await expect(page.getByTestId('skills-server-install-sheet')).toHaveCount(0);
 
       const skillRow = page.getByTestId('skill-list-item').first();
       await skillRow.getByTestId('skill-agent-assign-button').click();
@@ -128,9 +130,9 @@ test.describe('Dialog dismiss behavior', () => {
 
       // Windows frameless titlebar uses -webkit-app-region: drag; without no-drag,
       // Electron steals clicks on the header Save/Exit controls.
-      await expect(page.getByTestId('skill-agent-selector-dialog')).toHaveClass('no-drag');
-      await expect(page.getByTestId('skill-agent-selector-save')).toHaveClass('no-drag');
-      await expect(page.getByTestId('skill-agent-selector-exit')).toHaveClass('no-drag');
+      await expect(page.getByTestId('skill-agent-selector-dialog')).toHaveClass(/\bno-drag\b/);
+      await expect(page.getByTestId('skill-agent-selector-save')).toHaveClass(/\bno-drag\b/);
+      await expect(page.getByTestId('skill-agent-selector-exit')).toHaveClass(/\bno-drag\b/);
 
       await page.getByTestId('skill-agent-selector-exit').click();
       await expect(page.getByTestId('skill-agent-selector-dialog')).toBeHidden();

@@ -1,4 +1,4 @@
-import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
+import { closeElectronApp, expect, getStableWindow, installIpcMocks, test, type IpcMockConfig } from './fixtures/electron';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
 
@@ -34,16 +34,29 @@ const doneRun = {
   updatedAt: Date.now(),
 };
 
-function buildWorkflowMocks() {
+function buildWorkflowMocks(): IpcMockConfig & { hostApi: NonNullable<IpcMockConfig['hostApi']> } {
   return {
     gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
     gatewayRpc: {
       [stableStringify(['sessions.list', {}])]: {
         success: true,
-        result: { sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main' }] },
+        result: { sessions: [
+          { key: MAIN_SESSION_KEY, displayName: 'main' },
+          { key: `wf:${RUN_ID}:fetch`, displayName: 'WF_CHILD_LEAK_MARKER', updatedAt: Date.now() },
+        ] },
       },
     },
     hostApi: {
+      [stableStringify(['agents', 'list', null])]: {
+        success: true,
+        agents: [{ id: 'main', name: 'main', workspace: '~/.openclaw/workspace', mainSessionKey: MAIN_SESSION_KEY }],
+      },
+      [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: '~/.openclaw/workspace', cwd: '~/.openclaw/workspace' }])]: {
+        success: true, generation: 1,
+      },
+      [stableStringify(['settings', 'getAll', null])]: {
+        language: 'en', setupComplete: true, autoWorkflowEnabled: true,
+      },
       [stableStringify(['/api/gateway/status', 'GET'])]: {
         ok: true,
         data: { status: 200, ok: true, json: { state: 'running', port: 18789, pid: 12345 } },
@@ -103,7 +116,9 @@ test.describe('Inline workflow card in chat', () => {
       await installIpcMocks(app, buildWorkflowMocks());
 
       const page = await getStableWindow(app);
+      await page.reload();
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
 
       const input = page.getByTestId('chat-composer-input');
       await expect(input).toBeEnabled({ timeout: 30_000 });
@@ -125,13 +140,13 @@ test.describe('Inline workflow card in chat', () => {
       await expect(page.getByText(FINAL_TEXT)).toBeVisible({ timeout: 15_000 });
 
       // Closing the panel does not make it auto-reopen.
-      await panel.getByRole('button').last().click();
+      await panel.getByRole('button', { name: 'Close', exact: true }).click();
       await expect(panel).toBeHidden();
       await page.waitForTimeout(300);
       await expect(page.getByTestId('workflow-floating-panel')).toBeHidden();
 
       // Clicking the link again reopens it with the same progress.
-      await link.click();
+      await link.getByTestId('workflow-inline-card-button').click();
       await expect(page.getByTestId('workflow-floating-panel')).toBeVisible();
       await expect(page.getByTestId('workflow-run-panel')).toBeVisible();
 
@@ -158,7 +173,9 @@ test.describe('Inline workflow card in chat', () => {
       await installIpcMocks(app, mocks);
 
       const page = await getStableWindow(app);
+      await page.reload();
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
 
       const input = page.getByTestId('chat-composer-input');
       await expect(input).toBeEnabled({ timeout: 30_000 });
@@ -172,6 +189,7 @@ test.describe('Inline workflow card in chat', () => {
       await expect(page.getByTestId('workflow-turn-block')).toBeVisible({ timeout: 5_000 });
       await expect(page.getByTestId('workflow-turn-block').getByText(query)).toBeVisible();
       await expect(page.getByTestId('chat-composer-working-indicator')).toBeVisible();
+      await expect(page.getByTestId('chat-composer-send')).toBeDisabled();
       await expect(page.getByTestId('workflow-inline-card')).toHaveCount(0);
       await expect(page.getByTestId('workflow-floating-panel')).toBeHidden();
 
@@ -213,7 +231,9 @@ test.describe('Inline workflow card in chat', () => {
       await installIpcMocks(app, mocks);
 
       const page = await getStableWindow(app);
+      await page.reload();
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
 
       const input = page.getByTestId('chat-composer-input');
       await expect(input).toBeEnabled({ timeout: 30_000 });
@@ -228,12 +248,9 @@ test.describe('Inline workflow card in chat', () => {
         .toContain(RUN_ID);
 
       // Delete the session from the sidebar (hover row → trash → confirm).
-      const sessionRow = page
-        .getByTestId('sidebar')
-        .locator('div.group', { hasText: 'main' })
-        .first();
+      const sessionRow = page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`);
       await sessionRow.hover();
-      await sessionRow.getByLabel('Delete session').click();
+      await page.getByTestId(`sidebar-session-delete-${MAIN_SESSION_KEY}`).click();
       const dialog = page.getByRole('dialog');
       await expect(dialog).toBeVisible();
       await dialog.getByRole('button').last().click();

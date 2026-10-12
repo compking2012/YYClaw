@@ -14,13 +14,14 @@ test.describe('Skills server marketplace sheet', () => {
       await page.getByTestId('settings-tab-skills').click();
       await expect(page.getByTestId('skills-tab')).toBeVisible();
 
-      await expect(page.getByTestId('skills-publish-button')).toBeVisible();
+      await expect(page.getByTestId('skills-lifecycle-button')).toBeVisible();
 
       await page.getByTestId('skills-install-button').click();
 
       await expect(page.getByTestId('skills-server-install-sheet')).toBeVisible();
       await expect(page.getByTestId('skills-server-install-search')).toBeVisible();
-      await expect(page.getByTestId('skills-install-source-select')).toBeVisible();
+      await expect(page.getByTestId('skills-install-source-select')).toHaveCount(0);
+      await expect(page.getByTestId('skills-server-install-sheet').getByRole('button', { name: 'Server', exact: true })).toBeDisabled();
     } finally {
       await closeElectronApp(app);
     }

@@ -23,7 +23,11 @@ async function renderComposerWithScenario(
     const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
     const now = new Date().toISOString();
     const autoSelectCalls: unknown[] = [];
+    const originalHostInvoke = (ipcMain as unknown as {
+      _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+    })._invokeHandlers?.get('host:invoke');
     let autoSelectOn = refs.scenario.autoSelectModel;
+    const workspacePath = '/tmp/clawx-model-auto-select-workspace';
     const makeResponse = (id: unknown, data: unknown) => ({
       id: typeof id === 'string' ? id : undefined,
       ok: true,
@@ -55,7 +59,7 @@ async function renderComposerWithScenario(
         overrideModelRef: refs.configuredModelRef,
         inheritedModel: false,
         autoSelectModel: { model: autoSelectOn },
-        workspace: '~/.openclaw/workspace',
+        workspace: workspacePath,
         agentDir: '~/.openclaw/agents/main/agent',
         mainSessionKey: 'agent:main:main',
         channelTypes: [],
@@ -68,7 +72,7 @@ async function renderComposerWithScenario(
     });
 
     ipcMain.removeHandler('host:invoke');
-    ipcMain.handle('host:invoke', async (_event: unknown, request: {
+    ipcMain.handle('host:invoke', async (event: unknown, request: {
       id?: string;
       module?: string;
       action?: string;
@@ -76,6 +80,24 @@ async function renderComposerWithScenario(
     }) => {
       if (request?.module === 'gateway' && request.action === 'status') {
         return makeResponse(request.id, { state: 'running', port: 18789, pid: 12345, gatewayReady: true });
+      }
+      if (request?.module === 'settings' && request.action === 'getAll') {
+        return makeResponse(request.id, {
+          language: 'en',
+          setupComplete: true,
+          chatWorkspacePath: workspacePath,
+          recentWorkspacePaths: [workspacePath],
+        });
+      }
+      if (request?.module === 'files' && request.action === 'resolveWorkspaceContext') {
+        const workspaceRoot = typeof request.payload?.workspaceRoot === 'string' ? request.payload.workspaceRoot.trim() : '';
+        const executionCwd = typeof request.payload?.executionCwd === 'string' ? request.payload.executionCwd.trim() : '';
+        return makeResponse(request.id, workspaceRoot && executionCwd
+          ? { ok: true, workspaceRoot, executionCwd }
+          : { ok: false, error: 'outsideSandbox' });
+      }
+      if (request?.module === 'chat' && request.action === 'loadAcpSession') {
+        return makeResponse(request.id, { success: true, generation: 1 });
       }
       if (request?.module === 'gateway' && request.action === 'rpc') {
         const method = typeof request.payload?.method === 'string' ? request.payload.method : '';
@@ -146,7 +168,7 @@ async function renderComposerWithScenario(
         return makeResponse(request.id, { accountId: 'alpha123' });
       }
 
-      return makeResponse(request?.id, {});
+      return originalHostInvoke?.(event, request) ?? makeResponse(request?.id, {});
     });
 
     (globalThis as typeof globalThis & { __autoSelectCalls?: unknown[] }).__autoSelectCalls = autoSelectCalls;

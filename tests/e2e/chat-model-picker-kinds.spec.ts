@@ -12,6 +12,10 @@ async function launchComposer(
   await app.evaluate(async ({ app: _app }, refs) => {
         const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
         const now = new Date().toISOString();
+        const workspacePath = '/tmp/clawx-model-kinds-workspace';
+        const originalHostInvoke = (ipcMain as unknown as {
+          _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+        })._invokeHandlers?.get('host:invoke');
         const makeResponse = (id: unknown, data: unknown) => ({
           id: typeof id === 'string' ? id : undefined,
           ok: true,
@@ -33,7 +37,7 @@ async function launchComposer(
         });
 
         ipcMain.removeHandler('host:invoke');
-        ipcMain.handle('host:invoke', async (_event: unknown, request: {
+        ipcMain.handle('host:invoke', async (event: unknown, request: {
           id?: string;
           module?: string;
           action?: string;
@@ -41,6 +45,22 @@ async function launchComposer(
         }) => {
           if (request?.module === 'gateway' && request.action === 'status') {
             return makeResponse(request.id, { state: 'running', port: 18789, pid: 12345, gatewayReady: true });
+          }
+          if (request?.module === 'settings' && request.action === 'getAll') {
+            return makeResponse(request.id, {
+              language: 'en', setupComplete: true, chatWorkspacePath: workspacePath,
+              recentWorkspacePaths: [workspacePath],
+            });
+          }
+          if (request?.module === 'files' && request.action === 'resolveWorkspaceContext') {
+            const workspaceRoot = String(request.payload?.workspaceRoot ?? '').trim();
+            const executionCwd = String(request.payload?.executionCwd ?? '').trim();
+            return makeResponse(request.id, workspaceRoot && executionCwd
+              ? { ok: true, workspaceRoot, executionCwd }
+              : { ok: false, error: 'outsideSandbox' });
+          }
+          if (request?.module === 'chat' && request.action === 'loadAcpSession') {
+            return makeResponse(request.id, { success: true, generation: 1 });
           }
           if (request?.module === 'gateway' && request.action === 'rpc') {
             const method = typeof request.payload?.method === 'string' ? request.payload.method : '';
@@ -63,7 +83,7 @@ async function launchComposer(
                 modelRef: refs.chatModelRef,
                 overrideModelRef: refs.chatModelRef,
                 inheritedModel: false,
-                workspace: '~/.openclaw/workspace',
+                workspace: workspacePath,
                 agentDir: '~/.openclaw/agents/main/agent',
                 mainSessionKey: 'agent:main:main',
                 channelTypes: [],
@@ -144,7 +164,7 @@ async function launchComposer(
             return makeResponse(request.id, { accountId: 'chat1234' });
           }
 
-          return makeResponse(request?.id, {});
+          return originalHostInvoke?.(event, request) ?? makeResponse(request?.id, {});
         });
   }, { chatModelRef });
 
@@ -236,7 +256,8 @@ test.describe('ClawX chat composer action row', () => {
         const ids = ['chat-composer-skill', 'chat-composer-mic', 'chat-composer-enhance-prompt', 'chat-composer-send'];
         const nodes = ids.map((id) => document.querySelector(`[data-testid="${id}"]`));
         if (nodes.some((node) => !node)) return null;
-        const row = nodes[3]!.parentElement!;
+        let row = nodes[3]!.parentElement!;
+        while (row.parentElement && !nodes.every((node) => row.contains(node))) row = row.parentElement;
         const children = [...row.children];
         const indexOf = (node: Element) => children.findIndex((child) => child === node || child.contains(node));
         const left = (node: Element) => Math.round(node.getBoundingClientRect().left);

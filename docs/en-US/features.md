@@ -17,6 +17,10 @@ provider keys, and Gateway readiness is not required to complete setup.
 
 ## Intelligent Chat Interface
 
+Provider creation in System Settings uses the shared centered dialog transition and resets the form after closing. Skill uninstall keeps a disabled progress action when its detail is reopened, then removes the confirmed-deleted skill; a failed uninstall remains retryable.
+
+Rejected replacement API keys remain visible inline until the key is edited and revalidated. While a workflow is being decomposed, its conversation shows thinking feedback and prevents duplicate submissions; other conversations do not inherit that pending state. Local composer initialization does not report a running Gateway as disconnected.
+
 Communicate with AI agents through a modern chat experience. YYClaw supports
 multiple conversation contexts and message history, with assistant replies
 rendered as streaming Markdown with syntax-highlighted fenced code, CJK-aware
@@ -25,6 +29,9 @@ parsing, GitHub-flavored tables, and KaTeX-powered LaTeX math (`$inline$`,
 main composer also supports direct `@agent` routing for multi-agent setups. Fenced
 code preserves source line breaks, soft-wraps long lines, and provides a localized
 copy action after streaming completes.
+
+Long unbroken user text also wraps inside the message column on narrow windows;
+it remains literal text rather than being interpreted as Markdown.
 
 Skills inserted from the composer appear as `/skill-name` cards. Click a card to
 open the preview sidebar and read that skill's `SKILL.md`.
@@ -50,8 +57,9 @@ opened; hovering still reveals row actions. Imported workspaces can be renamed
 from their sidebar header. The custom name is reflected in the chat composer,
 while hovering the header still reveals the filesystem path.
 
-When a valid workspace is selected, a new chat inherits it while remaining
-editable until the first send. Editable new or unbound chats expose a workspace
+New Chat starts in the configured default agent's workspace, not the previously
+selected conversation's workspace, and remains editable until the first send.
+Editable new or unbound chats expose a workspace
 chip in the composer. Its menu lists recent and known-session workspaces, lets you
 return to the default workspace, or choose another folder. If a saved workspace
 folder was moved or deleted, Chat pauses session creation and asks you to choose an
@@ -100,10 +108,9 @@ local HTML but cannot leave the selected document.
 
 ## Voice Interaction
 
-Talk to your agents and hear them reply. Voice runs entirely through the OpenClaw
-kernel's native Talk/TTS Gateway RPCs — no extra services.
+Talk to your agents and hear them reply. Dictation records audio locally and sends it through the Main-owned voice transcription route; conversation and TTS use the OpenClaw Gateway.
 
-- **Voice input** uses OpenClaw **Talk mode**. *Dictation* (push-to-talk)
+- **Voice input** supports two modes. *Dictation* (push-to-talk)
   transcribes your speech into the composer for review before sending;
   *Conversation* mode opens a continuous hands-free dialog (listen → think →
   speak) with server-side voice activity detection and barge-in. Switch modes in
@@ -184,6 +191,10 @@ bundled channel plugins cover Feishu/Lark, WeCom, Discord, QQ, and WhatsApp.
 One-click Feishu app creation also auto-configures a **Quick Commands** bot menu
 (`/new`, `/stop`, `/reset`, `/status`, `/compact`) so users can drive OpenClaw
 session control by tapping the bot menu instead of typing.
+
+The creation dialog explains those commands and reports successful app creation
+separately from optional Lark CLI sign-in readiness. An unfinished CLI sign-in
+does not misreport a successfully created app as a failed creation.
 
 ## Cron-Based Automation
 
@@ -322,11 +333,13 @@ probe using the configured model during API-key validation.
 
 ### Token Usage Analytics
 
-The Models page charts token usage over relative rolling 7-day and 30-day windows
+The **Settings → Usage** tab charts token usage over relative rolling 7-day and 30-day windows
 (not calendar-month buckets), grouped by model or by time, with cache-hit-rate
 computation and per-entry detail. When grouped by time, the chart keeps all day
 buckets in the selected window; only model grouping is intentionally capped to the
 top entries.
+
+Internal `gateway-injected` and `delivery-mirror` rows are hidden. Historical model usage remains visible even when the model is no longer in a current provider account.
 
 Token-usage history is aggregated from OpenClaw session transcript `.jsonl` files
 under the local OpenClaw config directory, not parsed from console logs. It scans

@@ -17,7 +17,7 @@ await copyFile(new URL('./fake-cli.mjs', import.meta.url), binaryPath);
 await chmod(binaryPath, 0o700);
 const descriptor = {
   v: 2, generation: 'synthetic-generation-1', driverVersion: '0.25.0',
-  binaryPath, socketPath: join(root, 'host endpoint.sock'),
+  binaryPath, socketPath: join(process.env.CUA_INTEGRATION_SOCKET_DIR, 'host endpoint.sock'),
 };
 const descriptorPath = join(root, 'connection descriptor.json');
 await writeFile(descriptorPath, JSON.stringify(descriptor));

@@ -40,42 +40,25 @@ export function ModalPortal({ children }: { children: ReactNode }) {
     // Stop native events from bubbling to the document listeners installed by an
     // outer Radix modal, so those behaviors don't reach into this portaled tree:
     //  - wheel / touchmove: react-remove-scroll's scroll lock (see file header).
-    //  - focusin / focusout: Radix FocusScope traps focus by listening for these
-    //    on <document> and refocusing the outer dialog whenever focus lands
-    //    outside its container. Since this modal is portaled outside that
-    //    container, without stopping propagation the trap would yank focus back
-    //    on every focus change here — making inputs impossible to type into.
     const stopPropagation = (event: Event) => event.stopPropagation();
     node.addEventListener('wheel', stopPropagation);
     node.addEventListener('touchmove', stopPropagation);
-    node.addEventListener('focusin', stopPropagation);
-    node.addEventListener('focusout', stopPropagation);
-
-    // The listeners above only see events that originate *inside* this portal.
-    // The very first focus into the modal is different: clicking an input here
-    // fires `focusout` on whatever was focused *before* — typically a control
-    // inside the outer Radix dialog (e.g. the button that opened this modal).
-    // That focusout is dispatched on an element outside `node`, so it bubbles
-    // straight to the outer FocusScope's document listener, whose handleFocusOut
-    // sees the new focus target (`relatedTarget`) is outside its container and
-    // immediately yanks focus back — so the input never actually focuses and no
-    // caret ever appears. Intercept that focusout in the capture phase (before
-    // it reaches the document-level handler) whenever focus is entering this
-    // modal, i.e. `relatedTarget` lives inside our portal.
-    const guardFocusEnteringModal = (event: FocusEvent) => {
+    const guardModalFocus = (event: FocusEvent) => {
+      const target = event.target;
       const related = event.relatedTarget;
-      if (related instanceof Node && node.contains(related)) {
+      if (target instanceof Node && node.contains(target)
+        || event.type === 'focusout' && related instanceof Node && node.contains(related)) {
         event.stopPropagation();
       }
     };
-    document.addEventListener('focusout', guardFocusEnteringModal, true);
+    document.body.addEventListener('focusin', guardModalFocus);
+    document.body.addEventListener('focusout', guardModalFocus);
 
     return () => {
       node.removeEventListener('wheel', stopPropagation);
       node.removeEventListener('touchmove', stopPropagation);
-      node.removeEventListener('focusin', stopPropagation);
-      node.removeEventListener('focusout', stopPropagation);
-      document.removeEventListener('focusout', guardFocusEnteringModal, true);
+      document.body.removeEventListener('focusin', guardModalFocus);
+      document.body.removeEventListener('focusout', guardModalFocus);
     };
   }, []);
 

@@ -198,6 +198,9 @@ test.describe('ClawX agent model picker', () => {
       await page.reload();
       await expect(page.getByTestId('main-layout')).toBeVisible();
       await expect(page.getByTestId('chat-page')).toBeVisible();
+      const sessionRow = page.getByTestId('sidebar-session-agent:main:main');
+      await sessionRow.click();
+      await expect(sessionRow).toHaveAttribute('aria-current', 'page');
       await expect(page.getByTestId('chat-model-picker-button')).toContainText('Alpha');
       await page.getByTestId('chat-model-picker-button').click();
       await page.getByTestId('chat-model-picker-option-Beta').click();

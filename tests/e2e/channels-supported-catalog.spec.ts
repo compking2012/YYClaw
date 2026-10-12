@@ -1,4 +1,4 @@
-import { completeSetup, expect, test } from './fixtures/electron';
+import { openSettingsTab, completeSetup, expect, test } from './fixtures/electron';
 
 const unsupportedChannelTypes = [
   'signal',
@@ -63,9 +63,9 @@ test.describe('ClawX supported channel catalog', () => {
     }, channelsResponse);
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
+    await openSettingsTab(page, 'channels');
 
-    const channelsPage = page.getByTestId('channels-page');
+    const channelsPage = page.getByTestId('channels-tab');
     await expect(channelsPage).toBeVisible();
     await expect(channelsPage.getByText('Feishu / Lark')).toBeVisible();
     await expect(channelsPage.getByText('Telegram', { exact: true })).toBeVisible();

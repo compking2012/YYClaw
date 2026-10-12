@@ -1,5 +1,5 @@
 import type { ElectronApplication } from '@playwright/test';
-import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
+import { closeElectronApp, expect, getStableWindow, openSettingsTab, test } from './fixtures/electron';
 
 async function readNativeMenuLabels(app: ElectronApplication) {
   return await app.evaluate(({ Menu }) => {
@@ -50,26 +50,28 @@ test.describe('ClawX main navigation without setup flow', () => {
       const page = await getStableWindow(app);
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      const originalUrl = page.url();
 
-      await page.getByTestId('sidebar-nav-models').click();
-      await expect(page.getByTestId('models-page')).toBeVisible();
-      await expect(page).toHaveURL(/#\/models$/);
+      await openSettingsTab(page, 'models');
+      await expect(page.getByTestId('models-tab')).toBeVisible();
+      await expect(page).toHaveURL(originalUrl);
+      await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
 
       await page.getByTestId('sidebar-nav-agents').click();
       await expect(page.getByTestId('agents-page')).toBeVisible();
       await expect(page).toHaveURL(/#\/agents$/);
 
-      await page.getByTestId('sidebar-nav-channels').click();
-      await expect(page.getByTestId('channels-page')).toBeVisible();
-      await expect(page).toHaveURL(/#\/channels$/);
+      await openSettingsTab(page, 'channels');
+      await expect(page.getByTestId('channels-tab')).toBeVisible();
+      await expect(page).toHaveURL(/#\/agents$/);
 
-      await page.getByTestId('sidebar-nav-skills').click();
+      await openSettingsTab(page, 'skills');
       await expect(page.getByTestId('skills-tab')).toBeVisible();
-      await expect(page).toHaveURL(/#\/skills$/);
+      await expect(page).toHaveURL(/#\/agents$/);
 
-      await page.getByTestId('sidebar-nav-settings').click();
-      await expect(page.getByTestId('settings-page')).toBeVisible();
-      await expect(page).toHaveURL(/#\/settings$/);
+      await openSettingsTab(page, 'general');
+      await expect(page.getByTestId('settings-tab')).toBeVisible();
+      await expect(page).toHaveURL(/#\/agents$/);
     } finally {
       await closeElectronApp(app);
     }
@@ -82,8 +84,11 @@ test.describe('ClawX main navigation without setup flow', () => {
       const page = await getStableWindow(app);
       await expect(page.getByTestId('chat-page')).toBeVisible();
 
-      await page.getByTestId('sidebar-nav-models').click();
-      await expect(page.getByTestId('models-page')).toBeVisible();
+      await openSettingsTab(page, 'models');
+      await expect(page.getByTestId('models-tab')).toBeVisible();
+      await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+      await page.getByTestId('sidebar-nav-agents').click();
+      await expect(page.getByTestId('agents-page')).toBeVisible();
 
       await app.evaluate(({ BrowserWindow, Menu }) => {
         const menu = Menu.getApplicationMenu();
@@ -114,9 +119,13 @@ test.describe('ClawX main navigation without setup flow', () => {
 
       await page.getByTestId('sidebar-nav-settings').click();
       await page.getByRole('button', { name: 'English' }).click();
+      await expect.poll(() => readNativeMenuLabels(app)).toMatchObject({
+        file: 'File',
+        newChat: 'New Chat',
+      });
       await page.getByRole('button', { name: '中文' }).click();
 
-      await expect(page.getByText('菜单语言已更新')).toBeVisible();
+      await expect(page.getByText('语言', { exact: true })).toBeVisible();
       await expect.poll(() => readNativeMenuLabels(app)).toMatchObject({
         file: '文件',
         newChat: '新对话',

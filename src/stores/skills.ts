@@ -561,6 +561,9 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       if (!result.success) {
         throw new Error(result.error || 'Uninstall failed');
       }
+      set((state) => ({ skills: state.skills.filter((skill) => (
+        skill.slug !== slug && skill.id !== slug
+      )) }));
       await get().fetchSkills();
     } catch (error) {
       console.error('Uninstall error:', error);

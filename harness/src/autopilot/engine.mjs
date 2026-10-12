@@ -50,9 +50,12 @@ export class AutopilotEngine {
     const requirements = await requirementContext(this.repo, input.featureId);
     const plan = validatePlan(input, { featureIds: requirements.featureIds, allowRisks: this.allowRisks });
     await validateSources(this.repo, plan);
-    if (plan.tasks.length > this.budget.maxTasks || plan.baseSha !== await git(this.repo, ['rev-parse', 'HEAD'])) throw new Error('Plan exceeds budget or differs from committed input SHA');
+    if (plan.tasks.length > this.budget.maxTasks) throw new Error(`Plan contains ${plan.tasks.length} tasks but the run budget allows ${this.budget.maxTasks}; generate a smaller plan without changing frozen acceptance`);
+    const currentSha = await git(this.repo, ['rev-parse', 'HEAD']);
+    if (plan.baseSha !== currentSha) throw new Error(`Frozen plan is stale: plan base SHA ${plan.baseSha}, current HEAD ${currentSha}. Generate a new plan from current committed inputs; never edit an existing plan's baseSha`);
     const remoteBase = await git(this.repo, ['ls-remote', '--heads', 'origin', `refs/heads/${plan.targetBranch}`]);
-    if (remoteBase.split(/\s+/)[0] !== plan.baseSha) throw new Error('Frozen input must match the published target branch; publish or synchronize baseline changes separately');
+    const remoteSha = remoteBase.split(/\s+/)[0];
+    if (remoteSha !== plan.baseSha) throw new Error(`Frozen input must match the published target branch origin/${plan.targetBranch}: plan base SHA ${plan.baseSha}, remote SHA ${remoteSha || '(branch not found)'}. Publish or synchronize reviewed baseline changes separately, then generate a new plan; Autopilot never publishes user changes`);
     await this.adapter.preflight?.();
     await this.publisher.preflight?.();
     const runId = `run-${randomUUID()}`;

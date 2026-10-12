@@ -37,4 +37,23 @@ test.describe('ClawX Electron smoke flows', () => {
       await closeElectronApp(relaunchedApp);
     }
   });
+
+  test('finishes renderer startup and registers backend handlers before exposing the launcher', async ({ launchElectronApp }) => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const app = await launchElectronApp({ skipSetup: true });
+      try {
+        const page = app.windows().at(-1);
+        expect(page).toBeDefined();
+        await expect(page!.getByTestId('main-layout')).toBeVisible();
+        const handlersReady = await app.evaluate(() => {
+          const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+          const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, unknown> })._invokeHandlers;
+          return ['host:invoke', 'gateway:status', 'gateway:rpc'].every((name) => handlers?.has(name));
+        });
+        expect(handlersReady).toBe(true);
+      } finally {
+        await closeElectronApp(app);
+      }
+    }
+  });
 });

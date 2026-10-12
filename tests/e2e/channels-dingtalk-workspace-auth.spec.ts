@@ -1,4 +1,4 @@
-import { completeSetup, expect, test } from './fixtures/electron';
+import { openSettingsTab, completeSetup, expect, test } from './fixtures/electron';
 
 const responses = {
   channels: { success: true, channels: [] },
@@ -80,8 +80,8 @@ test.describe('DingTalk workspace authorization', () => {
       });
     }, responses);
 
-    await page.getByTestId('sidebar-nav-channels').click();
-    await page.getByTestId('channels-page').getByRole('button', { name: /DingTalk/ }).click();
+    await openSettingsTab(page, 'channels');
+    await page.getByTestId('channels-tab').getByRole('button', { name: /DingTalk/ }).click();
 
     await page.locator('#clientId').fill('ding-client-id');
     await page.locator('#clientSecret').fill('ding-client-secret');

@@ -180,7 +180,8 @@ function formatSkillVersionLabel(version: string | undefined): string | null {
 
 function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOpenFolder }: SkillDetailDialogProps) {
   const { t } = useTranslation('skills');
-  const { fetchSkills } = useSkillsStore();
+  const { fetchSkills, installing } = useSkillsStore();
+  const uninstalling = Boolean(skill?.slug && installing[skill.slug]);
   const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
   const [apiKey, setApiKey] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -543,18 +544,21 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
 
             {!skill.isCore && (
               <Button
+                data-testid="skill-detail-uninstall"
                 variant="outline"
                 className="flex-1 h-[42px] text-[13px] rounded-full font-semibold shadow-sm bg-transparent border-black/20 dark:border-white/20 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-foreground/80 hover:text-foreground"
                 onClick={() => {
                   if (!skill.isBundled && onUninstall && skill.slug) {
                     onUninstall(skill.slug);
-                    onClose();
                   } else {
                     onToggle(!skill.enabled);
                   }
                 }}
+                disabled={uninstalling}
               >
-                {!skill.isBundled && onUninstall
+                {uninstalling
+                  ? t('detail.uninstalling')
+                  : !skill.isBundled && onUninstall
                   ? t('detail.uninstall')
                   : skill.enabled
                     ? t('detail.disable')
@@ -1466,6 +1470,7 @@ export function SkillsSettings() {
   const handleUninstall = useCallback(async (slug: string) => {
     try {
       await uninstallSkill(slug);
+      setSelectedSkill((current) => current?.slug === slug ? null : current);
       toast.success(t('toast.uninstalled'));
     } catch (err) {
       toast.error(t('toast.failedUninstall') + ': ' + String(err));

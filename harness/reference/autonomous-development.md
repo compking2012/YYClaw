@@ -1,5 +1,7 @@
 # Autonomous Development: Implementation and Safety
 
+UI baseline validation uses current settings-modal tabs and explicitly selected history. Provider creation follows the shared Radix opening/closing lifecycle and resets after closing. New Chat uses the default agent workspace; selecting a previous workspace is an explicit composer interaction. Baseline updates retain negative paths, persistence and real interaction assertions rather than ignoring failing checks.
+
 ## Implemented Architecture
 
 The repository harness exposes `autopilot plan/run/status/resume/cancel`. The development scheduler uses XState independently of Electron and the OpenClaw workflow engine. Codex performs read-only planning and review plus restricted workspace coding; Claude is an explicitly unsupported reserved adapter. No unsafe sandbox bypass is used.
@@ -9,6 +11,12 @@ Plans use Zod-validated version-1 JSON and frozen hashes. Exact write paths, tas
 Generated plan proposals receive controller-owned universal `docs-sync` and change-tag-mandated rules before validation and freezing. Completion is additive and idempotent; it does not change tags, acceptance, checks, paths, dependencies or source identity. `planning/rule-additions.json` records proposal/plan hashes and additions, mirrored in the manifest. Frozen JSON and task Markdown contain the completed rules. Loaded plans retain strict validation without automatic mutation. Test-only tasks still review documentation impact but need not add unrelated documentation changes.
 
 The initial committed SHA must match the remote target branch. An owned baseline worktree runs pinned dependency initialization, existing extension bridge generation, lint, typecheck, unit tests, build and harness checks before task coding. Validation acquires a cross-run host-resource lease. A failed baseline is not automatically edited, and no coding starts until it passes. Task source/spec references and UI/comms rule selection are checked before execution.
+
+Preflight lists changed input paths and distinguishes task-count budgets, stale plan/HEAD SHAs and unpublished target SHAs before allocating resources. Reviewed baseline fixes must be committed and published separately; generate a fresh plan afterwards rather than rewriting a frozen plan or bypassing the clean-input requirement.
+
+Runner/resource leases publish fully written ownership metadata with an atomic same-directory link. Contenders retry a released lease instead of reading partial JSON. Exclusive recovery serializes dead-owner removal; release shares one promise and cannot delete a successor on duplicate invocation. Unknown, symlinked, corrupt or interrupted recovery leases require ownership verification. Test fixtures declare their own pnpm workspace roots and mock personal configuration boundaries so private HOME/TMPDIR execution cannot depend on the developer's profile or modify an enclosing lockfile.
+
+Electron launch fixtures expose an application only after its real initial Renderer surface is visible, after Main's handler registration. Tests then install scoped typed IPC mocks and reload; no fixed sleeps or startup retries substitute for readiness. Historical ACP tests explicitly select the intended conversation, and current prompt/replay error tests retain usable output, failed-tool evidence and actual terminal failures without consulting the retired Gateway chat presentation.
 
 ## State and Evidence
 
@@ -20,11 +28,15 @@ Persistent `releases/`, `electron/` and `locks/` directories share the project's
 
 Run state, events, plans, task Markdown and attempt logs live under `artifacts/autopilot/<run-id>/`. JSON updates are atomic. A runner lock prevents concurrent owners; cancellation uses a durable marker. Working trees live in owned task containers within that directory, separately from durable task evidence. No database or runtime Gateway is involved.
 
+Initialization selects locked prebuilt sharp with `SHARP_IGNORE_GLOBAL_LIBVIPS=1`, avoiding global Homebrew discovery in disposable HOME while retaining install scripts and real image-processing checks. Test-owned POSIX Unix sockets require short private paths; long worktree-derived paths can truncate and falsely report an address conflict. These are baseline environment fixes, not acceptance exemptions.
+
 Task phases are coding, accepting, local-pass, publishing, cleaning, waiting-ci and complete. Blocked, failed and cleanup-failed do not represent successful delivery. Global run transitions use a persisted XState snapshot. A new process reconstructs owned resources and revalidates evidence rather than continuing an unverified in-memory step. Deadline and repair limits survive resume.
 
 Validation executes registered commands without a shell, including declared checks and mandatory baseline lint/typecheck/unit/build/harness gates. UI and communication tags add Electron E2E and comms replay/compare. Missing authorized sandbox variables are blocked. Vitest targeted checks write JSON results and reject skipped/empty suites; independent review checks every acceptance ID and actual logs. Unmapped evidence, undeclared UI/comms changes, scope escapes, test skipping and removal of existing assertions fail. Natural-language rule text guides review; it is not an executable security policy. The deterministic controller owns enforceable gates.
 
 ## Publication and Stack Repair
+
+Playwright file checks and registered E2E/performance scripts write fresh JSON reports, regardless of their declared check kind. Missing, malformed, empty, failed or flaky results fail acceptance; stale reports are removed before execution. Directed or acceptance-mapped UI checks reject skipped tests even when labeled quality. Only controller-added whole-suite quality runs retain reported platform-inapplicable skips, without treating them as acceptance for a mapped requirement. Screenshots supplement, never replace, these results.
 
 Codex planning, implementation and review use the same local connection configuration as direct CLI execution. The adapter resolves `$CODEX_HOME` or `~/.codex`, parses `config.toml`, applies the selected profile, and copies only model settings plus the selected provider's endpoint, authentication, headers, query parameters and transport/retry settings. `--model` takes precedence over the configured model without changing the provider. Model API-key variables, declared provider key/header variables and proxy/certificate variables are inherited; publishing and execution-control variables are rejected. Missing providers, required keys or malformed TOML fail before model execution. Default Codex authentication also works without a config file or with an environment-provided API key.
 

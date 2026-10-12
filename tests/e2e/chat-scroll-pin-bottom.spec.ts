@@ -140,6 +140,9 @@ test.describe('ClawX chat scroll pin-to-bottom during runs', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      const sessionRow = page.getByTestId(`sidebar-session-${SESSION_KEY}`);
+      await sessionRow.click();
+      await expect(sessionRow).toHaveAttribute('aria-current', 'page');
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await emitAcpSessionUpdates(app, seededUpdates, true);
       await expect(page.getByText('Chat history message 40')).toBeVisible({ timeout: 30_000 });

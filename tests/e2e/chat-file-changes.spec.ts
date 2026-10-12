@@ -86,6 +86,7 @@ async function installFileActivityMocks(app: ElectronApplication, options: {
   const settings = {
     language: 'en',
     setupComplete: true,
+    devModeUnlocked: true,
     chatWorkspacePath: WORKSPACE,
     recentWorkspacePaths: [WORKSPACE],
   };
@@ -241,6 +242,9 @@ async function openChat(app: ElectronApplication): Promise<Page> {
   }
   await expect(page.getByTestId('main-layout')).toBeVisible();
   await expect(page.getByTestId('chat-page')).toBeVisible();
+  const sessionRow = page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`);
+  await sessionRow.click();
+  await expect(sessionRow).toHaveAttribute('aria-current', 'page');
   return page;
 }
 
@@ -436,7 +440,7 @@ test.describe('ClawX chat file changes', () => {
       await expect(page.getByTestId('acp-file-summary-row')).toHaveCount(0);
 
       const panel = await openChanges(page);
-      await expect(panel.getByText('This session has no file changes yet.')).toBeVisible();
+      await expect(panel.getByText('No file changes in this session yet')).toBeVisible();
       await expect(panel.getByTestId('acp-change-file-group')).toHaveCount(0);
       await expect(panel.getByText(/File changes \(/)).toHaveCount(0);
     } finally {
@@ -559,7 +563,7 @@ test.describe('ClawX chat file changes', () => {
       await expect(missingInputWrite).toContainText('Completed', { timeout: 30_000 });
       await expect(page.getByTestId('acp-turn-file-activity')).toHaveCount(0);
       const panel = await openChanges(page);
-      await expect(panel.getByText('This session has no file changes yet.')).toBeVisible();
+      await expect(panel.getByText('No file changes in this session yet')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
@@ -581,7 +585,7 @@ test.describe('ClawX chat file changes', () => {
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
       const panel = await openChanges(page);
-      await expect(panel.getByText('This session has no file changes yet.')).toBeVisible();
+      await expect(panel.getByText('No file changes in this session yet')).toBeVisible();
       await expect(panel.getByTestId('acp-change-file-group')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);

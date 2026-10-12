@@ -2,6 +2,7 @@ import type { ElectronApplication, Page } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const TRANSCRIBED_TEXT = 'voice dictation result';
+const WORKSPACE = '/tmp/yyclaw-voice-e2e';
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -15,6 +16,14 @@ function stableStringify(value: unknown): string {
 async function stubMicrophoneCapture(page: Page, denyFirst = false): Promise<void> {
   await page.addInitScript((deny) => {
     let first = deny;
+    const state = { capturedFrames: 0 };
+    (window as unknown as { voiceCapture: typeof state }).voiceCapture = state;
+    const createProcessor = AudioContext.prototype.createScriptProcessor;
+    AudioContext.prototype.createScriptProcessor = function (...args) {
+      const processor = createProcessor.apply(this, args);
+      processor.addEventListener('audioprocess', () => { state.capturedFrames++; });
+      return processor;
+    };
     Object.defineProperty(navigator, 'mediaDevices', {
       configurable: true,
       value: {
@@ -33,9 +42,6 @@ async function stubMicrophoneCapture(page: Page, denyFirst = false): Promise<voi
   }, denyFirst);
 }
 
-// The transcribe payload embeds recording bytes, so its hostApi mock key is
-// not stable; intercept asr.transcribe dynamically and fall through to the
-// previously installed host:invoke handler for everything else.
 async function installAsrTranscribeMock(app: ElectronApplication, text: string): Promise<void> {
   await app.evaluate(async ({ app: _app }, transcribed) => {
     const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
@@ -51,16 +57,30 @@ async function installAsrTranscribeMock(app: ElectronApplication, text: string):
 
     ipcMain.removeHandler('host:invoke');
     ipcMain.handle('host:invoke', async (event: unknown, request: HostRequest) => {
-      if (request.module === 'asr' && request.action === 'transcribe') {
+      if (request.module === 'voice' && request.action === 'transcribe') {
         return {
           id: typeof request.id === 'string' ? request.id : undefined,
           ok: true,
-          data: { text: transcribed },
+          data: { success: true, text: transcribed },
         };
       }
       return previousHostInvoke?.(event, request) ?? { id: request.id, ok: true, data: {} };
     });
   }, text);
+}
+
+async function installVoiceAgent(app: ElectronApplication): Promise<void> {
+  await installIpcMocks(app, {
+    gatewayRpc: {
+      [stableStringify(['sessions.list', {}])]: { sessions: [{ key: 'agent:main:main', workspacePath: WORKSPACE }] },
+    },
+    hostApi: {
+      [stableStringify(['agents', 'list', null])]: {
+        success: true, agents: [{ id: 'main', name: 'Main', isDefault: true, workspace: WORKSPACE, mainSessionKey: 'agent:main:main' }], defaultAgentId: 'main',
+      },
+      [stableStringify(['chat', 'loadAcpSession', { sessionKey: 'agent:main:main', workspaceRoot: WORKSPACE, cwd: WORKSPACE }])]: { success: true, generation: 1 },
+    },
+  });
 }
 
 async function reloadRenderer(page: Page): Promise<void> {
@@ -76,15 +96,16 @@ async function reloadRenderer(page: Page): Promise<void> {
 async function enableDeveloperMode(page: Page): Promise<void> {
   await expect(page.getByTestId('main-layout')).toBeVisible();
   await page.getByTestId('sidebar-nav-settings').click();
+  await page.getByTestId('settings-tab-about').click();
   const devModeSwitch = page.getByTestId('settings-dev-mode-switch');
   await expect(devModeSwitch).toBeVisible();
   if (await devModeSwitch.getAttribute('data-state') !== 'checked') {
     await devModeSwitch.click();
   }
   await expect(devModeSwitch).toHaveAttribute('data-state', 'checked');
-  await page.evaluate(() => {
-    window.location.hash = '#/';
-  });
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByTestId('sidebar-session-agent:main:main').click();
+  await page.getByTestId('chat-composer-input').waitFor({ state: 'visible' });
 }
 
 test.describe('ClawX voice dictation', () => {
@@ -94,8 +115,12 @@ test.describe('ClawX voice dictation', () => {
       try {
         await installIpcMocks(app, {
           gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
-          hostApi: { [stableStringify(['asr', 'getConfig', null])]: { configured: true, config: null, hasApiKey: true } },
+          hostApi: {
+            [stableStringify(['asr', 'getConfig', null])]: { configured: true, config: null, hasApiKey: true },
+            [stableStringify(['voice', 'configStatus', null])]: { success: true, configured: { transcription: true } },
+          },
         });
+        await installVoiceAgent(app);
         await installAsrTranscribeMock(app, TRANSCRIBED_TEXT);
         await app.evaluate(({ ipcMain }, first) => {
           const state = { reads: 0, opens: 0, granted: false };
@@ -120,7 +145,7 @@ test.describe('ClawX voice dictation', () => {
         await reloadRenderer(page);
         await enableDeveloperMode(page);
         const composer = page.getByTestId('chat-composer-input');
-        const voice = page.getByTestId('chat-composer-voice');
+        const voice = page.getByTestId('chat-composer-mic');
         await composer.fill('draft');
         await voice.click();
         const dialog = page.getByTestId('microphone-permission-dialog');
@@ -149,11 +174,11 @@ test.describe('ClawX voice dictation', () => {
         await expect(dialog.getByRole('alert')).toContainText('Could not open');
         await dialog.getByRole('button', { name: 'Close', exact: true }).click();
         await composer.fill('editable ');
-        await expect(voice).toHaveAttribute('title', 'Voice input');
+        await expect(voice).toHaveAttribute('title', 'Start dictation');
         await app.evaluate(() => { (globalThis as unknown as { micTest: { granted: boolean } }).micTest.granted = true; });
         await voice.click();
-        await expect(voice).toHaveAttribute('title', 'Stop recording');
-        await expect(voice).toContainText('0:01');
+        await expect(voice).toHaveAttribute('title', 'Stop dictation');
+        await expect.poll(() => page.evaluate(() => (window as unknown as { voiceCapture: { capturedFrames: number } }).voiceCapture.capturedFrames)).toBeGreaterThan(0);
         await voice.click();
         await expect(composer).toHaveValue(`editable ${TRANSCRIBED_TEXT}`);
       } finally { await closeElectronApp(app); }
@@ -166,6 +191,7 @@ test.describe('ClawX voice dictation', () => {
       await installIpcMocks(app, {
         gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
         hostApi: {
+          [stableStringify(['voice', 'configStatus', null])]: { success: true, configured: { transcription: true } },
           [stableStringify(['asr', 'getConfig', null])]: {
             configured: true,
             config: {
@@ -177,6 +203,7 @@ test.describe('ClawX voice dictation', () => {
           },
         },
       });
+      await installVoiceAgent(app);
       await installAsrTranscribeMock(app, TRANSCRIBED_TEXT);
 
       const page = await getStableWindow(app);
@@ -188,27 +215,28 @@ test.describe('ClawX voice dictation', () => {
       await expect(composer).toBeVisible({ timeout: 30_000 });
       await composer.fill('hello ');
 
-      const voiceButton = page.getByTestId('chat-composer-voice');
-      await expect(voiceButton).toHaveAttribute('title', 'Voice input');
+      const voiceButton = page.getByTestId('chat-composer-mic');
+      await expect(voiceButton).toHaveAttribute('title', 'Start dictation');
       await voiceButton.click();
-      await expect(voiceButton).toHaveAttribute('title', 'Stop recording');
-      await expect(voiceButton).toContainText('0:01');
+      await expect(voiceButton).toHaveAttribute('title', 'Stop dictation');
+      await expect.poll(() => page.evaluate(() => (window as unknown as { voiceCapture: { capturedFrames: number } }).voiceCapture.capturedFrames)).toBeGreaterThan(0);
 
       await voiceButton.click();
       await expect(composer).toHaveValue(`hello ${TRANSCRIBED_TEXT}`);
-      await expect(voiceButton).toHaveAttribute('title', 'Voice input');
+      await expect(voiceButton).toHaveAttribute('title', 'Start dictation');
     } finally {
       await closeElectronApp(app);
     }
   });
 
-  test('guides to the models voice tab when asr is unconfigured', async ({ launchElectronApp }) => {
+  test('keeps unconfigured dictation disabled and exposes voice configuration', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
       await installIpcMocks(app, {
         gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
         hostApi: {
+          [stableStringify(['voice', 'configStatus', null])]: { success: true, configured: { transcription: false } },
           [stableStringify(['asr', 'getConfig', null])]: {
             configured: false,
             config: null,
@@ -217,6 +245,7 @@ test.describe('ClawX voice dictation', () => {
         },
       });
 
+      await installVoiceAgent(app);
       const page = await getStableWindow(app);
       await reloadRenderer(page);
       await enableDeveloperMode(page);
@@ -224,25 +253,14 @@ test.describe('ClawX voice dictation', () => {
       const composer = page.getByTestId('chat-composer-input');
       await expect(composer).toBeVisible({ timeout: 30_000 });
 
-      await page.getByTestId('chat-composer-voice').click();
-      await expect(page.locator('[data-sonner-toast]')).toContainText('not configured');
-      await expect(page).toHaveURL(/\/models/);
-      await expect(page).toHaveURL(/tab=voice/);
-      await expect(page.getByTestId('asr-settings')).toBeVisible();
-
-      await expect(page.getByTestId('asr-protocol-select')).toHaveValue('transcriptions');
-      await expect(page.getByTestId('asr-base-url-suffix')).toBeVisible();
-
-      await page.getByTestId('asr-protocol-select').selectOption('chat');
-      await expect(page.getByTestId('asr-preset-select')).toContainText('Alibaba Cloud Model Studio');
-      await expect(page.getByTestId('asr-base-url-input')).toHaveValue(
-        'https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
-      );
-      await expect(page.getByTestId('asr-base-url-suffix')).toHaveCount(0);
-      await expect(page.getByTestId('asr-bailian-dialect-hint')).toBeVisible();
-      await expect(page.getByTestId('asr-bailian-docs-link')).toBeVisible();
-      await expect(page.getByTestId('asr-bailian-workspace-hint')).toBeVisible();
-      await expect(page.getByTestId('asr-api-key-link')).toBeVisible();
+      const voice = page.getByTestId('chat-composer-mic');
+      await expect(voice).toBeDisabled();
+      await expect(voice).toHaveAttribute('title', 'Speech-to-text is not configured');
+      await expect(composer).toBeEditable();
+      await page.getByTestId('sidebar-nav-settings').click();
+      await page.getByTestId('settings-tab-voice').click();
+      await expect(page.getByTestId('settings-voice-input-mode')).toHaveValue('dictation');
+      await expect(page.getByTestId('settings-tab-models')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }

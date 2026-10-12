@@ -1,4 +1,4 @@
-import type { ElectronApplication } from '@playwright/test';
+import type { ElectronApplication, Page } from '@playwright/test';
 import { completeSetup, expect, test } from './fixtures/electron';
 
 type AgentSeed = { id: string; name: string; isDefault?: boolean };
@@ -46,6 +46,7 @@ const seededProviderAccounts = [
 async function installTagNavMocks(
   app: ElectronApplication,
   sessions: SessionSeed[],
+  page: Page,
 ): Promise<void> {
   await app.evaluate(({ ipcMain }, payload) => {
     const originalHostInvoke = (ipcMain as unknown as {
@@ -88,7 +89,7 @@ async function installTagNavMocks(
         if (request?.module === 'gateway' && request.action === 'rpc') {
           const method = typeof request.payload?.method === 'string' ? request.payload.method : '';
           if (method === 'sessions.list') {
-            return respond(request.id, { sessions: payload.sessions });
+            return respond(request.id, { sessions: payload.sessions.map((session) => ({ ...session, displayName: 'Main' })) });
           }
           return respond(request.id, { sessions: [] });
         }
@@ -102,50 +103,58 @@ async function installTagNavMocks(
       data: { status: 200, ok: true, json: { success: true } },
     }));
   }, { agents: initialAgents, sessions, channels: seededChannelGroups, providers: seededProviderAccounts });
+  await page.reload();
 }
 
 test.describe('Tag hover+click navigation with focus', () => {
-  test('sidebar agent tag navigates to the agents page and highlights the card', async ({ electronApp, page }) => {
+  test('sidebar agent label selects its conversation without navigating to Agents', async ({ electronApp, page }) => {
     const sessions: SessionSeed[] = [
       { key: 'agent:main:main', lastChannel: 'webchat', updatedAt: Date.now(), lastMessagePreview: 'hi' },
     ];
-    await installTagNavMocks(electronApp, sessions);
+    await installTagNavMocks(electronApp, sessions, page);
     await completeSetup(page);
 
-    const agentTag = page.getByTestId(/^sidebar-session-agent-tag-/).first();
-    await expect(agentTag).toBeVisible({ timeout: 10_000 });
-    await agentTag.click();
+    const sessionRow = page.getByTestId('sidebar-session-agent:main:main');
+    await expect(sessionRow).toContainText('Main');
+    await expect(sessionRow.getByRole('button')).toHaveCount(0);
+    await sessionRow.locator('span').first().click();
 
+    await expect(sessionRow).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByTestId('agents-page')).toHaveCount(0);
+    await page.getByTestId('sidebar-nav-agents').click();
     await expect(page.getByTestId('agents-page')).toBeVisible();
     const agentCard = page.getByTestId('agent-card-main');
     await expect(agentCard).toBeVisible();
     await expect(agentCard).toBeInViewport();
-    await expect(agentCard).toHaveAttribute('data-highlighted', 'true');
+    await expect(agentCard).not.toHaveAttribute('data-highlighted', 'true');
   });
 
-  test('sidebar agent tag focuses + scrolls to the card on keyboard Enter', async ({ electronApp, page }) => {
+  test('keyboard Enter selects the conversation without highlighting its agent', async ({ electronApp, page }) => {
     const sessions: SessionSeed[] = [
       { key: 'agent:main:main', lastChannel: 'webchat', updatedAt: Date.now(), lastMessagePreview: 'hi' },
     ];
-    await installTagNavMocks(electronApp, sessions);
+    await installTagNavMocks(electronApp, sessions, page);
     await completeSetup(page);
 
-    const agentTag = page.getByTestId(/^sidebar-session-agent-tag-/).first();
-    await expect(agentTag).toBeVisible({ timeout: 10_000 });
-    await agentTag.press('Enter');
+    const sessionRow = page.getByTestId('sidebar-session-agent:main:main');
+    await expect(sessionRow).toBeVisible();
+    await sessionRow.press('Enter');
 
+    await expect(sessionRow).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByTestId('agents-page')).toHaveCount(0);
+    await page.getByTestId('sidebar-nav-agents').click();
     await expect(page.getByTestId('agents-page')).toBeVisible();
     const agentCard = page.getByTestId('agent-card-main');
     await expect(agentCard).toBeVisible();
     await expect(agentCard).toBeInViewport();
-    await expect(agentCard).toHaveAttribute('data-highlighted', 'true');
+    await expect(agentCard).not.toHaveAttribute('data-highlighted', 'true');
   });
 
   test('sidebar session row click opens chat without focusing the agent card', async ({ electronApp, page }) => {
     const sessions: SessionSeed[] = [
       { key: 'agent:main:main', lastChannel: 'webchat', updatedAt: Date.now(), lastMessagePreview: 'hi' },
     ];
-    await installTagNavMocks(electronApp, sessions);
+    await installTagNavMocks(electronApp, sessions, page);
     await completeSetup(page);
 
     await page.getByTestId('sidebar-nav-agents').click();
@@ -164,11 +173,11 @@ test.describe('Tag hover+click navigation with focus', () => {
     await expect(agentCard).not.toHaveAttribute('data-highlighted', 'true');
   });
 
-  test('sidebar main session shows the agent name, not the raw session key', async ({ electronApp, page }) => {
+  test('sidebar main session preserves its explicit title instead of the raw session key', async ({ electronApp, page }) => {
     const sessions: SessionSeed[] = [
       { key: 'agent:main:main', lastChannel: 'webchat', updatedAt: Date.now(), lastMessagePreview: 'hi' },
     ];
-    await installTagNavMocks(electronApp, sessions);
+    await installTagNavMocks(electronApp, sessions, page);
     await completeSetup(page);
 
     const sessionRow = page.getByTestId('sidebar-session-agent:main:main');
@@ -179,26 +188,31 @@ test.describe('Tag hover+click navigation with focus', () => {
     await expect(sessionRow).not.toContainText('agent:main:main');
   });
 
-  test('sidebar channel tag opens settings on the channels tab and highlights the channel', async ({ electronApp, page }) => {
+  test('sidebar channel label selects chat without opening channel settings', async ({ electronApp, page }) => {
     const sessions: SessionSeed[] = [
       { key: 'agent:main:feishu:acct1', lastChannel: 'feishu', updatedAt: Date.now(), lastMessagePreview: 'hello' },
     ];
-    await installTagNavMocks(electronApp, sessions);
+    await installTagNavMocks(electronApp, sessions, page);
     await completeSetup(page);
 
-    const channelTag = page.getByTestId(/^sidebar-session-channel-tag-/).first();
+    const sessionRow = page.getByTestId('sidebar-session-agent:main:feishu:acct1');
+    const channelTag = sessionRow.locator('span[title]');
     await expect(channelTag).toBeVisible({ timeout: 10_000 });
     await channelTag.click();
 
+    await expect(sessionRow).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByTestId('channels-tab')).toHaveCount(0);
+    await page.getByTestId('sidebar-nav-settings').click();
+    await page.getByTestId('settings-tab-channels').click();
     await expect(page.getByTestId('channels-tab')).toBeVisible();
     const channelRow = page.getByTestId('channel-row-feishu');
     await expect(channelRow).toBeVisible();
     await expect(channelRow).toBeInViewport();
-    await expect(channelRow).toHaveAttribute('data-highlighted', 'true');
+    await expect(channelRow).not.toHaveAttribute('data-highlighted', 'true');
   });
 
   test('agents page model tag opens settings on the models tab and highlights the provider card', async ({ electronApp, page }) => {
-    await installTagNavMocks(electronApp, []);
+    await installTagNavMocks(electronApp, [], page);
     await completeSetup(page);
 
     await page.getByTestId('sidebar-nav-agents').click();

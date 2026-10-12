@@ -122,6 +122,9 @@ test.describe('ClawX ACP slash-command replies', () => {
         if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
       }
 
+      const sessionRow = page.getByTestId(`sidebar-session-${SESSION_KEY}`);
+      await sessionRow.click();
+      await expect(sessionRow).toHaveAttribute('aria-current', 'page');
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       const input = page.getByTestId('chat-composer-input');
 

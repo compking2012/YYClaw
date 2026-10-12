@@ -13,8 +13,9 @@ test.describe('Workflows page', () => {
       // Workflows is a developer-mode-only feature; unlock it first.
       await page.getByTestId('sidebar-nav-settings').click();
       await expect(page.getByTestId('settings-tab')).toBeVisible();
-      await page.getByTestId('settings-tab-gateway').click();
-      await page.getByTestId('settings-dev-mode-switch').click();
+      await page.getByTestId('settings-tab-about').click();
+      const developerMode = page.getByTestId('settings-dev-mode-switch');
+      if (await developerMode.getAttribute('data-state') !== 'checked') await developerMode.click();
       await expect(page.getByTestId('sidebar-nav-workflows')).toBeVisible();
       await page.keyboard.press('Escape');
 

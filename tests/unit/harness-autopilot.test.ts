@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { validatePlan, digest, scopesConflict, topologicalTasks, DEFAULT_BUDGET } from '../../harness/src/autopilot/contracts.mjs';
 import { RunStore } from '../../harness/src/autopilot/store.mjs';
 import { git, WorkspaceManager } from '../../harness/src/autopilot/workspaces.mjs';
-import { AutopilotEngine } from '../../harness/src/autopilot/engine.mjs';
+import { AutopilotEngine, validateInitializationReceipt } from '../../harness/src/autopilot/engine.mjs';
 import { auditChanges, runAcceptance } from '../../harness/src/autopilot/acceptance.mjs';
 import { CodexAdapter, isolatedEnvironment, GitHubPublisher } from '../../harness/src/autopilot/adapters.mjs';
 import { loadCodexConnection, prepareCodexConnection } from '../../harness/src/autopilot/codex-config.mjs';
@@ -589,18 +589,54 @@ describe('shared dependency initialization', () => {
     const secondDir = path.join(store.dir, 'second-evidence');
     await Promise.all([engine.prepare(first, firstDir), engine.prepare(second, secondDir)]);
     expect(maximum).toBe(1);
-    expect(executeStep.mock.calls).toHaveLength(4);
+    expect(executeStep.mock.calls).toHaveLength(6);
     expect(progress.filter((entry) => entry.includes('dependency install')).length).toBeGreaterThan(2);
     for (const [workspace, dir] of [[first, firstDir], [second, secondDir]] as const) {
       const report = JSON.parse(await readFile(path.join(dir, 'initialization.json'), 'utf8'));
       expect(report.status).toBe('pass');
       expect(report.storeDir).toBe(cache.storeDir);
-      expect(report.steps.map((step: { stage: string }) => step.stage)).toEqual(['dependency install', 'extension bridge']);
+      expect(report.steps.map((step: { stage: string }) => step.stage)).toEqual(['dependency install', 'extension bridge', 'startup typecheck']);
+      expect(report.baseSha).toBe(sha);
+      expect(validateInitializationReceipt(workspace, report)).toBe(report);
+      expect(await engine.startupContext(workspace, dir)).toContain(path.join(dir, 'initialization.json'));
+      await writeFile(path.join(dir, 'initialization.json'), JSON.stringify({ ...report, durationMs: report.durationMs + 1 }));
+      await expect(engine.startupContext(workspace, dir)).rejects.toThrow('differs from the controller record');
       expect(report.steps[0].timeoutMs).toBeLessThanOrEqual(1000);
       const archive = await manager.archive(workspace, path.join(dir, 'archive'));
       await manager.cleanup(workspace, archive);
     }
     await expect(access(cache.lockRoot)).resolves.toBeUndefined();
+  });
+
+  it('refuses missing, foreign, failed and incomplete startup receipts without certifying task acceptance', () => {
+    const workspace = { taskId: 'sample', resourceId: 'sample-resource', baseSha: 'a'.repeat(40) };
+    const report = { schemaVersion: 1, ...workspace, status: 'pass', steps: ['dependency install', 'extension bridge', 'startup typecheck'].map((stage) => ({ stage, status: 'pass', exitCode: 0 })) };
+    expect(validateInitializationReceipt(workspace, report)).toBe(report);
+    for (const field of ['schemaVersion', 'taskId', 'resourceId', 'baseSha', 'status']) expect(() => validateInitializationReceipt(workspace, { ...report, [field]: 'foreign' })).toThrow('identity/status');
+    expect(() => validateInitializationReceipt(workspace, undefined)).toThrow('identity/status');
+    expect(() => validateInitializationReceipt(workspace, { ...report, steps: report.steps.slice(0, 2) })).toThrow('lacks successful');
+    for (const status of ['fail', 'blocked', 'not-run']) expect(() => validateInitializationReceipt(workspace, { ...report, steps: report.steps.map((step, index) => index === 2 ? { ...step, status } : step) })).toThrow('lacks successful');
+    expect(() => validateInitializationReceipt(workspace, { ...report, steps: report.steps.map((step, index) => index === 2 ? { ...step, exitCode: 1 } : step) })).toThrow('lacks successful');
+  });
+
+  it('never starts coding after a controller startup typecheck failure and still cleans its worktree', async () => {
+    const { root, repo, artifactRoot, sha } = await repository();
+    const coding = adapter();
+    const publishing = publisher(repo);
+    const executeStep = vi.fn(async (step, options) => {
+      await mkdir(path.dirname(options.logPath), { recursive: true });
+      await writeFile(options.logPath, step.args.includes('typecheck') ? 'Type error in committed input\n' : 'Initialized\n');
+      return { ...step, status: step.args.includes('typecheck') ? 'fail' : 'pass', exitCode: step.args.includes('typecheck') ? 1 : 0, durationMs: 1 };
+    });
+    const engine = new AutopilotEngine({ repo, artifactRoot, adapter: coding, publisher: publishing, executeStep, resolveCache: async () => sharedCache(root), onProgress: () => {} });
+    const result = await engine.start(plan(sha));
+    expect(result.status).toBe('failed');
+    expect(result.error).toContain('startup typecheck failed (exit 1)');
+    expect(result.baseline.initialization.steps.at(-1).stage).toBe('startup typecheck');
+    expect(result.baseline.cleanup.status).toBe('pass');
+    expect(result.baseline.workspace).toBeNull();
+    expect(coding.execute).not.toHaveBeenCalled();
+    expect(publishing.publish).not.toHaveBeenCalled();
   });
 
   it('retains timeout and lifecycle errors, cleans failed workspaces and upgrades legacy runs without resetting deadlines', async () => {
@@ -983,6 +1019,7 @@ describe('autonomous development integration', () => {
     const engine = new AutopilotEngine({ repo, artifactRoot, adapter: adapter(), publisher: publishing, prepare: async () => {}, baseline: async () => ({ status: 'pass' }), acceptance: async () => ({ status: 'blocked' }), pollMs: 1, requiredCiChecks: ['test'] });
     const result = await engine.start(plan(sha));
     expect(result.status).toBe('blocked');
+    expect(result.error).toContain('did not pass local acceptance');
     expect(result.tasks.sample.workspace).toBeNull();
     expect(publishing.publish).not.toHaveBeenCalled();
     await writeFile(path.join(repo, 'sample.txt'), 'user changes\n');

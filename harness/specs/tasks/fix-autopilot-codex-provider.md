@@ -7,6 +7,7 @@ featureIds:
   - F33
 intent: Use the local Codex model connection, including cc-switch, without importing unrelated user tools or publisher credentials into isolated workers.
 touchedAreas:
+  - AGENTS.md
   - harness/**
   - pnpm-lock.yaml
   - tests/unit/harness-autopilot.test.ts
@@ -34,6 +35,7 @@ acceptance:
   - Capability preflight validates the actual exec arguments in help mode without model execution and accepts brief or stderr help output.
   - The launch PATH executable is pinned across planning, repeated preflight and worker execution; unsupported arguments and missing executables fail with explicit diagnostics.
   - The real-Git two-task stack regression completes within its scoped 30-second allowance under full-suite contention, retaining publication, cleanup-before-CI, main-worktree isolation and readiness assertions; global test and runtime deadlines are unchanged.
+  - Controller startup receipts match the task/resource/base SHA and record actual install, bridge and typecheck success; workers reuse verified initialization without rerunning broad setup outside their frozen write scope. Missing, altered, foreign or failed evidence prevents coding and never substitutes for task acceptance.
 docs:
   required: true
 ---

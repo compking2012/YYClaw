@@ -3,6 +3,7 @@ id: autonomous-development
 title: Autonomous Development and Per-task Delivery
 type: development-tooling
 ownedPaths:
+  - AGENTS.md
   - harness/**
   - tests/unit/harness*.test.ts
   - .github/workflows/**

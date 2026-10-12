@@ -6,6 +6,10 @@ UI baseline validation uses current settings-modal tabs and explicitly selected 
 
 ## Implemented Architecture
 
+Blocked runs expose task blocker summaries in the CLI instead of only the package-manager exit code. Core startup typecheck failures are initialization failures, never coding repair attempts, and still require owned workspace cleanup.
+
+Owned coding worktrees complete core dependency lifecycle installation, bridge generation and startup typecheck before model coding. The controller persists a schema-1 receipt with task/resource/base SHA, validates stages/status/exits, and compares the on-disk receipt with the run record. Workers read it under the AGENTS controller-owned startup exception instead of rerunning broad `init` beyond exact task scopes. Initialization evidence never certifies optional bundled tools or substitutes for task/external acceptance; missing or mismatched evidence blocks coding.
+
 The repository harness exposes `autopilot plan/run/status/resume/cancel`. The development scheduler uses XState independently of Electron and the OpenClaw workflow engine. Codex performs read-only planning and review plus restricted workspace coding; Claude is an explicitly unsupported reserved adapter. No unsafe sandbox bypass is used.
 
 Plans use Zod-validated version-1 JSON and frozen hashes. Exact write paths, task dependencies, structured tags, registered check commands, rule/source references and acceptance mappings are validated. The default budget is 8 tasks, 2 independent coding tasks, 3 repairs and 6 hours. Task Markdown is generated outside coding worktrees. Existing specs remain readable; autonomous plans must declare acceptance explicitly.

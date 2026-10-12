@@ -54,6 +54,8 @@ Before writing any code, complete these steps in order:
 5. **Run `pnpm run init`** to verify the project installs and initializes cleanly, then `pnpm typecheck` to verify it builds.
 6. **Read `docs/FEATURELIST.md`** to see the current state of features and known issues, and to determine what to develop next.
 
+For controller-owned Autopilot coding worktrees, startup step 5 is fulfilled by verifying the controller's durable `initialization.json` receipt instead of rerunning the broad `pnpm run init` convenience script. The schema-1 receipt must match the task, resource and base SHA, have status `pass`, and contain successful dependency installation (including required lifecycle scripts), extension bridge generation and startup typecheck, each with exit code 0 in the same worktree. Read the receipt before coding; mismatched, missing or failed evidence blocks coding. This only certifies core workspace startup, not optional bundled tools or task acceptance. Required unit/UI/comms/external checks and resource prerequisites remain mandatory; do not edit generated resources outside the frozen task scope or skip a missing tool to pass. This exception does not apply to manual development or read-only planning (which writes no code).
+
 ### Non-obvious caveats
 
 - **pnpm version**: The exact pnpm version is pinned via `packageManager` in `package.json`. Use `corepack enable && corepack prepare` to activate the correct version before installing.

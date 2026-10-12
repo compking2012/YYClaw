@@ -40,6 +40,7 @@ This is a development-only companion to the PRD, feature breakdown, and architec
   `fetch(...)`. Route everything through `src/lib/host-api.ts` and
   `src/lib/host-api-client.ts`. (Full rationale in AGENTS.md.)
 - **Non-mutating lint baseline**: CI and autonomous development use `pnpm run lint:check`.
+- **Autopilot startup versus write scope**: An isolated coding worker must read the controller's `initialization.json` instead of rerunning broad `pnpm run init` outside its frozen write paths. The AGENTS controller-owned startup rule requires same-task/resource/base-SHA evidence of lifecycle installation, bridge generation and startup typecheck, all exiting 0. Missing, failed or changed evidence blocks coding. This receipt does not certify optional bundled tools or replace task acceptance; manual setup remains unchanged.
   Generated `artifacts/` (including temporary worktrees), `test-results/`, and
   `playwright-report/` are excluded; repository source rules remain enforced.
   Previously unapproved blanket TypeScript suppression directives are removed, so run typecheck

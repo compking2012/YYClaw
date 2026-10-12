@@ -13,6 +13,12 @@ import { resolveDependencyCache, validateDependencyCache, ensureDependencyCache,
 import { reuseBundledUv } from '../../../scripts/bundled-uv-cache.mjs';
 
 export const DEFAULT_CI_CHECKS = Object.freeze(['check', 'build', 'harness', 'comms-regression', 'Electron E2E (ubuntu-latest)', 'Electron E2E (macos-latest)', 'Electron E2E (windows-latest)']);
+export function validateInitializationReceipt(workspace, report) {
+  if (report?.schemaVersion !== 1 || report.taskId !== workspace.taskId || report.resourceId !== workspace.resourceId || report.baseSha !== workspace.baseSha || report.status !== 'pass') throw new Error('Initialization receipt identity/status mismatch');
+  const stages = ['dependency install', 'extension bridge', 'startup typecheck'];
+  if (report.steps?.length !== stages.length || report.steps.some((step, index) => step.stage !== stages[index] || step.status !== 'pass' || step.exitCode !== 0)) throw new Error('Initialization receipt lacks successful install, bridge and typecheck evidence');
+  return report;
+}
 export const runMachine = createMachine({
   id: 'autopilot', initial: 'running', states: {
     running: { on: { COMPLETE: 'complete', BLOCK: 'blocked', FAIL: 'failed', CANCEL: 'cancelled', CLEANUP_FAILURE: 'cleanup-failed' } },
@@ -112,7 +118,7 @@ export class AutopilotEngine {
     const lease = new RunStore(cache.lockRoot, 'initialization');
     const started = Date.now();
     let release;
-    const report = { schemaVersion: 1, taskId: workspace.taskId, resourceId: workspace.resourceId, storeDir: cache.storeDir, status: 'waiting', steps: [] };
+    const report = { schemaVersion: 1, taskId: workspace.taskId, resourceId: workspace.resourceId, baseSha: workspace.baseSha, storeDir: cache.storeDir, status: 'waiting', steps: [] };
     const persist = async () => {
       const state = workspace.taskId === 'baseline' ? this.record.baseline : this.record.tasks[workspace.taskId];
       state.initialization = structuredClone(report);
@@ -145,6 +151,7 @@ export class AutopilotEngine {
       for (const [stage, step, logName] of [
         ['dependency install', dependencyInstallStep(cache), 'install.log'],
         ['extension bridge', { name: 'Generate existing extension bridge', command: 'pnpm', args: ['run', 'ext:bridge'] }, 'extension-bridge.log'],
+        ['startup typecheck', { name: 'Verify initialized workspace types', command: 'pnpm', args: ['run', 'typecheck'] }, 'startup-typecheck.log'],
       ]) {
         const timeoutMs = Math.min(this.remaining(this.budget.initTimeoutMs), this.budget.initTimeoutMs - (Date.now() - started));
         if (timeoutMs <= 0) throw new Error(`${workspace.taskId} initialization deadline exhausted`);
@@ -189,6 +196,14 @@ export class AutopilotEngine {
       await this.store.event('step-finished', { taskId: workspace.taskId, resourceId: workspace.resourceId, ...evidence });
       return evidence;
     } finally { clearInterval(heartbeat); }
+  }
+
+  async startupContext(workspace, artifactDir) {
+    if (this.prepareOverride) return 'Preparation is supplied by a test-only controller override; no real initialization certification is claimed.';
+    const receiptPath = path.join(artifactDir, 'initialization.json');
+    const report = validateInitializationReceipt(workspace, JSON.parse(await readFile(receiptPath, 'utf8')));
+    if (digest(report) !== digest(this.record.tasks[workspace.taskId].initialization)) throw new Error('Initialization receipt differs from the controller record');
+    return `Controller-owned startup evidence: ${receiptPath}. Schema 1; task ${workspace.taskId}; resource ${workspace.resourceId}; base SHA ${workspace.baseSha}; dependency install (required lifecycle scripts), extension bridge and startup typecheck all exited 0 in THIS worktree. Follow the AGENTS.md controller-owned startup rule: read and verify this receipt, then reuse initialization instead of rerunning the broad pnpm run init convenience script outside the frozen write scope. This receipt is NOT task acceptance or certification of optional bundled tools; required tests/resources still must pass, missing prerequisites remain blocked. Do not change the receipt, gates, task scope or controller-owned generated resources.`;
   }
 
   async observeModel(workspace, stage, artifactDir, request) {
@@ -321,6 +336,7 @@ export class AutopilotEngine {
     const artifactDir = path.join(this.store.dir, 'tasks', task.id, workspace.resourceId);
     await mkdir(artifactDir, { recursive: true });
     await this.prepare(workspace, artifactDir);
+    const startupContext = await this.startupContext(workspace, artifactDir);
     if (state.recovery && !changesSha) {
       const recovery = state.recovery;
       const receipt = JSON.parse(await readFile(path.join(recovery.archive.artifactDir, 'archive.json'), 'utf8'));
@@ -356,7 +372,7 @@ export class AutopilotEngine {
       if (audit.failures.length) throw new Error(audit.failures.join('\n'));
       const originalHead = await git(workspace.path, ['rev-parse', 'HEAD']);
       const response = await this.observeModel(workspace, 'model implementation', path.join(attemptDir, 'coding'), { schema: workerResultSchema, signal: this.controller.signal, timeoutMs: this.remaining(), ...this.processHooks(workspace),
-        prompt: `Implement ONLY this frozen task. Do not modify its acceptance or requirements. Never commit, push, create PRs, weaken/delete tests, change gates, read publishing credentials or use private user data. Write only exact allowed paths. Read AGENTS.md, code and tests; add meaningful positive and negative tests. Relevant docs/i18n belong in the declared scope. Report blocked if an undeclared protected change or prerequisite is necessary. Frozen task: ${JSON.stringify(task)}\nPrevious actual failures/CI: ${JSON.stringify(state.evidence ?? state.ci ?? null)}`,
+        prompt: `Implement ONLY this frozen task. Do not modify its acceptance or requirements. Never commit, push, create PRs, weaken/delete tests, change gates, read publishing credentials or use private user data. Write only exact allowed paths. Read AGENTS.md, code and tests; add meaningful positive and negative tests. Relevant docs/i18n belong in the declared scope. Report blocked if an undeclared protected change or prerequisite is necessary. ${startupContext} Frozen task: ${JSON.stringify(task)}\nPrevious actual failures/CI: ${JSON.stringify(state.evidence ?? state.ci ?? null)}`,
       });
       state.sessionId = response.sessionId;
       if (await git(workspace.path, ['rev-parse', 'HEAD']) !== originalHead) throw new Error('Coding agent created unauthorized commits');
@@ -484,6 +500,7 @@ export class AutopilotEngine {
         if (failed) throw failed.reason;
       });
       if (!await this.buildStack(tasks)) {
+        record.error = tasks.filter((task) => record.tasks[task.id].status === 'blocked' && record.tasks[task.id].error).map((task) => `${task.id}: ${record.tasks[task.id].error}`).join('\n') || 'A required task did not pass local acceptance; inspect task evidence';
         for (const task of tasks) {
           const state = record.tasks[task.id];
           if (!state.publication && !state.workspace && state.status === 'pending') {

@@ -785,6 +785,8 @@ every change:
 
 ## Autonomous Repository Development (F33)
 
+Core initialization receipts include task/resource/base SHA and actual lifecycle installation, bridge generation and startup typecheck results. Before coding, the controller verifies all three successful exits and compares the durable receipt with its in-memory run record. Workers read this evidence under the AGENTS controller-owned startup rule, avoiding redundant broad setup beyond their frozen scopes. Missing, altered, foreign or failed startup evidence blocks coding; optional tools and task acceptance remain separate mandatory checks.
+
 The acceptance controller obtains fresh structured Playwright evidence from direct file checks and registered E2E/performance scripts. Missing, invalid, empty, failed or flaky reports fail; directed and acceptance-mapped UI checks reject skips regardless of their declared kind. Only controller-added whole-suite quality results preserve platform exclusions separately from required acceptance. Screenshot capture waits for the actual seeded ACP session to load before sending events.
 
 Provider creation reuses the shared Radix dialog lifecycle, including centered entry/exit transitions and closing-content retention. Its form unmounts after the exit animation and resets before reopening. UI baseline fixtures use current settings tabs and explicit session selection; New Chat resets to the default agent's workspace, while another workspace is selected explicitly through the composer menu.

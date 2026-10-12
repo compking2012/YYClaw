@@ -217,4 +217,6 @@ Autopilot workspaces reuse one incremental pnpm package store and persistent dow
 
 Dependency initialization uses the locked prebuilt sharp module without probing global Homebrew/libvips; installation scripts still run. POSIX integration tests use owned short socket paths so long worktree directories cannot cause endpoint truncation.
 
+Independent acceptance review requires exactly one passing verdict per frozen criterion; duplicate, omitted and foreign verdicts fail. `tests/unit/harness-autopilot-frozen-contract.test.ts` validates startup, permissions, rule completion and evidence boundaries with controlled fixtures, not real external certification.
+
 Controller-owned coding worktrees record actual dependency lifecycle installation, extension bridge generation and startup typecheck in `initialization.json`. Before coding, the controller and worker verify matching task/resource/base SHA and successful exits under the AGENTS startup rule. Reuse this preparation instead of rerunning broad `init` outside frozen write paths. Missing, failed or altered evidence blocks coding. The receipt does not certify optional bundled tools or replace task tests/resource prerequisites; manual development keeps its ordinary startup flow.

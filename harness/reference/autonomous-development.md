@@ -6,6 +6,8 @@ UI baseline validation uses current settings-modal tabs and explicitly selected 
 
 ## Implemented Architecture
 
+Independent review requires exactly one passing verdict for every frozen acceptance ID. Appending duplicates to an otherwise complete passing set fails acceptance and produces a finding. The frozen-contract regression exercises controller receipt identity, protected writes, rule completion and real structured-evidence negative cases without external accounts; it is not deployment certification.
+
 Blocked runs expose task blocker summaries in the CLI instead of only the package-manager exit code. Core startup typecheck failures are initialization failures, never coding repair attempts, and still require owned workspace cleanup.
 
 Owned coding worktrees complete core dependency lifecycle installation, bridge generation and startup typecheck before model coding. The controller persists a schema-1 receipt with task/resource/base SHA, validates stages/status/exits, and compares the on-disk receipt with the run record. Workers read it under the AGENTS controller-owned startup exception instead of rerunning broad `init` beyond exact task scopes. Initialization evidence never certifies optional bundled tools or substitutes for task/external acceptance; missing or mismatched evidence blocks coding.

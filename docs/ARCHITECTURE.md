@@ -785,6 +785,8 @@ every change:
 
 ## Autonomous Repository Development (F33)
 
+Independent review validates both the exact verdict count and the unique frozen acceptance-ID set, rejecting extra duplicates even when all local checks passed. The controller adds a finding rather than accepting ambiguous evidence. Contract regression fixtures validate this boundary without external accounts.
+
 Core initialization receipts include task/resource/base SHA and actual lifecycle installation, bridge generation and startup typecheck results. Before coding, the controller verifies all three successful exits and compares the durable receipt with its in-memory run record. Workers read this evidence under the AGENTS controller-owned startup rule, avoiding redundant broad setup beyond their frozen scopes. Missing, altered, foreign or failed startup evidence blocks coding; optional tools and task acceptance remain separate mandatory checks.
 
 The acceptance controller obtains fresh structured Playwright evidence from direct file checks and registered E2E/performance scripts. Missing, invalid, empty, failed or flaky reports fail; directed and acceptance-mapped UI checks reject skips regardless of their declared kind. Only controller-added whole-suite quality results preserve platform exclusions separately from required acceptance. Screenshot capture waits for the actual seeded ACP session to load before sending events.

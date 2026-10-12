@@ -158,4 +158,6 @@ Autopilot 工作区共用项目 `node_modules/.autopilot-cache/` 下的增量 pn
 
 依赖初始化使用锁文件对应的 sharp 预编译模块，不探测系统 Homebrew/libvips，安装脚本仍正常执行。POSIX 集成测试使用专属短路径 socket，避免深层 worktree 目录导致地址截断。
 
+独立验收审查必须为每条冻结标准提供唯一通过结论；重复、遗漏或未知 ID 都不能通过。`tests/unit/harness-autopilot-frozen-contract.test.ts` 用受控用例验证启动、权限、规则补齐和证据边界，不代表真实外部认证。
+
 受控编码工作区将实际依赖及安装脚本、扩展桥接生成和启动类型检查记录到 `initialization.json`。编码前，控制器和代理按 AGENTS 启动规则核对任务、资源、基础提交及成功退出结果。复用已完成的准备，不在冻结写入范围之外重复完整 `init`。凭证缺失、失败或被修改都阻塞编码；凭证不认证可选捆绑工具，不替代任务测试与资源前提。手动开发仍采用原有启动流程。

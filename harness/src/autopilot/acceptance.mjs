@@ -134,7 +134,10 @@ export async function runAcceptance({ task, workspace, artifactDir, signal, time
       prompt: `Independently review the diff against ${workspace.baseSha}, immutable task and ACTUAL test evidence below. Do not edit files or run publishing commands. Detect test weakening, missing positive/negative paths, docs/i18n gaps and acceptance omissions. Return one verdict for every acceptance ID. Never infer external behavior from mocks.\n${JSON.stringify({ task, steps, acceptance })}`,
     }).catch((error) => { throw new Error(`${task.id} model review failed: ${error.message}; log: ${path.join(artifactDir, 'review/events.jsonl')}`); });
     review = response.output;
-    if (new Set(review.acceptance.map((entry) => entry.id)).size !== acceptance.length || !acceptance.every((entry) => review.acceptance.some((verdict) => verdict.id === entry.id && verdict.status === 'pass'))) review.status = 'fail';
+    if (review.acceptance.length !== acceptance.length || new Set(review.acceptance.map((entry) => entry.id)).size !== acceptance.length || !acceptance.every((entry) => review.acceptance.some((verdict) => verdict.id === entry.id && verdict.status === 'pass'))) {
+      review.status = 'fail';
+      review.findings.push('Independent review must provide exactly one passing verdict for each frozen acceptance ID');
+    }
   }
   const after = await auditChanges(workspace, task, allowRisks);
   if (reviewedPatch !== digest(await git(workspace.path, ['diff', '--binary', 'HEAD']))) after.failures.push('Files changed during independent read-only review');

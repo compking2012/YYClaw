@@ -11,6 +11,7 @@ touchedAreas:
   - harness/**
   - pnpm-lock.yaml
   - tests/unit/harness-autopilot.test.ts
+  - tests/unit/harness-autopilot-frozen-contract.test.ts
   - README*.md
   - docs/**
 expectedUserBehavior:
@@ -23,10 +24,12 @@ requiredRules:
   - autonomous-development-safety
   - docs-sync
 requiredTests:
+  - tests/unit/harness-autopilot-frozen-contract.test.ts
   - tests/unit/harness-autopilot.test.ts
   - tests/unit/harness-runner.test.ts
   - tests/unit/harness-specs.test.ts
 acceptance:
+  - Independent review rejects duplicate, missing, foreign or failing acceptance verdicts even when every local test command has passed; exactly one passing verdict per frozen ID is mandatory.
   - Filtered TOML preserves provider endpoint, selected model, authentication, headers and network environment.
   - Temporary configuration and authentication are private and removed with the owned task HOME.
   - User hooks, MCP servers, plugins, trust settings, unsafe sandbox policies and GitHub credentials are not inherited.

@@ -207,6 +207,8 @@ The repository harness provides bounded automatic planning, isolated Codex imple
 
 Autopilot uses the local Codex model/provider connection, including cc-switch, while keeping task credentials and configuration isolated. Keep the configured local proxy running; `--model` overrides the model without changing the provider.
 
+Autopilot resolves and pins the Codex executable from the launch PATH. Capability checks parse the actual required arguments in help mode without starting a model request; brief help or help written to stderr does not cause a false missing-option error.
+
 [Harness](../../harness/README.md)
 
 Planning adds missing mandatory rules before freezing, including documentation review for test-only tasks, without changing acceptance or write scopes. Frozen plans remain strictly validated.

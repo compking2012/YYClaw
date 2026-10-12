@@ -31,6 +31,8 @@ acceptance:
   - User hooks, MCP servers, plugins, trust settings, unsafe sandbox policies and GitHub credentials are not inherited.
   - A controlled local HTTP provider verifies adapter routing and structured output without external credentials.
   - Missing or invalid provider configuration never falls back silently to OpenAI.
+  - Capability preflight validates the actual exec arguments in help mode without model execution and accepts brief or stderr help output.
+  - The launch PATH executable is pinned across planning, repeated preflight and worker execution; unsupported arguments and missing executables fail with explicit diagnostics.
 docs:
   required: true
 ---

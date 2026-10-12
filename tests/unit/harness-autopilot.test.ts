@@ -1,4 +1,6 @@
 import { mkdtemp, mkdir, writeFile, readFile, rm, access, symlink, stat } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
@@ -20,6 +22,7 @@ import { runStep } from '../../harness/src/runner.mjs';
 import { completePlanRules, generatePlan, validateSources } from '../../harness/src/autopilot/planner.mjs';
 
 const roots: string[] = [];
+const executeFile = promisify(execFile);
 afterEach(async () => {
   vi.unstubAllEnvs();
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
@@ -36,6 +39,64 @@ async function codexConfiguration(config: string, auth?: string) {
 }
 
 describe('local Codex connection parity', () => {
+  it.each(['stdout', 'stderr', 'brief'])('probes actual CLI arguments instead of searching %s help text', async (helpMode) => {
+    const { root, authHome } = await codexConfiguration('model = "local-model"\n', '{"OPENAI_API_KEY":"test-auth"}');
+    const script = path.join(root, 'controlled-codex.cjs');
+    const invocation = path.join(root, 'probe.json');
+    await writeFile(script, `const args = process.argv.slice(2);\nrequire('node:fs').writeFileSync(${JSON.stringify(invocation)}, JSON.stringify(args));\nif (!args.includes('--help')) process.exit(9);\nfor (const flag of ['exec', '--json', '--output-schema', '--output-last-message', '--sandbox', '--ignore-rules', '-C']) if (!args.includes(flag)) process.exit(8);\nprocess.${helpMode === 'stderr' ? 'stderr' : 'stdout'}.write('Run non-interactively. See the CLI reference.\\n');\n`);
+    const coding = new CodexAdapter({ executable: process.execPath, authHome, execFile: (executable: string, args: string[]) => executeFile(executable, [script, ...args]) });
+    await coding.preflight();
+    const args = JSON.parse(await readFile(invocation, 'utf8'));
+    expect(args).toContain('--help');
+    expect(args[args.indexOf('--sandbox') + 1]).toBe('read-only');
+    await expect(access(path.join(root, 'autopilot-capability.output.json'))).rejects.toThrow();
+    await coding.preflight();
+  });
+
+  it('rejects a genuinely unsupported CLI option before model execution', async () => {
+    const { root, authHome } = await codexConfiguration('model = "local-model"\n');
+    const script = path.join(root, 'unsupported-codex.cjs');
+    await writeFile(script, `process.stderr.write("error: unexpected argument '--json' found\\n");\nprocess.exit(2);\n`);
+    const coding = new CodexAdapter({ executable: process.execPath, authHome, execFile: (executable: string, args: string[]) => executeFile(executable, [script, ...args]) });
+    await expect(coding.preflight()).rejects.toThrow('unsupported --json');
+  });
+
+  it('pins the PATH-selected executable across planning, repeated preflight and worker execution', async () => {
+    const { root, authHome } = await codexConfiguration('model = "local-model"\n', '{"OPENAI_API_KEY":"test-auth"}');
+    const first = path.join(root, 'first');
+    const second = path.join(root, 'second');
+    await mkdir(first);
+    await mkdir(second);
+    const invocation = path.join(root, 'executed.json');
+    const binaryName = process.platform === 'win32' ? 'controlled-codex.exe' : 'controlled-codex';
+    const script = path.join(root, 'controlled-codex.cjs');
+    await writeFile(script, `const args = process.argv.slice(2);\nif (args.includes('--help')) { process.stderr.write('Brief help\\n'); } else { require('node:fs').writeFileSync(args[args.indexOf('--output-last-message') + 1], '{"ok":true}'); require('node:fs').writeFileSync(${JSON.stringify(invocation)}, JSON.stringify(args)); console.log('{"type":"thread.started","thread_id":"pinned-cli"}'); }\n`);
+    await writeFile(path.join(first, binaryName), 'controlled first executable', { mode: 0o755 });
+    await writeFile(path.join(second, binaryName), 'controlled second executable', { mode: 0o755 });
+    const originalPath = process.env.PATH;
+    vi.stubEnv('PATH', `${first}${path.delimiter}${originalPath}`);
+    const coding = new CodexAdapter({ executable: 'controlled-codex', authHome,
+      execFile: (executable: string, args: string[]) => { expect(executable).toBe(path.join(first, binaryName)); return executeFile(process.execPath, [script, ...args]); },
+      runStep: (step: { command: string; args: string[] }, options: Record<string, unknown>) => { expect(step.command).toBe(path.join(first, binaryName)); return runStep({ ...step, command: process.execPath, args: [script, ...step.args] }, options); },
+    });
+    await coding.preflight();
+    expect(coding.executable).toBe(path.join(first, binaryName));
+    vi.stubEnv('PATH', `${second}${path.delimiter}${originalPath}`);
+    await coding.preflight();
+    expect(coding.executable).toBe(path.join(first, binaryName));
+    const workspace = { path: root, home: path.join(root, 'home') };
+    const result = await coding.execute({ workspace, artifactDir: path.join(root, 'evidence'), schema: z.object({ ok: z.boolean() }), readOnly: true, prompt: 'Return a structured result', timeoutMs: 10000 });
+    expect(result).toEqual({ output: { ok: true }, sessionId: 'pinned-cli' });
+    expect(JSON.parse(await readFile(invocation, 'utf8'))).not.toContain('--help');
+  });
+
+  it('reports missing executables without changing provider configuration', async () => {
+    const { root, authHome } = await codexConfiguration('model = "local-model"\n');
+    const coding = new CodexAdapter({ executable: path.join(root, 'missing-codex'), authHome });
+    await expect(coding.preflight()).rejects.toThrow('not found or not executable');
+    expect(await readFile(path.join(authHome, 'config.toml'), 'utf8')).toContain('local-model');
+  });
+
   it('preserves the selected provider, model and authentication but excludes user tools and unsafe policies', async () => {
     const source = `
 model_provider = "custom"

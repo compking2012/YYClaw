@@ -1,4 +1,5 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { access, readFile, writeFile, mkdir, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import path from 'node:path';
 import { homedir } from 'node:os';
 import { z } from 'zod';
@@ -9,6 +10,32 @@ import { git } from './workspaces.mjs';
 import { loadCodexConnection, prepareCodexConnection } from './codex-config.mjs';
 
 const execute = promisify(execFile);
+
+async function resolveExecutable(executable) {
+  const names = process.platform === 'win32' && !path.extname(executable)
+    ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';').map((extension) => `${executable}${extension}`)
+    : [executable];
+  const directories = path.isAbsolute(executable) || /[/\\]/.test(executable)
+    ? [''] : (process.env.PATH ?? '').split(path.delimiter);
+  for (const directory of directories) {
+    for (const name of names) {
+      const candidate = path.resolve(directory, name);
+      try {
+        await access(candidate, constants.X_OK);
+        if ((await stat(candidate)).isFile()) return candidate;
+      } catch (error) {
+        if (!['ENOENT', 'EACCES', 'ENOTDIR'].includes(error.code)) throw error;
+      }
+    }
+  }
+  throw new Error(`Codex executable not found or not executable: ${executable}. Check the PATH used by pnpm.`);
+}
+
+function codexArguments({ readOnly, schemaPath, outputPath, cwd, model }) {
+  const args = ['exec', '--ignore-rules', '--sandbox', readOnly ? 'read-only' : 'workspace-write', '--json', '--output-schema', schemaPath, '--output-last-message', outputPath, '-C', cwd];
+  if (model) args.push('--model', model);
+  return args;
+}
 
 export function isolatedEnvironment(home, extra = {}) {
   const allowed = ['PATH', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'LANG', 'LC_ALL', 'DISPLAY', 'WAYLAND_DISPLAY'];
@@ -22,11 +49,18 @@ export class CodexAdapter {
     this.model = options.model;
     this.authHome = options.authHome ?? process.env.CODEX_HOME ?? path.join(homedir(), '.codex');
     this.runStep = options.runStep ?? runStep;
+    this.execFile = options.execFile ?? execute;
   }
 
   async preflight() {
-    const help = await execute(this.executable, ['exec', '--help'], { timeout: 15000 });
-    for (const flag of ['--json', '--output-schema', '--sandbox', '--ignore-rules']) if (!help.stdout.includes(flag)) throw new Error(`Codex version lacks required capability ${flag}`);
+    this.executable = await resolveExecutable(this.executable);
+    const args = codexArguments({ readOnly: true, schemaPath: 'autopilot-capability.schema.json', outputPath: 'autopilot-capability.output.json', cwd: process.cwd(), model: this.model });
+    try {
+      await this.execFile(this.executable, [...args, '--help'], { timeout: 15000, maxBuffer: 1024 * 1024 });
+    } catch (error) {
+      const unsupported = `${error.stderr ?? ''}\n${error.stdout ?? ''}`.match(/unexpected argument ['"](--[\w-]+)['"]/i)?.[1];
+      throw new Error(`Codex capability probe failed for ${this.executable}${unsupported ? `: unsupported ${unsupported}` : ` (${error.killed ? 'timed out' : `exit ${error.code ?? 'unknown'}`})`}. Required exec options: --json, --output-schema, --output-last-message, --sandbox, --ignore-rules and -C. No model request was started.`, { cause: error });
+    }
     await loadCodexConnection(this.authHome);
   }
 
@@ -39,8 +73,7 @@ export class CodexAdapter {
     const schemaPath = path.join(artifactDir, 'output-schema.json');
     const outputPath = path.join(artifactDir, 'output.json');
     await writeFile(schemaPath, JSON.stringify(z.toJSONSchema(schema)));
-    const args = ['exec', '--ignore-rules', '--sandbox', readOnly ? 'read-only' : 'workspace-write', '--json', '--output-schema', schemaPath, '--output-last-message', outputPath, '-C', workspace.path];
-    if (this.model) args.push('--model', this.model);
+    const args = codexArguments({ readOnly, schemaPath, outputPath, cwd: workspace.path, model: this.model });
     args.push('-');
     const result = await this.runStep({ name: readOnly ? 'Independent Codex review' : 'Codex implementation', command: this.executable, args }, {
       cwd: workspace.path, env: { ...workerEnv, ...connectionEnv, CODEX_HOME: codexHome }, signal, timeoutMs,

@@ -7,6 +7,8 @@ This is a development-only companion to the PRD, feature breakdown, and architec
 
 ## Environment and Development
 
+- **False Codex capability errors**: Preflight resolves the launch PATH executable once and asks its parser to accept the exact exec options with `--help`. It does not search stdout help prose or invoke the model. Brief help, stderr output and a later PATH change cannot falsely remove `--json`; genuinely unsupported arguments or process failures report the selected absolute executable and fail before coding. A desktop-bundled Codex and an interactive-shell Codex may differ, so inspect the executable reported in the error.
+
 - **UI evidence is mandatory**: Autopilot obtains fresh Playwright JSON reports for direct checks and registered E2E/performance scripts. A successful process exit cannot pass an absent, malformed, empty, failed or flaky report. Directed and acceptance-mapped UI checks reject skipped tests even if labeled quality; only controller-added whole-suite quality runs retain platform exclusions without certifying a requirement. README capture must reload after host fixtures and wait for the loaded ACP session before seeding events.
 - **Git lifecycle integration timing**: The real multi-worktree CI-repair regression uses a bounded 30-second test timeout rather than Vitest’s 5-second unit default. Full Electron and unit suites should run serially on constrained hosts. This changes only the integration fixture time allowance, not assertions, autonomous command deadlines, repair budgets or acceptance requirements.
 

@@ -34,9 +34,9 @@ export const planSchema = z.object({
   exclusions: z.array(z.string()),
 }).strict();
 export const workerResultSchema = z.object({
-  status: z.enum(['implemented', 'blocked']),
-  summary: z.string(),
-  blockers: z.array(z.string()),
+  status: z.enum(['implemented', 'validation-pending', 'blocked']).describe('implemented means code is ready, not accepted. validation-pending means code is ready but worker sandbox prevented local tests; controller must run all frozen checks. blocked means implementation cannot proceed because of missing requirements, prerequisites or protected changes.'),
+  summary: z.string().describe('Describe changes and worker-local test limitations honestly; never claim controller acceptance.'),
+  blockers: z.array(z.string()).describe('For blocked, list implementation blockers. For validation-pending, record worker-local validation restrictions only; these never replace controller test evidence.'),
 }).strict();
 export const reviewSchema = z.object({
   status: z.enum(['pass', 'fail', 'blocked']),

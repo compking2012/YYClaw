@@ -6,6 +6,8 @@ UI baseline validation uses current settings-modal tabs and explicitly selected 
 
 ## Implemented Architecture
 
+Validation ownership is explicit: coding workers write scoped changes and may report `validation-pending` when their restricted sandbox cannot run local tests (`listen/spawn EPERM`). This additive worker-result status does not alter version-1 frozen plans or acceptance criteria and never counts as acceptance. The controller audits nonempty changes and executes every registered frozen and mandatory check under the existing host-resource lease with private HOME and scoped process ownership. Controller failures remain failures, external conditions remain blocked, and genuine worker implementation blockers are not reclassified. Independent read-only review reads actual controller logs instead of rerunning network/process/UI/full-suite tests. No Codex sandbox permissions are broadened; manual development validation is unchanged.
+
 Independent review requires exactly one passing verdict for every frozen acceptance ID. Appending duplicates to an otherwise complete passing set fails acceptance and produces a finding. The frozen-contract regression exercises controller receipt identity, protected writes, rule completion and real structured-evidence negative cases without external accounts; it is not deployment certification.
 
 Blocked runs expose task blocker summaries in the CLI instead of only the package-manager exit code. Core startup typecheck failures are initialization failures, never coding repair attempts, and still require owned workspace cleanup.

@@ -360,7 +360,8 @@ async function evidenceFixture(options: { report?: Record<string, number>; faile
   const adapter = { execute: vi.fn(async (request: { readOnly: boolean; workspace: Workspace; prompt: string }) => {
     expect(request.readOnly).toBe(true);
     expect(request.workspace).toBe(fixture.workspace);
-    expect(request.prompt).toContain('ACTUAL test evidence');
+    expect(request.prompt).toContain('ACTUAL controller test evidence');
+    expect(request.prompt).toContain('Do not rerun');
     return { output: { status: 'pass', acceptance: verdicts, findings: [docsImpact] } };
   }) };
   const before = structuredClone(entry);

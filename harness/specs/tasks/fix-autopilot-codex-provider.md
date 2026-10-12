@@ -29,6 +29,9 @@ requiredTests:
   - tests/unit/harness-runner.test.ts
   - tests/unit/harness-specs.test.ts
 acceptance:
+  - Code-ready workers can report validation-pending for local sandbox restrictions; the controller still executes all frozen and mandatory checks and independently reviews current evidence before PR publication.
+  - Actual loopback and subprocess integration checks run through the controller runner, retaining private HOME and credential isolation. Genuine blocked implementations, failed tests, missing external prerequisites, unauthorized writes and empty patches cannot publish or become ready.
+  - Coding and read-only review prompts explicitly assign full-suite and system-resource tests to the controller without widening Codex sandbox permissions or reclassifying historical blocked reports by string matching.
   - Independent review rejects duplicate, missing, foreign or failing acceptance verdicts even when every local test command has passed; exactly one passing verdict per frozen ID is mandatory.
   - Filtered TOML preserves provider endpoint, selected model, authentication, headers and network environment.
   - Temporary configuration and authentication are private and removed with the owned task HOME.

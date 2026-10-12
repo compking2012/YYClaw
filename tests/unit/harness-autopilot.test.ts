@@ -8,7 +8,7 @@ import { z } from 'zod';
 import tar from 'tar';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { validatePlan, digest, scopesConflict, topologicalTasks, DEFAULT_BUDGET } from '../../harness/src/autopilot/contracts.mjs';
+import { validatePlan, digest, scopesConflict, topologicalTasks, DEFAULT_BUDGET, workerResultSchema } from '../../harness/src/autopilot/contracts.mjs';
 import { RunStore } from '../../harness/src/autopilot/store.mjs';
 import { git, WorkspaceManager } from '../../harness/src/autopilot/workspaces.mjs';
 import { AutopilotEngine, validateInitializationReceipt } from '../../harness/src/autopilot/engine.mjs';
@@ -965,6 +965,93 @@ describe('owned workspace lifecycle', () => {
 });
 
 describe('autonomous development integration', () => {
+  it('keeps implemented and blocked worker contracts compatible and accepts validation-pending without claiming acceptance', () => {
+    for (const status of ['implemented', 'validation-pending', 'blocked']) expect(workerResultSchema.parse({ status, summary: 'Honest worker result', blockers: [] }).status).toBe(status);
+    expect(() => workerResultSchema.parse({ status: 'pass', summary: 'Self-certified', blockers: [] })).toThrow();
+  });
+
+  it.each(['pass', 'fail', 'external-blocked'] as const)('executes controller-owned loopback/process checks after worker validation restrictions: %s', async (outcome) => {
+    const { repo, artifactRoot, sha } = await repository();
+    const coding = adapter();
+    const publishing = publisher(repo);
+    const commands: string[] = [];
+    const scriptedTask = outcome === 'external-blocked' ? { ...task(), checks: [{ ...task().checks[0], kind: 'external', prerequisites: ['AUTOPILOT_SANDBOX_TEST_TOKEN'] }] } : task();
+    const executeStep = vi.fn(async (step, options) => {
+      commands.push(step.id);
+      expect(options.env.GITHUB_TOKEN).toBeUndefined();
+      expect(options.env.SSH_AUTH_SOCK).toBeUndefined();
+      const reportArg = step.args.find((argument: string) => argument.startsWith('--outputFile='));
+      const report = reportArg?.slice('--outputFile='.length);
+      const script = `const {createServer}=require('node:http'); const {execFileSync}=require('node:child_process'); const {writeFileSync}=require('node:fs'); const server=createServer(); server.on('error', error=>{console.error(error);process.exitCode=1;}); server.listen(0,'127.0.0.1',()=>{try{if(execFileSync(process.execPath,['-e','process.stdout.write("spawn-ok")'],{encoding:'utf8'})!=='spawn-ok')throw new Error('child output mismatch'); console.log('controller listen/spawn succeeded'); ${report ? `writeFileSync(${JSON.stringify(report)},JSON.stringify({numTotalTests:1,numFailedTests:${outcome === 'fail' ? 1 : 0},numPendingTests:0,numTodoTests:0}));` : ''}}catch(error){console.error(error);process.exitCode=1;}finally{server.close();}});`;
+      return await runStep({ ...step, command: process.execPath, args: ['-e', script] }, options);
+    });
+    coding.execute.mockImplementation(async ({ workspace, prompt, readOnly }) => {
+      if (readOnly) {
+        expect(prompt).toContain('ACTUAL controller test evidence');
+        expect(prompt).toContain('Do not rerun');
+        return { output: { status: 'pass', acceptance: [{ id: 'behavior', status: 'pass', evidence: 'Controller logs prove real loopback and child process execution' }], findings: [] } };
+      }
+      expect(prompt).toContain('Validation is controller-owned');
+      expect(prompt).toContain('validation-pending');
+      expect(prompt).toContain('do not bypass');
+      await writeFile(path.join(workspace.path, 'sample.txt'), 'implementation awaiting independent acceptance\n');
+      return { output: { status: 'validation-pending', summary: 'Code ready; no worker acceptance claim', blockers: ['Worker sandbox listen EPERM / spawn EPERM'] }, sessionId: 'restricted-worker' };
+    });
+    const engine = new AutopilotEngine({ repo, artifactRoot, adapter: coding, publisher: publishing, prepare: async () => {}, baseline: async () => ({ status: 'pass' }), executeStep, budget: { maxRepairs: 0 }, pollMs: 1, requiredCiChecks: ['test'], onProgress: () => {} });
+    const result = await engine.start(plan(sha, [scriptedTask]));
+    expect(result.status, result.error).toBe(outcome === 'pass' ? 'complete' : 'blocked');
+    const state = result.tasks.sample;
+    expect(state.worker.status).toBe('validation-pending');
+    expect(state.worker.blockers).toContain('Worker sandbox listen EPERM / spawn EPERM');
+    expect(state.workspace).toBeNull();
+    expect(state.cleanup.status).toBe('pass');
+    expect(await readFile(path.join(repo, 'sample.txt'), 'utf8')).toBe('baseline\n');
+    expect(commands.length).toBeGreaterThan(0);
+    expect(await readFile(state.evidence.steps.find((step: { logPath?: string }) => step.logPath).logPath, 'utf8')).toContain('controller listen/spawn succeeded');
+    const events = await readFile(path.join(artifactRoot, result.runId, 'events.jsonl'), 'utf8');
+    expect(events).toContain('worker-validation-deferred');
+    if (outcome === 'pass') {
+      expect(state.evidence.status).toBe('pass');
+      expect(state.evidence.steps.every((step: { status: string }) => step.status === 'pass')).toBe(true);
+      expect(state.evidence.steps).toHaveLength(6);
+      expect(publishing.publish).toHaveBeenCalledOnce();
+      expect(publishing.ready).toHaveBeenCalledOnce();
+      expect(state.evidence.sha).toBe(state.publication.sha);
+    } else {
+      expect(state.evidence.status).toBe(outcome === 'fail' ? 'fail' : 'blocked');
+      expect(state.status).toBe(outcome === 'fail' ? 'failed' : 'blocked');
+      expect(publishing.publish).not.toHaveBeenCalled();
+      expect(publishing.ready).not.toHaveBeenCalled();
+      expect(coding.execute).toHaveBeenCalledTimes(1);
+      expect(state.repairs).toBe(0);
+      if (outcome === 'external-blocked') {
+        expect(commands).not.toContain('unit-check');
+        expect(state.evidence.steps.find((step: { id: string }) => step.id === 'unit-check').error).toContain('AUTOPILOT_SANDBOX_TEST_TOKEN');
+      }
+    }
+  }, 30000);
+
+  it.each(['missing-account', 'no-changes', 'unauthorized-write', 'unknown-status'] as const)('does not let worker validation deferral bypass %s', async (fault) => {
+    const { repo, artifactRoot, sha } = await repository();
+    const coding = adapter();
+    const publishing = publisher(repo);
+    const validate = vi.fn(acceptance);
+    coding.execute.mockImplementation(async ({ workspace }) => {
+      if (fault !== 'no-changes') await writeFile(path.join(workspace.path, fault === 'unauthorized-write' ? 'other.txt' : 'sample.txt'), 'worker changes\n');
+      return { output: { status: fault === 'missing-account' ? 'blocked' : fault === 'unknown-status' ? 'pass' : 'validation-pending', summary: 'Worker report', blockers: [fault === 'missing-account' ? 'Missing actual authorized external account' : 'Worker-local EPERM'] } };
+    });
+    const engine = new AutopilotEngine({ repo, artifactRoot, adapter: coding, publisher: publishing, prepare: async () => {}, baseline: async () => ({ status: 'pass' }), acceptance: validate, requiredCiChecks: ['test'], onProgress: () => {} });
+    const result = await engine.start(plan(sha));
+    expect(result.status).toBe(fault === 'missing-account' ? 'blocked' : 'failed');
+    expect(result.tasks.sample.workspace).toBeNull();
+    expect(result.tasks.sample.cleanup.status).toBe('pass');
+    expect(validate).not.toHaveBeenCalled();
+    expect(publishing.publish).not.toHaveBeenCalled();
+    if (fault === 'missing-account') expect(result.error).toContain('Missing actual authorized external account');
+    if (fault === 'no-changes') expect(result.error).toContain('No implementation changes');
+    if (fault === 'unauthorized-write') expect(result.error).toContain('other.txt');
+  }, 30000);
+
   it('distinguishes stale plans, unpublished baselines and task budgets before allocating resources', async () => {
     const { repo, artifactRoot, sha } = await repository();
     const coding = adapter();

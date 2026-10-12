@@ -556,6 +556,8 @@ Autopilot resolves and pins the Codex executable from the launch PATH. Capabilit
 
 [Harness](harness/README.md)
 
+Coding workers can return code with local validation pending when sandbox restrictions prevent tests. The independent controller still runs every required check; failed tests and missing external conditions block delivery. No sandbox permissions or test gates are relaxed.
+
 Independent review requires exactly one passing verdict per frozen acceptance item; duplicate verdicts fail even when local commands pass.
 
 Before coding, Autopilot verifies a task-local startup receipt for dependency lifecycle installation, extension bridge generation and typecheck. Workers reuse controller preparation instead of rerunning broad setup outside frozen write scopes. Missing or mismatched evidence blocks coding; required tests and tool/external prerequisites remain mandatory.

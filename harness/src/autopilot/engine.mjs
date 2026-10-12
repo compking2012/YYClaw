@@ -372,13 +372,13 @@ export class AutopilotEngine {
       if (audit.failures.length) throw new Error(audit.failures.join('\n'));
       const originalHead = await git(workspace.path, ['rev-parse', 'HEAD']);
       const response = await this.observeModel(workspace, 'model implementation', path.join(attemptDir, 'coding'), { schema: workerResultSchema, signal: this.controller.signal, timeoutMs: this.remaining(), ...this.processHooks(workspace),
-        prompt: `Implement ONLY this frozen task. Do not modify its acceptance or requirements. Never commit, push, create PRs, weaken/delete tests, change gates, read publishing credentials or use private user data. Write only exact allowed paths. Read AGENTS.md, code and tests; add meaningful positive and negative tests. Relevant docs/i18n belong in the declared scope. Report blocked if an undeclared protected change or prerequisite is necessary. ${startupContext} Frozen task: ${JSON.stringify(task)}\nPrevious actual failures/CI: ${JSON.stringify(state.evidence ?? state.ci ?? null)}`,
+        prompt: `Implement ONLY this frozen task. Do not modify its acceptance or requirements. Never commit, push, create PRs, weaken/delete tests, change gates, read publishing credentials or use private user data. Write only exact allowed paths. Read AGENTS.md, code and tests; add meaningful positive and negative tests. Relevant docs/i18n belong in the declared scope. Validation is controller-owned: do NOT run full unit/harness/build/Electron/network/process integration suites inside the coding sandbox. The controller executes every frozen check and mandatory baseline in this same worktree after you return. Optional sandbox-compatible targeted checks are development feedback, never acceptance. If code is ready but tests are not run or worker-local tests report listen/spawn EPERM, return validation-pending and describe the restriction; do not report an implementation blocker solely for sandbox validation limits, and do not bypass or request broader sandbox permissions. A genuine missing requirement, external prerequisite, protected change or implementation defect remains blocked. Existing frozen check references describe controller obligations, not a requirement for you to execute them. ${startupContext} Frozen task: ${JSON.stringify(task)}\nPrevious actual failures/CI: ${JSON.stringify(state.evidence ?? state.ci ?? null)}`,
       });
       state.sessionId = response.sessionId;
       if (await git(workspace.path, ['rev-parse', 'HEAD']) !== originalHead) throw new Error('Coding agent created unauthorized commits');
-      state.worker = response.output;
-      if (response.output.status === 'blocked') {
-        state.error = response.output.blockers.join('\n');
+      state.worker = workerResultSchema.parse(response.output);
+      if (state.worker.status === 'blocked') {
+        state.error = state.worker.blockers.join('\n');
         await this.cleanup(state, workspace);
         state.status = 'blocked';
         await this.save();
@@ -386,6 +386,8 @@ export class AutopilotEngine {
       }
       const finalAudit = await auditChanges(workspace, task, this.allowRisks);
       if (finalAudit.failures.length) throw new Error(finalAudit.failures.join('\n'));
+      if (!finalAudit.files.length) throw new Error('No implementation changes; cannot deliver a task by assertion alone');
+      if (state.worker.status === 'validation-pending') await this.store.event('worker-validation-deferred', { taskId: task.id, resourceId: workspace.resourceId, attempt: state.attempts, status: state.worker.status });
       state.status = 'accepting';
       await this.save();
       state.evidence = await this.withHostResources(async () => this.acceptanceOverride ? await this.acceptanceOverride({ task, workspace, artifactDir: attemptDir, state }) : await runAcceptance({ task, workspace, artifactDir: attemptDir, signal: this.controller.signal, timeoutMs: this.remaining(), allowRisks: this.allowRisks, dependencyCache: this.record.dependencyCache, adapter: { execute: (request) => this.observeModel(workspace, 'model review', request.artifactDir, { ...request, timeoutMs: this.remaining() }) }, executeStep: (step, options) => this.observeStep(workspace, `acceptance test: ${step.name}`, step, { ...options, timeoutMs: this.remaining() }), externalEnv: this.externalEnv, processHooks: this.processHooks(workspace) }));

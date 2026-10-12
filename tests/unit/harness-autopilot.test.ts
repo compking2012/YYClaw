@@ -962,7 +962,7 @@ describe('autonomous development integration', () => {
     expect(await git(repo, ['status', '--porcelain'])).toBe('');
     expect(await readFile(path.join(repo, 'sample.txt'), 'utf8')).toBe('baseline\n');
     expect(publishing.ready).toHaveBeenCalledTimes(2);
-  });
+  }, 30000);
 
   it('rebuilds CI repair worktrees and updates the same PR and dependent stack', async () => {
     const { repo, artifactRoot, sha } = await repository();

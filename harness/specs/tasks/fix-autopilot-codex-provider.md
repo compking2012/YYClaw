@@ -33,6 +33,7 @@ acceptance:
   - Missing or invalid provider configuration never falls back silently to OpenAI.
   - Capability preflight validates the actual exec arguments in help mode without model execution and accepts brief or stderr help output.
   - The launch PATH executable is pinned across planning, repeated preflight and worker execution; unsupported arguments and missing executables fail with explicit diagnostics.
+  - The real-Git two-task stack regression completes within its scoped 30-second allowance under full-suite contention, retaining publication, cleanup-before-CI, main-worktree isolation and readiness assertions; global test and runtime deadlines are unchanged.
 docs:
   required: true
 ---

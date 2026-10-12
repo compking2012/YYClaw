@@ -1,5 +1,7 @@
 # Autonomous Development: Implementation and Safety
 
+The disposable-Git two-task publication regression has a scoped 30-second test allowance, matching stack repair, so full-suite host I/O contention does not interrupt real Git/archival work after five seconds and race fixture teardown. Publication order, cleanup-before-CI, workspace isolation, and readiness assertions are unchanged. Global unit-test and runtime command deadlines remain unchanged.
+
 UI baseline validation uses current settings-modal tabs and explicitly selected history. Provider creation follows the shared Radix opening/closing lifecycle and resets after closing. New Chat uses the default agent workspace; selecting a previous workspace is an explicit composer interaction. Baseline updates retain negative paths, persistence and real interaction assertions rather than ignoring failing checks.
 
 ## Implemented Architecture

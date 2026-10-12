@@ -44,6 +44,7 @@ This is a development-only companion to the PRD, feature breakdown, and architec
   `playwright-report/` are excluded; repository source rules remain enforced.
   Previously unapproved blanket TypeScript suppression directives are removed, so run typecheck
   alongside lint. Explicit-`any` warnings remain advisory, not a reason to bypass errors.
+- **Autopilot stack integration timing**: The disposable-Git test that publishes two task branches and verifies cleanup before CI has a scoped 30-second allowance, matching the existing stack-repair test. Its real worktree, archive, commit, push, and cleanup operations can exceed Vitest's five-second default during a full parallel unit run. Premature test termination also lets unfinished writes race fixture teardown (`ENOTEMPTY`). Keep all publication, ownership, clean-worktree, and current-SHA assertions; this is not a change to runtime command limits, acceptance gates, or the global unit-test timeout.
 - **UI changes** must add or update a Playwright E2E spec in the same change — run `/e2e`.
 - **Comms-path changes** (gateway events, runtime send/receive, delivery, fallback)
   must pass `/comms-check` before finishing.
